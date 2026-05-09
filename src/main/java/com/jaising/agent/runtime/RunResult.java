@@ -4,10 +4,18 @@ import com.jaising.agent.domain.AgentState;
 
 import java.util.Objects;
 
+/**
+ * 运行结果
+ * 封装最终状态便于调用方读取
+ */
 public final class RunResult {
 
     private final AgentState state;
 
+    /*
+     * 创建运行结果
+     * 直接包住最终状态
+     */
     public RunResult(AgentState state) {
         this.state = state;
     }
@@ -20,6 +28,10 @@ public final class RunResult {
         return state;
     }
 
+    /*
+     * 按状态比较
+     * 便于测试断言
+     */
     @Override
     public boolean equals(Object other) {
         if (this == other) {

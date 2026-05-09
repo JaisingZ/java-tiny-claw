@@ -8,11 +8,18 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/**
+ * 文件状态存储测试
+ * 验证写入和读取可用
+ */
 class FileStateStoreTest {
 
   @TempDir
   Path tempDir;
 
+  /**
+   * 保存后可再次读取
+   */
   @Test
   void savesAndLoadsState() {
     FileStateStore store = new FileStateStore(tempDir);

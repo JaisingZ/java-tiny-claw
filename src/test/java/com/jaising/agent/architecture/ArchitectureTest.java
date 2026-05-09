@@ -5,6 +5,10 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.library.Architectures;
 
+/**
+ * 架构约束测试
+ * 保证分层依赖不越界
+ */
 @AnalyzeClasses(
     packages = "com.jaising.agent",
     importOptions = ImportOption.DoNotIncludeTests.class)

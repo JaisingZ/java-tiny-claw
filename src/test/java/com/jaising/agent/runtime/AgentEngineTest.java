@@ -23,8 +23,15 @@ import java.util.Collections;
 import java.util.HashSet;
 import org.junit.jupiter.api.Test;
 
+/**
+ * 主循环测试
+ * 覆盖成功和关键失败路径
+ */
 class AgentEngineTest {
 
+  /**
+   * 工具执行后正常结束
+   */
   @Test
   void runsToolThenFinishes() {
     InMemoryStateStore store = new InMemoryStateStore();
@@ -51,6 +58,9 @@ class AgentEngineTest {
         TraceEventType.FINISHED);
   }
 
+  /**
+   * 找不到工具时失败
+   */
   @Test
   void failsWhenToolIsMissing() {
     InMemoryStateStore store = new InMemoryStateStore();
@@ -66,6 +76,9 @@ class AgentEngineTest {
     assertThat(result.state().failureReason()).isEqualTo("Unknown tool: missing");
   }
 
+  /**
+   * 中间件拒绝时失败
+   */
   @Test
   void failsWhenMiddlewareRejectsTool() {
     InMemoryStateStore store = new InMemoryStateStore();
@@ -83,6 +96,9 @@ class AgentEngineTest {
     assertThat(result.state().failureReason()).isEqualTo("Tool not allowed: echo");
   }
 
+  /**
+   * 达到步数上限时失败
+   */
   @Test
   void failsWhenMaxStepsIsExceeded() {
     InMemoryStateStore store = new InMemoryStateStore();
@@ -100,6 +116,10 @@ class AgentEngineTest {
     assertThat(result.state().stepCount()).isEqualTo(1);
   }
 
+  /**
+   * 第一次返回工具调用
+   * 第二次返回结束决策
+   */
   private static final class ScriptedProvider implements ModelProvider {
     @Override
     public Decision decide(AgentState state) {
@@ -110,6 +130,9 @@ class AgentEngineTest {
     }
   }
 
+  /**
+   * 永远返回缺失工具
+   */
   private static final class MissingToolProvider implements ModelProvider {
     @Override
     public Decision decide(AgentState state) {
@@ -117,6 +140,9 @@ class AgentEngineTest {
     }
   }
 
+  /**
+   * 永远返回 echo 工具
+   */
   private static final class ToolOnlyProvider implements ModelProvider {
     @Override
     public Decision decide(AgentState state) {
@@ -124,6 +150,9 @@ class AgentEngineTest {
     }
   }
 
+  /*
+   * 简单回显工具
+   */
   private static final class EchoTool implements Tool {
     @Override
     public String name() {

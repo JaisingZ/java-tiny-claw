@@ -2,6 +2,10 @@ package com.jaising.agent.trace;
 
 import java.util.Objects;
 
+/**
+ * 轨迹事件
+ * 保存事件类型 任务 步数和详情
+ */
 public final class TraceEvent {
 
   private final TraceEventType type;
@@ -10,6 +14,9 @@ public final class TraceEvent {
   private final String detail;
   private final long durationMillis;
 
+  /**
+   * 创建轨迹事件
+   */
   public TraceEvent(TraceEventType type, String taskId, int step, String detail,
       long durationMillis) {
     this.type = type;
@@ -59,6 +66,10 @@ public final class TraceEvent {
     return durationMillis;
   }
 
+  /**
+   * 按字段比较
+   * 便于测试检查
+   */
   @Override
   public boolean equals(Object other) {
     if (this == other) {

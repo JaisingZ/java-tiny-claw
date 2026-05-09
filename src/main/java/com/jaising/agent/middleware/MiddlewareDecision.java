@@ -2,20 +2,34 @@ package com.jaising.agent.middleware;
 
 import java.util.Objects;
 
+/**
+ * 中间件决策
+ * 标记是否允许继续
+ */
 public final class MiddlewareDecision {
 
   private final boolean allowed;
   private final String reason;
 
+  /**
+   * 创建决策
+   * 仅供静态工厂使用
+   */
   private MiddlewareDecision(boolean allowed, String reason) {
     this.allowed = allowed;
     this.reason = reason;
   }
 
+  /**
+   * 允许执行
+   */
   public static MiddlewareDecision allow() {
     return new MiddlewareDecision(true, null);
   }
 
+  /**
+   * 拒绝执行
+   */
   public static MiddlewareDecision deny(String reason) {
     return new MiddlewareDecision(false, reason);
   }

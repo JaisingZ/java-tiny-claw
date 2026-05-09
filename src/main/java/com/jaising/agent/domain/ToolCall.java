@@ -5,11 +5,19 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 工具调用
+ * 保存工具名和参数
+ */
 public final class ToolCall {
 
   private final String toolName;
   private final Map<String, Object> arguments;
 
+  /**
+   * 创建工具调用
+   * 参数保持不可变
+   */
   public ToolCall(String toolName, Map<String, Object> arguments) {
     this.toolName = toolName;
     this.arguments = Collections.unmodifiableMap(new LinkedHashMap<String, Object>(arguments));

@@ -2,14 +2,26 @@ package com.jaising.agent.domain;
 
 import java.util.Objects;
 
+/**
+ * 结束决策
+ * 表示任务已经可以收口
+ */
 public final class FinishDecision implements Decision {
 
   private final String answer;
 
+  /**
+   * 创建结束决策
+   * 携带最终答案
+   */
   public FinishDecision(String answer) {
     this.answer = answer;
   }
 
+  /**
+   * 读取最终答案
+   * 供运行时写回状态
+   */
   public String answer() {
     return answer;
   }

@@ -11,8 +11,15 @@ import java.util.Collections;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/**
+ * 白名单中间件测试
+ * 验证越权工具会被拦截
+ */
 class AllowListMiddlewareTest {
 
+  /**
+   * 拒绝白名单外工具
+   */
   @Test
   void deniesToolOutsideAllowList() {
     Set<String> allowed = new HashSet<String>(Arrays.asList("read", "write", "bash"));

@@ -2,10 +2,18 @@ package com.jaising.agent.domain;
 
 import java.util.Objects;
 
+/**
+ * 工具决策
+ * 告诉运行时下一步执行哪个工具
+ */
 public final class ToolDecision implements Decision {
 
   private final ToolCall call;
 
+  /**
+   * 创建工具决策
+   * 直接包住一次调用
+   */
   public ToolDecision(ToolCall call) {
     this.call = call;
   }

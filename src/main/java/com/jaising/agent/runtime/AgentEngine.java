@@ -21,6 +21,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 主循环运行时
+ * 负责模型决策 工具执行 状态推进和审计
+ */
 public final class AgentEngine {
 
     private final ModelProvider provider;
@@ -41,21 +45,31 @@ public final class AgentEngine {
         this.maxSteps = maxSteps;
     }
 
+    /**
+     * 运行一个任务
+     * 只在运行态持续推进循环
+     */
     public RunResult run(Task task) {
+        // 先恢复已有状态
         AgentState state = stateStore.load(task.taskId()).orElse(AgentState.create(task));
+        // 非运行态直接返回
         if (state.status() != AgentStatus.RUNNING) {
             return new RunResult(state);
         }
 
+        // 逐轮推进直到结束或超步数
         while (state.status() == AgentStatus.RUNNING && state.stepCount() < maxSteps) {
+            // 记录模型请求起点
             long modelStart = System.nanoTime();
             traceRecorder.record(new TraceEvent(TraceEventType.MODEL_REQUEST, state.taskId(),
                     state.stepCount(), state.goal(), 0L));
 
             Decision decision;
             try {
+                // 让模型给出下一步决策
                 decision = provider.decide(state);
             } catch (RuntimeException ex) {
+                // 模型异常直接失败
                 state = state.fail("provider_error: " + ex.getMessage());
                 stateStore.save(state);
                 traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
@@ -63,10 +77,12 @@ public final class AgentEngine {
                 return new RunResult(state);
             }
 
+            // 记录模型耗时
             long modelDuration = elapsedMillis(modelStart);
             traceRecorder.record(new TraceEvent(TraceEventType.MODEL_RESPONSE, state.taskId(),
                     state.stepCount(), decision.getClass().getSimpleName(), modelDuration));
 
+            // 结束决策直接收口
             if (decision instanceof FinishDecision) {
                 FinishDecision finish = (FinishDecision) decision;
                 state = state.finish(finish.answer());
@@ -76,10 +92,12 @@ public final class AgentEngine {
                 return new RunResult(state);
             }
 
+            // 工具决策先过中间层
             if (decision instanceof ToolDecision) {
                 ToolDecision toolDecision = (ToolDecision) decision;
                 MiddlewareDecision middlewareDecision = checkMiddleware(state, toolDecision.call());
                 if (!middlewareDecision.allowed()) {
+                    // 拦截失败直接终止
                     state = state.fail(middlewareDecision.reason());
                     stateStore.save(state);
                     traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
@@ -89,8 +107,10 @@ public final class AgentEngine {
 
                 Tool tool;
                 try {
+                    // 解析目标工具
                     tool = toolRegistry.require(toolDecision.call().toolName());
                 } catch (RuntimeException ex) {
+                    // 未知工具直接失败
                     state = state.fail(ex.getMessage());
                     stateStore.save(state);
                     traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
@@ -98,14 +118,17 @@ public final class AgentEngine {
                     return new RunResult(state);
                 }
 
+                // 记录工具调用起点
                 long toolStart = System.nanoTime();
                 traceRecorder.record(new TraceEvent(TraceEventType.TOOL_CALL, state.taskId(),
                         state.stepCount(), toolDecision.call().toolName(), 0L));
 
                 ToolResult toolResult;
                 try {
+                    // 执行工具并获取结果
                     toolResult = tool.execute(toolDecision.call(), state);
                 } catch (RuntimeException ex) {
+                    // 工具异常直接失败
                     state = state.fail("tool_error: " + ex.getMessage());
                     stateStore.save(state);
                     traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
@@ -113,12 +136,14 @@ public final class AgentEngine {
                     return new RunResult(state);
                 }
 
+                // 记录工具耗时和结果
                 long toolDuration = elapsedMillis(toolStart);
                 traceRecorder.record(new TraceEvent(TraceEventType.TOOL_RESULT, state.taskId(),
                         state.stepCount(), toolResult.success() ? toolResult.output() : toolResult.errorMessage(),
                         toolDuration));
 
                 if (!toolResult.success()) {
+                    // 工具失败直接收口
                     state = state.fail(toolResult.errorMessage());
                     stateStore.save(state);
                     traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
@@ -126,11 +151,13 @@ public final class AgentEngine {
                     return new RunResult(state);
                 }
 
+                // 成功后推进一步并写入观测
                 state = state.advance().observe(toolResult.output());
                 stateStore.save(state);
                 continue;
             }
 
+            // 未支持的决策类型直接失败
             state = state.fail("unsupported_decision");
             stateStore.save(state);
             traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
@@ -138,6 +165,7 @@ public final class AgentEngine {
             return new RunResult(state);
         }
 
+        // 到达步数上限后失败
         if (state.status() == AgentStatus.RUNNING) {
             state = state.fail("max_steps_exceeded");
             stateStore.save(state);
@@ -148,6 +176,10 @@ public final class AgentEngine {
         return new RunResult(state);
     }
 
+    /**
+     * 统一执行工具前检查
+     * 任何拒绝都返回第一个原因
+     */
     private MiddlewareDecision checkMiddleware(AgentState state, ToolCall call) {
         for (ToolMiddleware toolMiddleware : middleware) {
             MiddlewareDecision decision = toolMiddleware.beforeTool(state, call);
@@ -158,6 +190,10 @@ public final class AgentEngine {
         return MiddlewareDecision.allow();
     }
 
+    /**
+     * 计算毫秒耗时
+     * 仅用于 trace
+     */
     private long elapsedMillis(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000L;
     }

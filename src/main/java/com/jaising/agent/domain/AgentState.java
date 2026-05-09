@@ -7,6 +7,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Agent 状态
+ * 保存任务进度 观测结果和终态信息
+ */
 public final class AgentState {
 
   private final String taskId;
@@ -18,6 +22,10 @@ public final class AgentState {
   private final String failureReason;
   private final String pauseReason;
 
+  /**
+   * 反序列化入口
+   * 保证状态可以落盘和恢复
+   */
   @JsonCreator
   public AgentState(
       @JsonProperty("taskId") String taskId,
@@ -41,16 +49,28 @@ public final class AgentState {
     this.pauseReason = pauseReason;
   }
 
+  /**
+   * 创建新任务状态
+   * 初始为运行态
+   */
   public static AgentState create(Task task) {
     return new AgentState(task.taskId(), task.goal(), AgentStatus.RUNNING, 0,
         Collections.<String>emptyList(), null, null, null);
   }
 
+  /**
+   * 推进一步
+   * 只增加步数 不改终态
+   */
   public AgentState advance() {
     return new AgentState(taskId, goal, status, stepCount + 1, observations, finalAnswer,
         failureReason, pauseReason);
   }
 
+  /**
+   * 追加一次观测
+   * 记录工具输出
+   */
   public AgentState observe(String observation) {
     List<String> nextObservations = new ArrayList<String>(observations);
     nextObservations.add(observation);
@@ -58,16 +78,28 @@ public final class AgentState {
         failureReason, pauseReason);
   }
 
+  /**
+   * 标记成功
+   * 清空失败和暂停原因
+   */
   public AgentState finish(String answer) {
     return new AgentState(taskId, goal, AgentStatus.SUCCESS, stepCount, observations, answer,
         null, null);
   }
 
+  /**
+   * 标记失败
+   * 保留已有观测
+   */
   public AgentState fail(String reason) {
     return new AgentState(taskId, goal, AgentStatus.FAILED, stepCount, observations,
         finalAnswer, reason, pauseReason);
   }
 
+  /*
+   * 标记暂停
+   * 预留给人工介入
+   */
   public AgentState pause(String reason) {
     return new AgentState(taskId, goal, AgentStatus.PAUSED, stepCount, observations,
         finalAnswer, failureReason, reason);
