@@ -2,6 +2,8 @@ package com.jaising.agent.tool;
 
 import com.jaising.agent.domain.AgentState;
 import com.jaising.agent.domain.ToolCall;
+import com.jaising.agent.domain.ToolDefinition;
+import java.util.Collections;
 
 /**
  * 工具接口
@@ -12,6 +14,14 @@ public interface Tool {
      * 返回工具名称。
      */
     String name();
+
+    /**
+     * 返回提供给模型的工具定义。
+     */
+    default ToolDefinition definition() {
+        return new ToolDefinition(name(), name(),
+                Collections.<String, Object>singletonMap("type", "object"));
+    }
 
     /**
      * 执行工具调用。

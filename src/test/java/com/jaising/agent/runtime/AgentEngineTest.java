@@ -11,6 +11,7 @@ import com.jaising.agent.domain.Task;
 import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
+import com.jaising.agent.domain.ToolDefinition;
 import com.jaising.agent.middleware.AllowAllMiddleware;
 import com.jaising.agent.middleware.AllowListMiddleware;
 import com.jaising.agent.provider.ModelProvider;
@@ -145,6 +146,11 @@ class AgentEngineTest {
                 DecisionPhase.ACTION,
                 DecisionPhase.THINKING,
                 DecisionPhase.ACTION);
+        assertThat(provider.toolsByPhase().get(0)).isEmpty();
+        assertThat(provider.toolsByPhase().get(1)).containsExactly(new ToolDefinition(
+                "echo",
+                "echo",
+                Collections.<String, Object>singletonMap("type", "object")));
         assertThat(trace.events()).extracting(event -> event.type()).contains(
                 TraceEventType.THINKING_REQUEST,
                 TraceEventType.THINKING_RESPONSE,
@@ -199,7 +205,7 @@ class AgentEngineTest {
          * 根据状态和阶段返回模型决策。
          */
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase) {
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (state.observations().isEmpty()) {
                 return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
             }
@@ -215,7 +221,7 @@ class AgentEngineTest {
          * 根据状态和阶段返回模型决策。
          */
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase) {
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall("missing", Collections.<String, Object>emptyMap()));
         }
     }
@@ -228,7 +234,7 @@ class AgentEngineTest {
          * 根据状态和阶段返回模型决策。
          */
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase) {
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
         }
     }
@@ -238,13 +244,15 @@ class AgentEngineTest {
      */
     private static final class ThinkingScriptedProvider implements ModelProvider {
         private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
+        private final List<List<ToolDefinition>> toolsByPhase = new ArrayList<List<ToolDefinition>>();
 
         /**
          * 根据状态和阶段返回模型决策。
          */
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase) {
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             phases.add(phase);
+            toolsByPhase.add(availableTools);
             if (phase == DecisionPhase.THINKING) {
                 if (state.observations().isEmpty()) {
                     return new ThinkingDecision("plan to call echo");
@@ -260,6 +268,10 @@ class AgentEngineTest {
         List<DecisionPhase> phases() {
             return phases;
         }
+
+        List<List<ToolDefinition>> toolsByPhase() {
+            return toolsByPhase;
+        }
     }
 
     /**
@@ -270,7 +282,7 @@ class AgentEngineTest {
          * 根据状态和阶段返回模型决策。
          */
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase) {
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (phase == DecisionPhase.THINKING) {
                 throw new RuntimeException("boom");
             }
@@ -286,7 +298,7 @@ class AgentEngineTest {
          * 根据状态和阶段返回模型决策。
          */
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase) {
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
         }
     }

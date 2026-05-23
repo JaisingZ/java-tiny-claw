@@ -82,7 +82,8 @@ public final class AgentEngine {
 
                 Decision thinkingDecision;
                 try {
-                    thinkingDecision = provider.decide(state, DecisionPhase.THINKING);
+                    thinkingDecision = provider.decide(state, DecisionPhase.THINKING,
+                            Collections.emptyList());
                 } catch (RuntimeException ex) {
                     state = state.fail("provider_error: " + ex.getMessage());
                     stateStore.save(state);
@@ -116,7 +117,7 @@ public final class AgentEngine {
             Decision decision;
             try {
                 // 让模型给出下一步决策
-                decision = provider.decide(state, DecisionPhase.ACTION);
+                decision = provider.decide(state, DecisionPhase.ACTION, toolRegistry.definitions());
             } catch (RuntimeException ex) {
                 // 模型异常直接失败
                 state = state.fail("provider_error: " + ex.getMessage());

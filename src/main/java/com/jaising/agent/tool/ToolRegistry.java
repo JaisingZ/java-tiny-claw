@@ -1,7 +1,10 @@
 package com.jaising.agent.tool;
 
+import com.jaising.agent.domain.ToolDefinition;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,5 +43,16 @@ public final class ToolRegistry {
      */
     public Map<String, Tool> snapshot() {
         return Collections.unmodifiableMap(tools);
+    }
+
+    /**
+     * 输出工具定义快照
+     */
+    public List<ToolDefinition> definitions() {
+        List<ToolDefinition> definitions = new ArrayList<ToolDefinition>();
+        for (Tool tool : tools.values()) {
+            definitions.add(tool.definition());
+        }
+        return Collections.unmodifiableList(definitions);
     }
 }
