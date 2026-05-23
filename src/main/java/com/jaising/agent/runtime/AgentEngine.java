@@ -3,8 +3,10 @@ package com.jaising.agent.runtime;
 import com.jaising.agent.domain.AgentState;
 import com.jaising.agent.domain.AgentStatus;
 import com.jaising.agent.domain.Decision;
+import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
 import com.jaising.agent.domain.Task;
+import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.middleware.MiddlewareDecision;
@@ -33,16 +35,24 @@ public final class AgentEngine {
     private final StateStore stateStore;
     private final TraceRecorder traceRecorder;
     private final int maxSteps;
+    private final boolean enableThinking;
 
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
                        List<? extends ToolMiddleware> middleware, StateStore stateStore,
                        TraceRecorder traceRecorder, int maxSteps) {
+        this(provider, toolRegistry, middleware, stateStore, traceRecorder, maxSteps, false);
+    }
+
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
+                       List<? extends ToolMiddleware> middleware, StateStore stateStore,
+                       TraceRecorder traceRecorder, int maxSteps, boolean enableThinking) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
         this.middleware = Collections.unmodifiableList(new ArrayList<ToolMiddleware>(middleware));
         this.stateStore = stateStore;
         this.traceRecorder = traceRecorder;
         this.maxSteps = maxSteps;
+        this.enableThinking = enableThinking;
     }
 
     /**
@@ -59,6 +69,39 @@ public final class AgentEngine {
 
         // 逐轮推进直到结束或超步数
         while (state.status() == AgentStatus.RUNNING && state.stepCount() < maxSteps) {
+            if (enableThinking) {
+                long thinkingStart = System.nanoTime();
+                traceRecorder.record(new TraceEvent(TraceEventType.THINKING_REQUEST, state.taskId(),
+                        state.stepCount(), state.goal(), 0L));
+
+                Decision thinkingDecision;
+                try {
+                    thinkingDecision = provider.decide(state, DecisionPhase.THINKING);
+                } catch (RuntimeException ex) {
+                    state = state.fail("provider_error: " + ex.getMessage());
+                    stateStore.save(state);
+                    traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
+                            state.stepCount(), state.failureReason(), 0L));
+                    return new RunResult(state);
+                }
+
+                long thinkingDuration = elapsedMillis(thinkingStart);
+                traceRecorder.record(new TraceEvent(TraceEventType.THINKING_RESPONSE, state.taskId(),
+                        state.stepCount(), thinkingDecision.getClass().getSimpleName(), thinkingDuration));
+
+                if (!(thinkingDecision instanceof ThinkingDecision)) {
+                    state = state.fail("unsupported_thinking_decision");
+                    stateStore.save(state);
+                    traceRecorder.record(new TraceEvent(TraceEventType.FAILED, state.taskId(),
+                            state.stepCount(), "unsupported_thinking_decision", 0L));
+                    return new RunResult(state);
+                }
+
+                ThinkingDecision thinking = (ThinkingDecision) thinkingDecision;
+                state = state.think(thinking.thought());
+                stateStore.save(state);
+            }
+
             // 记录模型请求起点
             long modelStart = System.nanoTime();
             traceRecorder.record(new TraceEvent(TraceEventType.MODEL_REQUEST, state.taskId(),
@@ -67,7 +110,7 @@ public final class AgentEngine {
             Decision decision;
             try {
                 // 让模型给出下一步决策
-                decision = provider.decide(state);
+                decision = provider.decide(state, DecisionPhase.ACTION);
             } catch (RuntimeException ex) {
                 // 模型异常直接失败
                 state = state.fail("provider_error: " + ex.getMessage());

@@ -18,6 +18,7 @@ public final class AgentState {
   private final AgentStatus status;
   private final int stepCount;
   private final List<String> observations;
+  private final String lastThought;
   private final String finalAnswer;
   private final String failureReason;
   private final String pauseReason;
@@ -33,6 +34,7 @@ public final class AgentState {
       @JsonProperty("status") AgentStatus status,
       @JsonProperty("stepCount") int stepCount,
       @JsonProperty("observations") List<String> observations,
+      @JsonProperty("lastThought") String lastThought,
       @JsonProperty("finalAnswer") String finalAnswer,
       @JsonProperty("failureReason") String failureReason,
       @JsonProperty("pauseReason") String pauseReason) {
@@ -44,6 +46,7 @@ public final class AgentState {
         ? Collections.<String>emptyList()
         : observations;
     this.observations = Collections.unmodifiableList(new ArrayList<String>(safeObservations));
+    this.lastThought = lastThought;
     this.finalAnswer = finalAnswer;
     this.failureReason = failureReason;
     this.pauseReason = pauseReason;
@@ -55,7 +58,7 @@ public final class AgentState {
    */
   public static AgentState create(Task task) {
     return new AgentState(task.taskId(), task.goal(), AgentStatus.RUNNING, 0,
-        Collections.<String>emptyList(), null, null, null);
+        Collections.<String>emptyList(), null, null, null, null);
   }
 
   /**
@@ -63,7 +66,7 @@ public final class AgentState {
    * 只增加步数 不改终态
    */
   public AgentState advance() {
-    return new AgentState(taskId, goal, status, stepCount + 1, observations, finalAnswer,
+    return new AgentState(taskId, goal, status, stepCount + 1, observations, lastThought, finalAnswer,
         failureReason, pauseReason);
   }
 
@@ -74,7 +77,16 @@ public final class AgentState {
   public AgentState observe(String observation) {
     List<String> nextObservations = new ArrayList<String>(observations);
     nextObservations.add(observation);
-    return new AgentState(taskId, goal, status, stepCount, nextObservations, finalAnswer,
+    return new AgentState(taskId, goal, status, stepCount, nextObservations, lastThought, finalAnswer,
+        failureReason, pauseReason);
+  }
+
+  /**
+   * 记录最近一次内部思考
+   * 不写入工具观测
+   */
+  public AgentState think(String thought) {
+    return new AgentState(taskId, goal, status, stepCount, observations, thought, finalAnswer,
         failureReason, pauseReason);
   }
 
@@ -83,7 +95,7 @@ public final class AgentState {
    * 清空失败和暂停原因
    */
   public AgentState finish(String answer) {
-    return new AgentState(taskId, goal, AgentStatus.SUCCESS, stepCount, observations, answer,
+    return new AgentState(taskId, goal, AgentStatus.SUCCESS, stepCount, observations, lastThought, answer,
         null, null);
   }
 
@@ -93,7 +105,7 @@ public final class AgentState {
    */
   public AgentState fail(String reason) {
     return new AgentState(taskId, goal, AgentStatus.FAILED, stepCount, observations,
-        finalAnswer, reason, pauseReason);
+        lastThought, finalAnswer, reason, pauseReason);
   }
 
   /*
@@ -102,7 +114,7 @@ public final class AgentState {
    */
   public AgentState pause(String reason) {
     return new AgentState(taskId, goal, AgentStatus.PAUSED, stepCount, observations,
-        finalAnswer, failureReason, reason);
+        lastThought, finalAnswer, failureReason, reason);
   }
 
   public String taskId() {
@@ -123,6 +135,10 @@ public final class AgentState {
 
   public List<String> observations() {
     return observations;
+  }
+
+  public String lastThought() {
+    return lastThought;
   }
 
   public String finalAnswer() {
@@ -157,6 +173,10 @@ public final class AgentState {
     return observations;
   }
 
+  public String getLastThought() {
+    return lastThought;
+  }
+
   public String getFinalAnswer() {
     return finalAnswer;
   }
@@ -183,6 +203,7 @@ public final class AgentState {
         && Objects.equals(goal, that.goal)
         && status == that.status
         && Objects.equals(observations, that.observations)
+        && Objects.equals(lastThought, that.lastThought)
         && Objects.equals(finalAnswer, that.finalAnswer)
         && Objects.equals(failureReason, that.failureReason)
         && Objects.equals(pauseReason, that.pauseReason);
@@ -190,7 +211,7 @@ public final class AgentState {
 
   @Override
   public int hashCode() {
-    return Objects.hash(taskId, goal, status, stepCount, observations, finalAnswer,
+    return Objects.hash(taskId, goal, status, stepCount, observations, lastThought, finalAnswer,
         failureReason, pauseReason);
   }
 }
