@@ -17,19 +17,19 @@ import org.junit.jupiter.api.Test;
  */
 class AllowListMiddlewareTest {
 
-  /**
-   * 拒绝白名单外工具
-   */
-  @Test
-  void deniesToolOutsideAllowList() {
-    Set<String> allowed = new HashSet<String>(Arrays.asList("read", "write", "bash"));
-    AllowListMiddleware middleware = new AllowListMiddleware(allowed);
+    /**
+     * 拒绝白名单外工具
+     */
+    @Test
+    void deniesToolOutsideAllowList() {
+        Set<String> allowed = new HashSet<String>(Arrays.asList("read", "write", "bash"));
+        AllowListMiddleware middleware = new AllowListMiddleware(allowed);
 
-    com.jaising.agent.middleware.MiddlewareDecision decision = middleware.beforeTool(
-        AgentState.create(new Task("task-1", "risk check")),
-        new ToolCall("rm", Collections.singletonMap("path", "/tmp/data")));
+        com.jaising.agent.middleware.MiddlewareDecision decision = middleware.beforeTool(
+                AgentState.create(new Task("task-1", "risk check")),
+                new ToolCall("rm", Collections.singletonMap("path", "/tmp/data")));
 
-    assertThat(decision.allowed()).isFalse();
-    assertThat(decision.reason()).contains("rm");
-  }
+        assertThat(decision.allowed()).isFalse();
+        assertThat(decision.reason()).contains("rm");
+    }
 }

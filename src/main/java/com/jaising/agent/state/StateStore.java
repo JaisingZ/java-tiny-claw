@@ -8,7 +8,13 @@ import java.util.Optional;
  * 负责恢复和保存任务状态
  */
 public interface StateStore {
-  Optional<AgentState> load(String taskId);
+    /**
+     * 读取任务状态。
+     */
+    Optional<AgentState> load(String taskId);
 
-  void save(AgentState state);
+    /**
+     * 保存任务状态。
+     */
+    void save(AgentState state);
 }

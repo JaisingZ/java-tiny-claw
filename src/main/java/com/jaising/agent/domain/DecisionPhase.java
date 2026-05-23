@@ -5,6 +5,6 @@ package com.jaising.agent.domain;
  * 用于隔离思考和行动
  */
 public enum DecisionPhase {
-  THINKING,
-  ACTION
+    THINKING,
+    ACTION
 }

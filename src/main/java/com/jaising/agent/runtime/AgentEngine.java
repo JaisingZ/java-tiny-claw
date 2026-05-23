@@ -37,15 +37,21 @@ public final class AgentEngine {
     private final int maxSteps;
     private final boolean enableThinking;
 
+    /**
+     * 创建 AgentEngine。
+     */
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
-                       List<? extends ToolMiddleware> middleware, StateStore stateStore,
-                       TraceRecorder traceRecorder, int maxSteps) {
+            List<? extends ToolMiddleware> middleware, StateStore stateStore,
+            TraceRecorder traceRecorder, int maxSteps) {
         this(provider, toolRegistry, middleware, stateStore, traceRecorder, maxSteps, false);
     }
 
+    /**
+     * 创建 AgentEngine。
+     */
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
-                       List<? extends ToolMiddleware> middleware, StateStore stateStore,
-                       TraceRecorder traceRecorder, int maxSteps, boolean enableThinking) {
+            List<? extends ToolMiddleware> middleware, StateStore stateStore,
+            TraceRecorder traceRecorder, int maxSteps, boolean enableThinking) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
         this.middleware = Collections.unmodifiableList(new ArrayList<ToolMiddleware>(middleware));

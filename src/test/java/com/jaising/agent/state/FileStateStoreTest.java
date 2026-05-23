@@ -14,21 +14,21 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class FileStateStoreTest {
 
-  @TempDir
-  Path tempDir;
+    @TempDir
+    Path tempDir;
 
-  /**
-   * 保存后可再次读取
-   */
-  @Test
-  void savesAndLoadsState() {
-    FileStateStore store = new FileStateStore(tempDir);
-    AgentState state = AgentState.create(new Task("task-1", "write docs"))
-        .advance()
-        .observe("first observation");
+    /**
+     * 保存后可再次读取
+     */
+    @Test
+    void savesAndLoadsState() {
+        FileStateStore store = new FileStateStore(tempDir);
+        AgentState state = AgentState.create(new Task("task-1", "write docs"))
+                .advance()
+                .observe("first observation");
 
-    store.save(state);
+        store.save(state);
 
-    assertThat(store.load("task-1")).hasValue(state);
-  }
+        assertThat(store.load("task-1")).hasValue(state);
+    }
 }

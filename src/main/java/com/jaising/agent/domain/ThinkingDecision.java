@@ -8,44 +8,59 @@ import java.util.Objects;
  */
 public final class ThinkingDecision implements Decision {
 
-  private final String thought;
+    private final String thought;
 
-  /**
-   * 创建内部思考
-   */
-  public ThinkingDecision(String thought) {
-    this.thought = thought;
-  }
-
-  public String thought() {
-    return thought;
-  }
-
-  public String getThought() {
-    return thought;
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (this == other) {
-      return true;
+    /**
+     * 创建内部思考
+     */
+    public ThinkingDecision(String thought) {
+        this.thought = thought;
     }
-    if (!(other instanceof ThinkingDecision)) {
-      return false;
+
+    /**
+     * 执行 thought 操作。
+     */
+    public String thought() {
+        return thought;
     }
-    ThinkingDecision that = (ThinkingDecision) other;
-    return Objects.equals(thought, that.thought);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(thought);
-  }
+    /**
+     * 读取 Thought。
+     */
+    public String getThought() {
+        return thought;
+    }
 
-  @Override
-  public String toString() {
-    return "ThinkingDecision{"
-        + "thought='" + thought + '\''
-        + '}';
-  }
+    /**
+     * 比较对象是否相等。
+     */
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ThinkingDecision)) {
+            return false;
+        }
+        ThinkingDecision that = (ThinkingDecision) other;
+        return Objects.equals(thought, that.thought);
+    }
+
+    /**
+     * 计算对象哈希值。
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(thought);
+    }
+
+    /**
+     * 返回可读字符串。
+     */
+    @Override
+    public String toString() {
+        return "ThinkingDecision{"
+                + "thought='" + thought + '\''
+                + '}';
+    }
 }

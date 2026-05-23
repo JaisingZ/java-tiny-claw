@@ -6,14 +6,14 @@ package com.jaising.agent.app;
  */
 public final class AgentApplication {
 
-  private AgentApplication() {
-  }
+    private AgentApplication() {
+    }
 
-  /*
-   * 程序入口
-   * 当前版本仅输出启动信息
-   */
-  public static void main(String[] args) {
-    System.out.println("java-tiny-claw agent harness");
-  }
+    /**
+     * 程序入口
+     * 当前版本仅输出启动信息
+     */
+    public static void main(String[] args) {
+        System.out.println("java-tiny-claw agent harness");
+    }
 }

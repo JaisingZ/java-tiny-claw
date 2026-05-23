@@ -12,25 +12,25 @@ import java.util.Set;
  */
 public final class AllowListMiddleware implements ToolMiddleware {
 
-  private final Set<String> allowedTools;
+    private final Set<String> allowedTools;
 
-  /**
-   * 创建白名单
-   * 复制后转成不可变集合
-   */
-  public AllowListMiddleware(Set<String> allowedTools) {
-    this.allowedTools = Collections.unmodifiableSet(new HashSet<String>(allowedTools));
-  }
-
-  /**
-   * 执行前检查
-   * 不在白名单就拒绝
-   */
-  @Override
-  public MiddlewareDecision beforeTool(AgentState state, ToolCall call) {
-    if (allowedTools.contains(call.toolName())) {
-      return MiddlewareDecision.allow();
+    /**
+     * 创建白名单
+     * 复制后转成不可变集合
+     */
+    public AllowListMiddleware(Set<String> allowedTools) {
+        this.allowedTools = Collections.unmodifiableSet(new HashSet<String>(allowedTools));
     }
-    return MiddlewareDecision.deny("Tool not allowed: " + call.toolName());
-  }
+
+    /**
+     * 执行前检查
+     * 不在白名单就拒绝
+     */
+    @Override
+    public MiddlewareDecision beforeTool(AgentState state, ToolCall call) {
+        if (allowedTools.contains(call.toolName())) {
+            return MiddlewareDecision.allow();
+        }
+        return MiddlewareDecision.deny("Tool not allowed: " + call.toolName());
+    }
 }

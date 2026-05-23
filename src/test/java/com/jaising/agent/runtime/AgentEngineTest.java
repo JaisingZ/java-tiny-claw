@@ -33,258 +33,282 @@ import org.junit.jupiter.api.Test;
  */
 class AgentEngineTest {
 
-  /**
-   * 工具执行后正常结束
-   */
-  @Test
-  void runsToolThenFinishes() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-    registry.register(new EchoTool());
+    /**
+     * 工具执行后正常结束
+     */
+    @Test
+    void runsToolThenFinishes() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
 
-    ScriptedProvider provider = new ScriptedProvider();
-    AgentEngine engine = new AgentEngine(provider, registry,
-        Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+        ScriptedProvider provider = new ScriptedProvider();
+        AgentEngine engine = new AgentEngine(provider, registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
 
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-1", "echo once"));
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-1", "echo once"));
 
-    assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-    assertThat(result.state().finalAnswer()).isEqualTo("done");
-    assertThat(result.state().observations()).containsExactly("hello");
-    assertThat(store.load("task-1")).isPresent();
-    assertThat(store.load("task-1").orElseThrow().status()).isEqualTo(AgentStatus.SUCCESS);
-    assertThat(trace.events()).extracting(event -> event.type()).contains(
-        TraceEventType.MODEL_REQUEST,
-        TraceEventType.TOOL_CALL,
-        TraceEventType.TOOL_RESULT,
-        TraceEventType.MODEL_REQUEST,
-        TraceEventType.FINISHED);
-  }
-
-  /**
-   * 找不到工具时失败
-   */
-  @Test
-  void failsWhenToolIsMissing() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-
-    AgentEngine engine = new AgentEngine(new MissingToolProvider(), registry,
-        Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
-
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-2", "missing tool"));
-
-    assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-    assertThat(result.state().failureReason()).isEqualTo("Unknown tool: missing");
-  }
-
-  /**
-   * 中间件拒绝时失败
-   */
-  @Test
-  void failsWhenMiddlewareRejectsTool() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-    registry.register(new EchoTool());
-
-    AgentEngine engine = new AgentEngine(new ToolOnlyProvider(), registry,
-        Arrays.asList(new AllowListMiddleware(new HashSet<String>(Collections.singleton("noop")))),
-        store, trace, 4);
-
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-3", "blocked"));
-
-    assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-    assertThat(result.state().failureReason()).isEqualTo("Tool not allowed: echo");
-  }
-
-  /**
-   * 达到步数上限时失败
-   */
-  @Test
-  void failsWhenMaxStepsIsExceeded() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-    registry.register(new EchoTool());
-
-    AgentEngine engine = new AgentEngine(new ToolOnlyProvider(), registry,
-        Arrays.asList(new AllowAllMiddleware()), store, trace, 1);
-
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-4", "loop forever"));
-
-    assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-    assertThat(result.state().failureReason()).isEqualTo("max_steps_exceeded");
-    assertThat(result.state().stepCount()).isEqualTo(1);
-  }
-
-  /**
-   * 开启慢思考时 每轮先思考 再行动
-   */
-  @Test
-  void runsThinkingBeforeActionWhenEnabled() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-    registry.register(new EchoTool());
-
-    ThinkingScriptedProvider provider = new ThinkingScriptedProvider();
-    AgentEngine engine = new AgentEngine(provider, registry,
-        Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true);
-
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-5", "echo once"));
-
-    assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-    assertThat(result.state().finalAnswer()).isEqualTo("done");
-    assertThat(result.state().observations()).containsExactly("hello");
-    assertThat(result.state().lastThought()).isEqualTo("plan to finish");
-    assertThat(provider.phases()).containsExactly(
-        DecisionPhase.THINKING,
-        DecisionPhase.ACTION,
-        DecisionPhase.THINKING,
-        DecisionPhase.ACTION);
-    assertThat(trace.events()).extracting(event -> event.type()).contains(
-        TraceEventType.THINKING_REQUEST,
-        TraceEventType.THINKING_RESPONSE,
-        TraceEventType.TOOL_RESULT,
-        TraceEventType.FINISHED);
-  }
-
-  /**
-   * 慢思考阶段模型异常直接失败
-   */
-  @Test
-  void failsWhenThinkingProviderThrows() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-
-    AgentEngine engine = new AgentEngine(new ThrowingThinkingProvider(), registry,
-        Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true);
-
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-6", "think fails"));
-
-    assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-    assertThat(result.state().failureReason()).isEqualTo("provider_error: boom");
-  }
-
-  /**
-   * 慢思考阶段不允许直接调用工具
-   */
-  @Test
-  void failsWhenThinkingReturnsToolDecision() {
-    InMemoryStateStore store = new InMemoryStateStore();
-    InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-    ToolRegistry registry = new ToolRegistry();
-    registry.register(new EchoTool());
-
-    AgentEngine engine = new AgentEngine(new ToolDuringThinkingProvider(), registry,
-        Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true);
-
-    com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-7", "bad thinking"));
-
-    assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-    assertThat(result.state().failureReason()).isEqualTo("unsupported_thinking_decision");
-    assertThat(result.state().observations()).isEmpty();
-  }
-
-  /**
-   * 第一次返回工具调用
-   * 第二次返回结束决策
-   */
-  private static final class ScriptedProvider implements ModelProvider {
-    @Override
-    public Decision decide(AgentState state, DecisionPhase phase) {
-      if (state.observations().isEmpty()) {
-        return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
-      }
-      return new FinishDecision("done");
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(result.state().finalAnswer()).isEqualTo("done");
+        assertThat(result.state().observations()).containsExactly("hello");
+        assertThat(store.load("task-1")).isPresent();
+        assertThat(store.load("task-1").orElseThrow().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(trace.events()).extracting(event -> event.type()).contains(
+                TraceEventType.MODEL_REQUEST,
+                TraceEventType.TOOL_CALL,
+                TraceEventType.TOOL_RESULT,
+                TraceEventType.MODEL_REQUEST,
+                TraceEventType.FINISHED);
     }
-  }
 
-  /**
-   * 永远返回缺失工具
-   */
-  private static final class MissingToolProvider implements ModelProvider {
-    @Override
-    public Decision decide(AgentState state, DecisionPhase phase) {
-      return new ToolDecision(new ToolCall("missing", Collections.<String, Object>emptyMap()));
+    /**
+     * 找不到工具时失败
+     */
+    @Test
+    void failsWhenToolIsMissing() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+
+        AgentEngine engine = new AgentEngine(new MissingToolProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-2", "missing tool"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
+        assertThat(result.state().failureReason()).isEqualTo("Unknown tool: missing");
     }
-  }
 
-  /**
-   * 永远返回 echo 工具
-   */
-  private static final class ToolOnlyProvider implements ModelProvider {
-    @Override
-    public Decision decide(AgentState state, DecisionPhase phase) {
-      return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
+    /**
+     * 中间件拒绝时失败
+     */
+    @Test
+    void failsWhenMiddlewareRejectsTool() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
+
+        AgentEngine engine = new AgentEngine(new ToolOnlyProvider(), registry,
+                Arrays.asList(new AllowListMiddleware(new HashSet<String>(Collections.singleton("noop")))),
+                store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-3", "blocked"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
+        assertThat(result.state().failureReason()).isEqualTo("Tool not allowed: echo");
     }
-  }
 
-  /**
-   * 按阶段返回思考 行动和结束
-   */
-  private static final class ThinkingScriptedProvider implements ModelProvider {
-    private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
+    /**
+     * 达到步数上限时失败
+     */
+    @Test
+    void failsWhenMaxStepsIsExceeded() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
 
-    @Override
-    public Decision decide(AgentState state, DecisionPhase phase) {
-      phases.add(phase);
-      if (phase == DecisionPhase.THINKING) {
-        if (state.observations().isEmpty()) {
-          return new ThinkingDecision("plan to call echo");
+        AgentEngine engine = new AgentEngine(new ToolOnlyProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 1);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-4", "loop forever"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
+        assertThat(result.state().failureReason()).isEqualTo("max_steps_exceeded");
+        assertThat(result.state().stepCount()).isEqualTo(1);
+    }
+
+    /**
+     * 开启慢思考时 每轮先思考 再行动
+     */
+    @Test
+    void runsThinkingBeforeActionWhenEnabled() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
+
+        ThinkingScriptedProvider provider = new ThinkingScriptedProvider();
+        AgentEngine engine = new AgentEngine(provider, registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-5", "echo once"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(result.state().finalAnswer()).isEqualTo("done");
+        assertThat(result.state().observations()).containsExactly("hello");
+        assertThat(result.state().lastThought()).isEqualTo("plan to finish");
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.ACTION,
+                DecisionPhase.THINKING,
+                DecisionPhase.ACTION);
+        assertThat(trace.events()).extracting(event -> event.type()).contains(
+                TraceEventType.THINKING_REQUEST,
+                TraceEventType.THINKING_RESPONSE,
+                TraceEventType.TOOL_RESULT,
+                TraceEventType.FINISHED);
+    }
+
+    /**
+     * 慢思考阶段模型异常直接失败
+     */
+    @Test
+    void failsWhenThinkingProviderThrows() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+
+        AgentEngine engine = new AgentEngine(new ThrowingThinkingProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-6", "think fails"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
+        assertThat(result.state().failureReason()).isEqualTo("provider_error: boom");
+    }
+
+    /**
+     * 慢思考阶段不允许直接调用工具
+     */
+    @Test
+    void failsWhenThinkingReturnsToolDecision() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
+
+        AgentEngine engine = new AgentEngine(new ToolDuringThinkingProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-7", "bad thinking"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
+        assertThat(result.state().failureReason()).isEqualTo("unsupported_thinking_decision");
+        assertThat(result.state().observations()).isEmpty();
+    }
+
+    /**
+     * 第一次返回工具调用
+     * 第二次返回结束决策
+     */
+    private static final class ScriptedProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase) {
+            if (state.observations().isEmpty()) {
+                return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
+            }
+            return new FinishDecision("done");
         }
-        return new ThinkingDecision("plan to finish");
-      }
-      if (state.observations().isEmpty()) {
-        return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
-      }
-      return new FinishDecision("done");
     }
 
-    List<DecisionPhase> phases() {
-      return phases;
-    }
-  }
-
-  /**
-   * 思考阶段抛异常
-   */
-  private static final class ThrowingThinkingProvider implements ModelProvider {
-    @Override
-    public Decision decide(AgentState state, DecisionPhase phase) {
-      if (phase == DecisionPhase.THINKING) {
-        throw new RuntimeException("boom");
-      }
-      return new FinishDecision("unused");
-    }
-  }
-
-  /**
-   * 思考阶段错误地请求工具
-   */
-  private static final class ToolDuringThinkingProvider implements ModelProvider {
-    @Override
-    public Decision decide(AgentState state, DecisionPhase phase) {
-      return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
-    }
-  }
-
-  /*
-   * 简单回显工具
-   */
-  private static final class EchoTool implements Tool {
-    @Override
-    public String name() {
-      return "echo";
+    /**
+     * 永远返回缺失工具
+     */
+    private static final class MissingToolProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase) {
+            return new ToolDecision(new ToolCall("missing", Collections.<String, Object>emptyMap()));
+        }
     }
 
-    @Override
-    public ToolResult execute(ToolCall call, AgentState state) {
-      return ToolResult.success(String.valueOf(call.arguments().get("text")));
+    /**
+     * 永远返回 echo 工具
+     */
+    private static final class ToolOnlyProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase) {
+            return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
+        }
     }
-  }
+
+    /**
+     * 按阶段返回思考 行动和结束
+     */
+    private static final class ThinkingScriptedProvider implements ModelProvider {
+        private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
+
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase) {
+            phases.add(phase);
+            if (phase == DecisionPhase.THINKING) {
+                if (state.observations().isEmpty()) {
+                    return new ThinkingDecision("plan to call echo");
+                }
+                return new ThinkingDecision("plan to finish");
+            }
+            if (state.observations().isEmpty()) {
+                return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
+            }
+            return new FinishDecision("done");
+        }
+
+        List<DecisionPhase> phases() {
+            return phases;
+        }
+    }
+
+    /**
+     * 思考阶段抛异常
+     */
+    private static final class ThrowingThinkingProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase) {
+            if (phase == DecisionPhase.THINKING) {
+                throw new RuntimeException("boom");
+            }
+            return new FinishDecision("unused");
+        }
+    }
+
+    /**
+     * 思考阶段错误地请求工具
+     */
+    private static final class ToolDuringThinkingProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase) {
+            return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
+        }
+    }
+
+    /**
+     * 简单回显工具
+     */
+    private static final class EchoTool implements Tool {
+        /**
+         * 返回工具名称。
+         */
+        @Override
+        public String name() {
+            return "echo";
+        }
+
+        /**
+         * 执行工具调用。
+         */
+        @Override
+        public ToolResult execute(ToolCall call, AgentState state) {
+            return ToolResult.success(String.valueOf(call.arguments().get("text")));
+        }
+    }
 }

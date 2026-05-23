@@ -8,45 +8,60 @@ import java.util.Objects;
  */
 public final class ToolDecision implements Decision {
 
-  private final ToolCall call;
+    private final ToolCall call;
 
-  /**
-   * 创建工具决策
-   * 直接包住一次调用
-   */
-  public ToolDecision(ToolCall call) {
-    this.call = call;
-  }
-
-  public ToolCall call() {
-    return call;
-  }
-
-  public ToolCall getCall() {
-    return call;
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (this == other) {
-      return true;
+    /**
+     * 创建工具决策
+     * 直接包住一次调用
+     */
+    public ToolDecision(ToolCall call) {
+        this.call = call;
     }
-    if (!(other instanceof ToolDecision)) {
-      return false;
+
+    /**
+     * 执行 call 操作。
+     */
+    public ToolCall call() {
+        return call;
     }
-    ToolDecision that = (ToolDecision) other;
-    return Objects.equals(call, that.call);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(call);
-  }
+    /**
+     * 读取 Call。
+     */
+    public ToolCall getCall() {
+        return call;
+    }
 
-  @Override
-  public String toString() {
-    return "ToolDecision{"
-        + "call=" + call
-        + '}';
-  }
+    /**
+     * 比较对象是否相等。
+     */
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ToolDecision)) {
+            return false;
+        }
+        ToolDecision that = (ToolDecision) other;
+        return Objects.equals(call, that.call);
+    }
+
+    /**
+     * 计算对象哈希值。
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(call);
+    }
+
+    /**
+     * 返回可读字符串。
+     */
+    @Override
+    public String toString() {
+        return "ToolDecision{"
+                + "call=" + call
+                + '}';
+    }
 }

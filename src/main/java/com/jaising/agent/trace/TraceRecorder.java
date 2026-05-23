@@ -7,7 +7,13 @@ import java.util.List;
  * 记录主循环关键事件
  */
 public interface TraceRecorder {
-  void record(TraceEvent event);
+    /**
+     * 记录轨迹事件。
+     */
+    void record(TraceEvent event);
 
-  List<TraceEvent> events();
+    /**
+     * 返回已记录事件。
+     */
+    List<TraceEvent> events();
 }

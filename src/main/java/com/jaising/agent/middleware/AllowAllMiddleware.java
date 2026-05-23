@@ -8,6 +8,9 @@ import com.jaising.agent.domain.ToolCall;
  * 仅用于测试和默认场景
  */
 public final class AllowAllMiddleware implements ToolMiddleware {
+    /**
+     * 执行工具前进行检查。
+     */
     @Override
     public MiddlewareDecision beforeTool(AgentState state, ToolCall call) {
         return MiddlewareDecision.allow();

@@ -8,5 +8,8 @@ import com.jaising.agent.domain.ToolCall;
  * 在工具执行前统一拦截
  */
 public interface ToolMiddleware {
-  MiddlewareDecision beforeTool(AgentState state, ToolCall call);
+    /**
+     * 执行工具前进行检查。
+     */
+    MiddlewareDecision beforeTool(AgentState state, ToolCall call);
 }

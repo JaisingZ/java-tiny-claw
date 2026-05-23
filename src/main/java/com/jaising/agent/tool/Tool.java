@@ -8,7 +8,13 @@ import com.jaising.agent.domain.ToolCall;
  * 负责执行具体动作并返回结果
  */
 public interface Tool {
-  String name();
+    /**
+     * 返回工具名称。
+     */
+    String name();
 
-  ToolResult execute(ToolCall call, AgentState state);
+    /**
+     * 执行工具调用。
+     */
+    ToolResult execute(ToolCall call, AgentState state);
 }

@@ -10,32 +10,35 @@ import java.util.Map;
  */
 public final class ToolRegistry {
 
-  private final Map<String, Tool> tools = new LinkedHashMap<String, Tool>();
+    private final Map<String, Tool> tools = new LinkedHashMap<String, Tool>();
 
-  /**
-   * 注册工具
-   */
-  public ToolRegistry register(Tool tool) {
-    tools.put(tool.name(), tool);
-    return this;
-  }
-
-  /**
-   * 按名称查找工具
-   * 找不到就直接失败
-   */
-  public Tool require(String toolName) {
-    Tool tool = tools.get(toolName);
-    if (tool == null) {
-      throw new IllegalArgumentException("Unknown tool: " + toolName);
+    /**
+     * 注册工具
+     */
+    public ToolRegistry register(Tool tool) {
+        tools.put(tool.name(), tool);
+        return this;
     }
-    return tool;
-  }
 
-  /**
-   * 输出快照
-   */
-  public Map<String, Tool> snapshot() {
-    return Collections.unmodifiableMap(tools);
-  }
+    /**
+     * 按名称查找工具
+     * 找不到就直接失败
+     */
+    public Tool require(String toolName) {
+        Tool tool = tools.get(toolName);
+        if (tool == null) {
+            /**
+             * 执行 IllegalArgumentException 操作。
+             */
+            throw new IllegalArgumentException("Unknown tool: " + toolName);
+        }
+        return tool;
+    }
+
+    /**
+     * 输出快照
+     */
+    public Map<String, Tool> snapshot() {
+        return Collections.unmodifiableMap(tools);
+    }
 }
