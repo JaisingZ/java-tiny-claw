@@ -20,6 +20,7 @@ import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
 import com.jaising.agent.trace.InMemoryTraceRecorder;
+import com.jaising.agent.trace.TraceEvent;
 import com.jaising.agent.trace.TraceEventType;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -61,6 +62,27 @@ class AgentEngineTest {
                 TraceEventType.TOOL_RESULT,
                 TraceEventType.MODEL_REQUEST,
                 TraceEventType.FINISHED);
+    }
+
+    /**
+     * 关闭慢思考时保持单阶段循环
+     */
+    @Test
+    void doesNotEmitThinkingTraceWhenThinkingIsDisabled() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
+
+        AgentEngine engine = new AgentEngine(new ScriptedProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4, false);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-1-disabled", "echo once"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(trace.events()).extracting(event -> event.type()).doesNotContain(
+                TraceEventType.THINKING_REQUEST,
+                TraceEventType.THINKING_RESPONSE);
     }
 
     /**
@@ -151,11 +173,18 @@ class AgentEngineTest {
                 "echo",
                 "echo",
                 Collections.<String, Object>singletonMap("type", "object")));
-        assertThat(trace.events()).extracting(event -> event.type()).contains(
+        assertThat(trace.events()).extracting(event -> event.type()).containsSubsequence(
                 TraceEventType.THINKING_REQUEST,
                 TraceEventType.THINKING_RESPONSE,
+                TraceEventType.MODEL_REQUEST,
+                TraceEventType.MODEL_RESPONSE,
+                TraceEventType.TOOL_CALL,
                 TraceEventType.TOOL_RESULT,
                 TraceEventType.FINISHED);
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.THINKING_RESPONSE)
+                .extracting(TraceEvent::detail)
+                .containsExactly("plan to call echo", "plan to finish");
     }
 
     /**
