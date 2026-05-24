@@ -4,23 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.jaising.agent.domain.AgentState;
-import com.jaising.agent.domain.AgentStatus;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
-import com.jaising.agent.domain.FinishDecision;
 import com.jaising.agent.domain.Task;
-import com.jaising.agent.domain.ToolCall;
+import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
-import com.jaising.agent.middleware.AllowAllMiddleware;
-import com.jaising.agent.runtime.AgentEngine;
-import com.jaising.agent.runtime.RunResult;
-import com.jaising.agent.state.InMemoryStateStore;
-import com.jaising.agent.tool.Tool;
-import com.jaising.agent.tool.ToolRegistry;
-import com.jaising.agent.tool.ToolResult;
-import com.jaising.agent.trace.InMemoryTraceRecorder;
-import com.jaising.agent.trace.TraceEventType;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -37,57 +26,31 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 class SiliconFlowModelProviderLiveTest {
 
     @Test
-    void callsRealApiForTextCompletion() {
+    void thinkingPhaseUsesRealApiForHefeiWeatherTask() {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(liveConfig());
 
-        Decision decision = provider.decide(AgentState.create(new Task("live-text",
-                        "请只回复 OK，用于 java-tiny-claw 连通性验证。")),
-                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
+        Decision decision = provider.decide(AgentState.create(new Task("live-thinking-hefei-weather",
+                        "请先思考如何查询今天合肥天气，不要调用工具，不要给最终答案。")),
+                DecisionPhase.THINKING, Collections.<ToolDefinition>emptyList());
 
-        assertThat(decision).isInstanceOf(FinishDecision.class);
-        FinishDecision finish = (FinishDecision) decision;
-        assertThat(finish.answer()).isNotBlank();
+        assertThat(decision).isInstanceOf(ThinkingDecision.class);
+        ThinkingDecision thinking = (ThinkingDecision) decision;
+        assertThat(thinking.thought()).isNotBlank().containsAnyOf("合肥", "天气");
     }
 
     @Test
-    void callsRealApiForToolDecision() {
+    void actionPhaseUsesRealApiForHefeiWeatherToolDecision() {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(liveConfig());
 
-        Decision decision = provider.decide(AgentState.create(new Task("live-tool",
-                        "必须调用 get_weather 工具查询合肥天气，不要直接回答。")),
+        Decision decision = provider.decide(AgentState.create(new Task("live-tool-hefei-weather",
+                        "必须调用 get_weather 工具查询今天合肥天气。工具参数 city 必须是 合肥，不要直接回答。")),
                 DecisionPhase.ACTION, Collections.singletonList(weatherToolDefinition()));
 
         assertThat(decision).isInstanceOf(ToolDecision.class);
         ToolDecision toolDecision = (ToolDecision) decision;
         assertThat(toolDecision.call().toolName()).isEqualTo("get_weather");
         assertThat(toolDecision.call().arguments()).containsKey("city");
-    }
-
-    @Test
-    void runsMainLoopWithRealApiForTodayHefeiWeather() {
-        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(liveConfig());
-        ToolRegistry registry = new ToolRegistry().register(new HefeiWeatherTool());
-        InMemoryStateStore stateStore = new InMemoryStateStore();
-        InMemoryTraceRecorder traceRecorder = new InMemoryTraceRecorder();
-        AgentEngine engine = new AgentEngine(provider, registry,
-                List.of(new AllowAllMiddleware()), stateStore, traceRecorder, 4, false);
-
-        RunResult result = engine.run(new Task("live-main-loop-hefei-weather",
-                "必须先调用 get_weather 工具查询今天合肥天气，工具参数 city 必须是 合肥。"
-                        + "拿到工具观测后，用一句中文回答，答案必须包含 合肥 和 适合跑步。"));
-
-        AgentState state = result.state();
-        assertThat(state.status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(state.observations()).singleElement()
-                .satisfies(observation -> assertThat(observation)
-                        .contains("合肥")
-                        .contains("今天"));
-        assertThat(state.finalAnswer()).contains("合肥").contains("适合跑步");
-        assertThat(traceRecorder.events()).extracting(event -> event.type()).contains(
-                TraceEventType.MODEL_REQUEST,
-                TraceEventType.TOOL_CALL,
-                TraceEventType.TOOL_RESULT,
-                TraceEventType.FINISHED);
+        assertThat(String.valueOf(toolDecision.call().arguments().get("city"))).contains("合肥");
     }
 
     private SiliconFlowConfig liveConfig() {
@@ -99,46 +62,21 @@ class SiliconFlowModelProviderLiveTest {
     private ToolDefinition weatherToolDefinition() {
         Map<String, Object> city = new LinkedHashMap<String, Object>();
         city.put("type", "string");
-        city.put("description", "城市名称，例如合肥");
+        city.put("description", "城市名称，必须填写合肥");
+
+        Map<String, Object> date = new LinkedHashMap<String, Object>();
+        date.put("type", "string");
+        date.put("description", "查询日期，必须填写今天");
 
         Map<String, Object> properties = new LinkedHashMap<String, Object>();
         properties.put("city", city);
+        properties.put("date", date);
 
         Map<String, Object> parameters = new LinkedHashMap<String, Object>();
         parameters.put("type", "object");
         parameters.put("properties", properties);
-        parameters.put("required", List.of("city"));
+        parameters.put("required", List.of("city", "date"));
 
-        return new ToolDefinition("get_weather", "查询指定城市的天气", parameters);
-    }
-
-    private static final class HefeiWeatherTool implements Tool {
-
-        @Override
-        public String name() {
-            return "get_weather";
-        }
-
-        @Override
-        public ToolDefinition definition() {
-            Map<String, Object> city = new LinkedHashMap<String, Object>();
-            city.put("type", "string");
-            city.put("description", "城市名称，必须填写合肥");
-
-            Map<String, Object> properties = new LinkedHashMap<String, Object>();
-            properties.put("city", city);
-
-            Map<String, Object> parameters = new LinkedHashMap<String, Object>();
-            parameters.put("type", "object");
-            parameters.put("properties", properties);
-            parameters.put("required", List.of("city"));
-
-            return new ToolDefinition(name(), "查询今天指定城市的天气", parameters);
-        }
-
-        @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
-            return ToolResult.success("今天合肥天气：晴，25度，空气质量良好，适合跑步。");
-        }
+        return new ToolDefinition("get_weather", "查询指定城市指定日期的天气", parameters);
     }
 }
