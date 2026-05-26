@@ -13,7 +13,6 @@ import com.jaising.agent.middleware.MiddlewareDecision;
 import com.jaising.agent.middleware.ToolMiddleware;
 import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.state.StateStore;
-import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
 import com.jaising.agent.trace.TraceEvent;
@@ -186,23 +185,11 @@ public final class AgentEngine {
             return fail(state, middlewareDecision.reason());
         }
 
-        Tool tool;
-        try {
-            tool = toolRegistry.require(toolDecision.call().toolName());
-        } catch (RuntimeException ex) {
-            return fail(state, ex.getMessage());
-        }
-
         long toolStart = System.nanoTime();
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_CALL, state.taskId(),
                 state.stepCount(), toolDecision.call().toolName(), 0L));
 
-        ToolResult toolResult;
-        try {
-            toolResult = tool.execute(toolDecision.call(), state);
-        } catch (RuntimeException ex) {
-            return fail(state, "tool_error: " + ex.getMessage());
-        }
+        ToolResult toolResult = toolRegistry.execute(toolDecision.call(), state);
 
         long toolDuration = elapsedMillis(toolStart);
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_RESULT, state.taskId(),

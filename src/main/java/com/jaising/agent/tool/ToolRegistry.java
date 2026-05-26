@@ -1,5 +1,7 @@
 package com.jaising.agent.tool;
 
+import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,7 +11,7 @@ import java.util.Map;
 
 /**
  * 工具注册表
- * 负责命名 注册和查找
+ * 负责命名 注册 查找和分发
  */
 public final class ToolRegistry {
 
@@ -30,12 +32,28 @@ public final class ToolRegistry {
     public Tool require(String toolName) {
         Tool tool = tools.get(toolName);
         if (tool == null) {
-            /**
-             * 执行 IllegalArgumentException 操作。
-             */
             throw new IllegalArgumentException("Unknown tool: " + toolName);
         }
         return tool;
+    }
+
+    /**
+     * 路由并执行工具调用
+     * 未知工具和工具异常都包装成结构化失败
+     */
+    public ToolResult execute(ToolCall call, AgentState state) {
+        Tool tool;
+        try {
+            tool = require(call.toolName());
+        } catch (RuntimeException ex) {
+            return ToolResult.failure(ex.getMessage());
+        }
+
+        try {
+            return tool.execute(call, state);
+        } catch (RuntimeException ex) {
+            return ToolResult.failure("tool_error: " + ex.getMessage());
+        }
     }
 
     /**

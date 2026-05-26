@@ -38,7 +38,7 @@ if still RUNNING:
 ## 约束
 
 - `ModelProvider` 只负责给出 `Decision`
-- `ToolRegistry` 只负责查找工具
+- `ToolRegistry` 只负责暴露工具定义、查找工具、路由执行工具
 - `ToolMiddleware` 只负责执行前拦截
 - `StateStore` 只负责状态持久化
 - `TraceRecorder` 只负责过程记录

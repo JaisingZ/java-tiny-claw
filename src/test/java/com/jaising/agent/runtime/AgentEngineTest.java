@@ -104,6 +104,29 @@ class AgentEngineTest {
     }
 
     /**
+     * 工具返回失败时主循环失败并保留工具结果 trace
+     */
+    @Test
+    void failsWhenToolReturnsFailure() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new FailingTool());
+
+        AgentEngine engine = new AgentEngine(new FailingToolProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-tool-fails", "tool fails"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
+        assertThat(result.state().failureReason()).isEqualTo("read failed");
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.TOOL_RESULT)
+                .extracting(TraceEvent::detail)
+                .containsExactly("read failed");
+    }
+
+    /**
      * 中间件拒绝时失败
      */
     @Test
@@ -269,6 +292,19 @@ class AgentEngineTest {
     }
 
     /**
+     * 永远返回失败工具
+     */
+    private static final class FailingToolProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            return new ToolDecision(new ToolCall("fail_tool", Collections.<String, Object>emptyMap()));
+        }
+    }
+
+    /**
      * 按阶段返回思考 行动和结束
      */
     private static final class ThinkingScriptedProvider implements ModelProvider {
@@ -350,6 +386,27 @@ class AgentEngineTest {
         @Override
         public ToolResult execute(ToolCall call, AgentState state) {
             return ToolResult.success(String.valueOf(call.arguments().get("text")));
+        }
+    }
+
+    /**
+     * 总是返回失败的工具
+     */
+    private static final class FailingTool implements Tool {
+        /**
+         * 返回工具名称。
+         */
+        @Override
+        public String name() {
+            return "fail_tool";
+        }
+
+        /**
+         * 执行工具调用。
+         */
+        @Override
+        public ToolResult execute(ToolCall call, AgentState state) {
+            return ToolResult.failure("read failed");
         }
     }
 }
