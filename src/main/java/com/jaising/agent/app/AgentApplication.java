@@ -3,6 +3,7 @@ package com.jaising.agent.app;
 import com.jaising.agent.provider.SiliconFlowConfig;
 import com.jaising.agent.provider.SiliconFlowModelProvider;
 import com.jaising.agent.tool.BashTool;
+import com.jaising.agent.tool.EditFileTool;
 import com.jaising.agent.tool.ReadFileTool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
@@ -27,6 +28,7 @@ public final class AgentApplication {
         ToolRegistry registry = new ToolRegistry()
                 .register(new ReadFileTool(Path.of(".")))
                 .register(new WriteFileTool(Path.of(".")))
+                .register(new EditFileTool(Path.of(".")))
                 .register(new BashTool(Path.of(".")));
         System.out.println("java-tiny-claw agent harness provider=" + config.model()
                 + " tools=" + registry.definitions().size());

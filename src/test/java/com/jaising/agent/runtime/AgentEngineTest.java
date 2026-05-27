@@ -17,6 +17,7 @@ import com.jaising.agent.middleware.AllowListMiddleware;
 import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.BashTool;
+import com.jaising.agent.tool.EditFileTool;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
@@ -24,6 +25,7 @@ import com.jaising.agent.tool.WriteFileTool;
 import com.jaising.agent.trace.InMemoryTraceRecorder;
 import com.jaising.agent.trace.TraceEvent;
 import com.jaising.agent.trace.TraceEventType;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -154,6 +156,32 @@ class AgentEngineTest {
         assertThat(result.state().observations()).hasSize(2);
         assertThat(result.state().observations().get(1)).contains("hello");
         assertThat(result.state().finalAnswer()).isEqualTo("done");
+    }
+
+    /**
+     * 真实 edit_file 工具可以局部修改文件
+     */
+    @Test
+    void runsWriteThenEditThenFinishes() throws Exception {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry()
+                .register(new WriteFileTool(workDir))
+                .register(new EditFileTool(workDir));
+
+        AgentEngine engine = new AgentEngine(new WriteThenEditProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-write-edit", "write and edit"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(result.state().observations()).hasSize(2);
+        assertThat(result.state().observations().get(1)).contains("line_by_line_trim");
+        assertThat(Files.readString(workDir.resolve("Server.java"))).contains("throw new IllegalStateException()");
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.TOOL_CALL)
+                .extracting(TraceEvent::detail)
+                .anyMatch(detail -> detail.contains("edit_file"));
     }
 
     /**
@@ -380,6 +408,38 @@ class AgentEngineTest {
                 return "Get-Content '" + path + "'";
             }
             return "cat '" + path + "'";
+        }
+    }
+
+    /**
+     * 先写文件 再局部编辑
+     */
+    private static final class WriteThenEditProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            if (state.observations().isEmpty()) {
+                java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
+                arguments.put("path", "Server.java");
+                arguments.put("content", "class Server {\n"
+                        + "    void run() {\n"
+                        + "        if (user == null) {\n"
+                        + "            return;\n"
+                        + "        }\n"
+                        + "    }\n"
+                        + "}\n");
+                return new ToolDecision(new ToolCall("write_file", arguments));
+            }
+            if (state.observations().size() == 1) {
+                java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
+                arguments.put("path", "Server.java");
+                arguments.put("old_text", "if (user == null) {\nreturn;\n}");
+                arguments.put("new_text", "if (user == null) {\n    throw new IllegalStateException();\n}");
+                return new ToolDecision(new ToolCall("edit_file", arguments));
+            }
+            return new FinishDecision("done");
         }
     }
 

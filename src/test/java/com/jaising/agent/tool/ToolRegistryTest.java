@@ -81,6 +81,19 @@ class ToolRegistryTest {
         assertThat(bashResult.output()).contains("hello");
     }
 
+    @Test
+    void executesEditFileTool() throws Exception {
+        java.nio.file.Files.writeString(workDir.resolve("hello.txt"), "hello old world");
+        ToolRegistry registry = new ToolRegistry()
+                .register(new EditFileTool(workDir));
+
+        ToolResult result = registry.execute(new ToolCall("edit_file",
+                editArguments("hello.txt", "old", "new")), state());
+
+        assertThat(result.success()).isTrue();
+        assertThat(java.nio.file.Files.readString(workDir.resolve("hello.txt"))).isEqualTo("hello new world");
+    }
+
     private AgentState state() {
         return AgentState.create(new Task("task-1", "test"));
     }
@@ -89,6 +102,14 @@ class ToolRegistryTest {
         Map<String, Object> arguments = new LinkedHashMap<String, Object>();
         arguments.put("path", path);
         arguments.put("content", content);
+        return arguments;
+    }
+
+    private Map<String, Object> editArguments(String path, String oldText, String newText) {
+        Map<String, Object> arguments = new LinkedHashMap<String, Object>();
+        arguments.put("path", path);
+        arguments.put("old_text", oldText);
+        arguments.put("new_text", newText);
         return arguments;
     }
 
