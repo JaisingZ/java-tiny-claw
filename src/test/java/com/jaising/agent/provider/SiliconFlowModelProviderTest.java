@@ -95,6 +95,30 @@ class SiliconFlowModelProviderTest {
     }
 
     @Test
+    void debugOutputPrintsRequestResponsePhaseAndDecision() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+                new AtomicReference<String>(), requestBody);
+        StringBuilder debugOutput = new StringBuilder();
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"),
+                line -> debugOutput.append(line).append('\n'));
+
+        provider.decide(AgentState.create(new Task("task-debug", "debug it")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
+
+        assertThat(debugOutput.toString())
+                .contains("=== SiliconFlow request phase=ACTION ===")
+                .contains("\"model\" : \"Qwen/Qwen3-8B\"")
+                .contains("\"content\" : \"debug it\"")
+                .contains("=== SiliconFlow response phase=ACTION ===")
+                .contains("\"content\" : \"done\"")
+                .contains("=== SiliconFlow decision phase=ACTION ===")
+                .contains("FinishDecision answer=done")
+                .doesNotContain("Bearer test-key");
+    }
+
+    @Test
     void throwsWhenHttpStatusIsNotSuccessful() throws Exception {
         startServer(401, "{\"error\":{\"message\":\"unauthorized\"}}",
                 new AtomicReference<String>(), new AtomicReference<JsonNode>());

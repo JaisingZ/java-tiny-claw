@@ -9,6 +9,7 @@ import com.jaising.agent.domain.Task;
 import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
+import com.jaising.agent.domain.ToolDefinition;
 import com.jaising.agent.middleware.MiddlewareDecision;
 import com.jaising.agent.middleware.ToolMiddleware;
 import com.jaising.agent.provider.ModelProvider;
@@ -109,7 +110,9 @@ public final class AgentEngine {
     private LoopStep runThinkingStep(AgentState state) {
         long thinkingStart = System.nanoTime();
         traceRecorder.record(new TraceEvent(TraceEventType.THINKING_REQUEST, state.taskId(),
-                state.stepCount(), state.goal(), 0L));
+                state.stepCount(), "enableThinking=true phase=THINKING step=" + state.stepCount()
+                        + " tools=[] observations=" + state.observations().size()
+                        + " goal=" + state.goal(), 0L));
 
         Decision thinkingDecision;
         try {
@@ -121,13 +124,13 @@ public final class AgentEngine {
         long thinkingDuration = elapsedMillis(thinkingStart);
         if (!(thinkingDecision instanceof ThinkingDecision)) {
             traceRecorder.record(new TraceEvent(TraceEventType.THINKING_RESPONSE, state.taskId(),
-                    state.stepCount(), thinkingDecision.getClass().getSimpleName(), thinkingDuration));
+                    state.stepCount(), decisionSummary(thinkingDecision), thinkingDuration));
             return fail(state, "unsupported_thinking_decision");
         }
 
         ThinkingDecision thinking = (ThinkingDecision) thinkingDecision;
         traceRecorder.record(new TraceEvent(TraceEventType.THINKING_RESPONSE, state.taskId(),
-                state.stepCount(), thinking.thought(), thinkingDuration));
+                state.stepCount(), decisionSummary(thinking), thinkingDuration));
         AgentState nextState = state.think(thinking.thought());
         stateStore.save(nextState);
         return LoopStep.continueWith(nextState);
@@ -139,19 +142,24 @@ public final class AgentEngine {
      */
     private DecisionStep requestActionDecision(AgentState state) {
         long modelStart = System.nanoTime();
+        List<ToolDefinition> toolDefinitions = toolRegistry.definitions();
         traceRecorder.record(new TraceEvent(TraceEventType.MODEL_REQUEST, state.taskId(),
-                state.stepCount(), state.goal(), 0L));
+                state.stepCount(), "phase=ACTION step=" + state.stepCount()
+                        + " tools=" + toolNames(toolDefinitions)
+                        + " observations=" + state.observations().size()
+                        + " hasLastThought=" + hasText(state.lastThought())
+                        + " goal=" + state.goal(), 0L));
 
         Decision decision;
         try {
-            decision = provider.decide(state, DecisionPhase.ACTION, toolRegistry.definitions());
+            decision = provider.decide(state, DecisionPhase.ACTION, toolDefinitions);
         } catch (RuntimeException ex) {
             return DecisionStep.done(fail(state, "provider_error: " + ex.getMessage()).state());
         }
 
         long modelDuration = elapsedMillis(modelStart);
         traceRecorder.record(new TraceEvent(TraceEventType.MODEL_RESPONSE, state.taskId(),
-                state.stepCount(), decision.getClass().getSimpleName(), modelDuration));
+                state.stepCount(), decisionSummary(decision), modelDuration));
         return DecisionStep.continueWith(state, decision);
     }
 
@@ -164,7 +172,7 @@ public final class AgentEngine {
             AgentState nextState = state.finish(finish.answer());
             stateStore.save(nextState);
             traceRecorder.record(new TraceEvent(TraceEventType.FINISHED, nextState.taskId(),
-                    nextState.stepCount(), finish.answer(), 0L));
+                    nextState.stepCount(), "answer=" + finish.answer(), 0L));
             return LoopStep.done(nextState);
         }
 
@@ -187,13 +195,16 @@ public final class AgentEngine {
 
         long toolStart = System.nanoTime();
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_CALL, state.taskId(),
-                state.stepCount(), toolDecision.call().toolName(), 0L));
+                state.stepCount(), "tool=" + toolDecision.call().toolName()
+                        + " args=" + toolDecision.call().arguments(), 0L));
 
         ToolResult toolResult = toolRegistry.execute(toolDecision.call(), state);
 
         long toolDuration = elapsedMillis(toolStart);
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_RESULT, state.taskId(),
-                state.stepCount(), toolResult.success() ? toolResult.output() : toolResult.errorMessage(),
+                state.stepCount(), toolResult.success()
+                        ? "success=true output=" + toolResult.output()
+                        : "success=false error=" + toolResult.errorMessage(),
                 toolDuration));
 
         if (!toolResult.success()) {
@@ -212,7 +223,7 @@ public final class AgentEngine {
         AgentState failed = state.fail(reason);
         stateStore.save(failed);
         traceRecorder.record(new TraceEvent(TraceEventType.FAILED, failed.taskId(),
-                failed.stepCount(), failed.failureReason(), 0L));
+                failed.stepCount(), "reason=" + failed.failureReason(), 0L));
         return LoopStep.done(failed);
     }
 
@@ -236,6 +247,42 @@ public final class AgentEngine {
      */
     private long elapsedMillis(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    /**
+     * 汇总模型决策
+     * 用于 trace 打印
+     */
+    private String decisionSummary(Decision decision) {
+        if (decision instanceof ThinkingDecision) {
+            return "ThinkingDecision thought=" + ((ThinkingDecision) decision).thought();
+        }
+        if (decision instanceof FinishDecision) {
+            return "FinishDecision answer=" + ((FinishDecision) decision).answer();
+        }
+        if (decision instanceof ToolDecision) {
+            ToolCall call = ((ToolDecision) decision).call();
+            return "ToolDecision tool=" + call.toolName() + " args=" + call.arguments();
+        }
+        return decision.getClass().getSimpleName();
+    }
+
+    /**
+     * 汇总可见工具名称
+     */
+    private List<String> toolNames(List<ToolDefinition> definitions) {
+        List<String> names = new ArrayList<String>();
+        for (ToolDefinition definition : definitions) {
+            names.add(definition.name());
+        }
+        return names;
+    }
+
+    /**
+     * 判断字符串是否有内容
+     */
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     /**

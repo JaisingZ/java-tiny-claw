@@ -4,12 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentStatus;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.Task;
 import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
+import com.jaising.agent.middleware.AllowAllMiddleware;
+import com.jaising.agent.runtime.AgentEngine;
+import com.jaising.agent.runtime.RunResult;
+import com.jaising.agent.state.InMemoryStateStore;
+import com.jaising.agent.tool.ToolRegistry;
+import com.jaising.agent.trace.InMemoryTraceRecorder;
+import com.jaising.agent.trace.TraceEvent;
+import com.jaising.agent.trace.TraceEventType;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -24,6 +33,40 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  */
 @EnabledIfSystemProperty(named = "siliconflow.live", matches = "true")
 class SiliconFlowModelProviderLiveTest {
+
+    @Test
+    void mainLoopPrintsThinkingTraceWithRealApi() {
+        InMemoryTraceRecorder traceRecorder = new InMemoryTraceRecorder();
+        StringBuilder providerExchange = new StringBuilder();
+        AgentEngine engine = new AgentEngine(
+                new SiliconFlowModelProvider(liveConfig(),
+                        line -> providerExchange.append(line).append(System.lineSeparator())),
+                new ToolRegistry(),
+                Collections.singletonList(new AllowAllMiddleware()),
+                new InMemoryStateStore(),
+                traceRecorder,
+                1,
+                true);
+
+        RunResult result = engine.run(new Task("live-thinking-trace",
+                "请直接用中文回答：合肥天气测试完成。不要调用工具。"));
+
+        printProviderExchange(providerExchange.toString());
+        printRuntimeTrace(result, traceRecorder.events());
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(thinkingResponse(traceRecorder.events()).detail()).isNotBlank();
+        assertThat(providerExchange.toString())
+                .contains("=== SiliconFlow request phase=THINKING ===")
+                .contains("=== SiliconFlow response phase=THINKING ===")
+                .contains("=== SiliconFlow decision phase=THINKING ===")
+                .contains("=== SiliconFlow request phase=ACTION ===")
+                .contains("=== SiliconFlow response phase=ACTION ===")
+                .contains("=== SiliconFlow decision phase=ACTION ===")
+                .contains("\"messages\"")
+                .contains("\"choices\"")
+                .doesNotContain("Bearer ");
+    }
 
     @Test
     void thinkingPhaseUsesRealApiForHefeiWeatherTask() {
@@ -78,5 +121,31 @@ class SiliconFlowModelProviderLiveTest {
         parameters.put("required", List.of("city", "date"));
 
         return new ToolDefinition("get_weather", "查询指定城市指定日期的天气", parameters);
+    }
+
+    private void printProviderExchange(String providerExchange) {
+        System.out.println("=== Provider Exchange ===");
+        System.out.print(providerExchange);
+    }
+
+    private void printRuntimeTrace(RunResult result, List<TraceEvent> events) {
+        System.out.println("=== Runtime Trace ===");
+        System.out.println("status=" + result.state().status());
+        System.out.println("finalAnswer=" + result.state().finalAnswer());
+        System.out.println("trace=");
+        for (TraceEvent event : events) {
+            System.out.println("  " + event.type() + " step=" + event.step()
+                    + " durationMillis=" + event.durationMillis()
+                    + " detail=" + event.detail());
+        }
+    }
+
+    private TraceEvent thinkingResponse(List<TraceEvent> events) {
+        for (TraceEvent event : events) {
+            if (event.type() == TraceEventType.THINKING_RESPONSE) {
+                return event;
+            }
+        }
+        throw new AssertionError("Missing trace event: " + TraceEventType.THINKING_RESPONSE);
     }
 }

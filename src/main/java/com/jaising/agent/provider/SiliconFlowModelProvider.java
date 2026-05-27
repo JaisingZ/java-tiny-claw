@@ -15,6 +15,7 @@ import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -22,6 +23,7 @@ import java.net.http.HttpResponse;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * SiliconFlow 模型提供方
@@ -36,32 +38,57 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     private final SiliconFlowConfig config;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final Consumer<String> debugSink;
 
     public SiliconFlowModelProvider(SiliconFlowConfig config) {
-        this(config, HttpClient.newHttpClient(), new ObjectMapper());
+        this(config, HttpClient.newHttpClient(), new ObjectMapper(), null);
+    }
+
+    public SiliconFlowModelProvider(SiliconFlowConfig config, PrintStream debugOutput) {
+        this(config, HttpClient.newHttpClient(), new ObjectMapper(), debugOutput::println);
+    }
+
+    public SiliconFlowModelProvider(SiliconFlowConfig config, Consumer<String> debugSink) {
+        this(config, HttpClient.newHttpClient(), new ObjectMapper(), debugSink);
     }
 
     SiliconFlowModelProvider(SiliconFlowConfig config, HttpClient httpClient, ObjectMapper objectMapper) {
+        this(config, httpClient, objectMapper, null);
+    }
+
+    SiliconFlowModelProvider(SiliconFlowConfig config, HttpClient httpClient, ObjectMapper objectMapper,
+            Consumer<String> debugSink) {
         this.config = config;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
+        this.debugSink = debugSink;
     }
 
     @Override
     public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
+        debug("=== SiliconFlow request phase=" + phase + " ===");
+        debugJson(requestBody);
         JsonNode response = send(requestBody);
+        debug("=== SiliconFlow response phase=" + phase + " ===");
+        debugJson(response);
         JsonNode message = firstMessage(response);
 
+        Decision decision;
         if (phase == DecisionPhase.ACTION && hasToolCalls(message)) {
-            return parseToolDecision(message);
+            decision = parseToolDecision(message);
+        } else {
+            String content = textOrFallback(message, "content", "reasoning_content");
+            if (phase == DecisionPhase.THINKING) {
+                decision = new ThinkingDecision(content);
+            } else {
+                decision = new FinishDecision(content);
+            }
         }
 
-        String content = textOrFallback(message, "content", "reasoning_content");
-        if (phase == DecisionPhase.THINKING) {
-            return new ThinkingDecision(content);
-        }
-        return new FinishDecision(content);
+        debug("=== SiliconFlow decision phase=" + phase + " ===");
+        debug(decisionSummary(decision));
+        return decision;
     }
 
     private ObjectNode buildRequestBody(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
@@ -195,6 +222,37 @@ public final class SiliconFlowModelProvider implements ModelProvider {
             return "";
         }
         return node.asText("");
+    }
+
+    private void debugJson(JsonNode node) {
+        if (debugSink == null) {
+            return;
+        }
+        try {
+            debugSink.accept(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node));
+        } catch (JsonProcessingException ex) {
+            debugSink.accept(node.toString());
+        }
+    }
+
+    private void debug(String message) {
+        if (debugSink != null) {
+            debugSink.accept(message);
+        }
+    }
+
+    private String decisionSummary(Decision decision) {
+        if (decision instanceof ThinkingDecision) {
+            return "ThinkingDecision thought=" + ((ThinkingDecision) decision).thought();
+        }
+        if (decision instanceof FinishDecision) {
+            return "FinishDecision answer=" + ((FinishDecision) decision).answer();
+        }
+        if (decision instanceof ToolDecision) {
+            ToolCall call = ((ToolDecision) decision).call();
+            return "ToolDecision tool=" + call.toolName() + " args=" + call.arguments();
+        }
+        return decision.getClass().getSimpleName();
     }
 
     private boolean hasText(String value) {

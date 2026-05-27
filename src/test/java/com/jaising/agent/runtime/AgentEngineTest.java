@@ -131,7 +131,7 @@ class AgentEngineTest {
         assertThat(trace.events())
                 .filteredOn(event -> event.type() == TraceEventType.TOOL_RESULT)
                 .extracting(TraceEvent::detail)
-                .containsExactly("read failed");
+                .containsExactly("success=false error=read failed");
     }
 
     /**
@@ -237,7 +237,26 @@ class AgentEngineTest {
         assertThat(trace.events())
                 .filteredOn(event -> event.type() == TraceEventType.THINKING_RESPONSE)
                 .extracting(TraceEvent::detail)
-                .containsExactly("plan to call echo", "plan to finish");
+                .containsExactly("ThinkingDecision thought=plan to call echo",
+                        "ThinkingDecision thought=plan to finish");
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.THINKING_REQUEST)
+                .extracting(TraceEvent::detail)
+                .first()
+                .asString()
+                .contains("enableThinking=true", "phase=THINKING", "tools=[]");
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.MODEL_REQUEST)
+                .extracting(TraceEvent::detail)
+                .first()
+                .asString()
+                .contains("phase=ACTION", "tools=[echo]", "observations=0");
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.MODEL_RESPONSE)
+                .extracting(TraceEvent::detail)
+                .first()
+                .asString()
+                .contains("ToolDecision tool=echo", "args={text=hello}");
     }
 
     /**
