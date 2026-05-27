@@ -83,9 +83,11 @@ ToolResult.failure("tool_error: <message>")
 
 这样主循环只需要处理统一的成功或失败结果。
 
-## read_file 工具
+## 基础工具
 
-当前第一版真实物理工具是 `read_file`。
+当前第一版真实物理工具集保持极简，只包含文件读写和命令执行。
+
+### read_file
 
 职责：
 
@@ -101,17 +103,47 @@ ToolResult.failure("tool_error: <message>")
 - 读取失败返回失败结果。
 - 输出超过固定阈值时截断，并在输出末尾追加截断提示。
 
+### write_file
+
+职责：
+
+- 在工作区内创建或覆盖文件。
+- 参数只接受相对工作区路径和完整文件内容。
+- 父目录不存在时自动创建。
+
+约束：
+
+- `path` 不能为空。
+- `content` 必须存在，允许为空字符串。
+- 规范化后的目标路径必须仍在工作目录内。
+- 目录创建或写入失败返回失败结果。
+
+### bash
+
+职责：
+
+- 在工作区内执行命令。
+- Windows 使用 PowerShell，非 Windows 使用 Bash。
+- 返回合并后的 stdout 和 stderr。
+
+约束：
+
+- `command` 不能为空。
+- 命令默认 30 秒超时，超时后终止进程并返回警告。
+- 非 0 退出码不作为工具失败，而是返回退出码和输出，让模型自纠错。
+- 空输出返回明确成功消息。
+- 输出超过固定阈值时截断，并在输出末尾追加截断提示。
+
 当前不实现：
 
-- 写文件。
 - 编辑文件。
-- 执行命令。
+- 后台进程管理。
 - 动态工具发现。
 - MCP 或插件加载。
 
 ## 安全策略
 
-Tool Registry 是分发层，不是完整安全策略层。
+Tool Registry 是分发层，不是完整安全策略层。`bash` 按本地开发 YOLO 思路实现，不内置黑名单。
 
 执行前的授权、白名单、黑名单、审批和风险分级应放在 `Middleware`。具体工具仍必须保留自己的底线防御，例如 `read_file` 的路径边界检查。
 
@@ -137,6 +169,8 @@ Tool Registry 是分发层，不是完整安全策略层。
 
 - `ToolRegistryTest`
 - `ReadFileToolTest`
+- `WriteFileToolTest`
+- `BashToolTest`
 - `AgentEngineTest`
 
 ## 演进方向
@@ -146,6 +180,6 @@ Tool Registry 是分发层，不是完整安全策略层。
 - 为 `ToolResult` 增加 `errorCode`、`retryable`、`riskLevel`。
 - 为大输出增加 offloading：完整结果写入临时文件，模型只收到首尾预览和引用路径。
 - 为重复失败增加重试预算和熔断。
-- 增加 `write`、`edit`、`bash` 等极简基础工具。
+- 增加 `edit` 等后续基础工具。
 
 不要在当前阶段引入动态类加载、复杂插件系统或外部协议绑定。Registry 应保持小而稳定。

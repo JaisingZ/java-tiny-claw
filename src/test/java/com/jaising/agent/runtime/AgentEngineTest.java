@@ -16,24 +16,32 @@ import com.jaising.agent.middleware.AllowAllMiddleware;
 import com.jaising.agent.middleware.AllowListMiddleware;
 import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.state.InMemoryStateStore;
+import com.jaising.agent.tool.BashTool;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
+import com.jaising.agent.tool.WriteFileTool;
 import com.jaising.agent.trace.InMemoryTraceRecorder;
 import com.jaising.agent.trace.TraceEvent;
 import com.jaising.agent.trace.TraceEventType;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * 主循环测试
  * 覆盖成功和关键失败路径
  */
 class AgentEngineTest {
+
+    @TempDir
+    Path workDir;
 
     /**
      * 工具执行后正常结束
@@ -124,6 +132,28 @@ class AgentEngineTest {
                 .filteredOn(event -> event.type() == TraceEventType.TOOL_RESULT)
                 .extracting(TraceEvent::detail)
                 .containsExactly("read failed");
+    }
+
+    /**
+     * 真实 write_file 和 bash 工具可以组合完成任务
+     */
+    @Test
+    void runsWriteThenBashThenFinishes() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry()
+                .register(new WriteFileTool(workDir))
+                .register(new BashTool(workDir, Duration.ofSeconds(5), 8_000));
+
+        AgentEngine engine = new AgentEngine(new WriteThenBashProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-write-bash", "write and read"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(result.state().observations()).hasSize(2);
+        assertThat(result.state().observations().get(1)).contains("hello");
+        assertThat(result.state().finalAnswer()).isEqualTo("done");
     }
 
     /**
@@ -301,6 +331,36 @@ class AgentEngineTest {
         @Override
         public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall("fail_tool", Collections.<String, Object>emptyMap()));
+        }
+    }
+
+    /**
+     * 先写文件 再用命令读取
+     */
+    private static final class WriteThenBashProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            if (state.observations().isEmpty()) {
+                java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
+                arguments.put("path", "hello.txt");
+                arguments.put("content", "hello");
+                return new ToolDecision(new ToolCall("write_file", arguments));
+            }
+            if (state.observations().size() == 1) {
+                return new ToolDecision(new ToolCall("bash",
+                        Collections.<String, Object>singletonMap("command", printFileCommand("hello.txt"))));
+            }
+            return new FinishDecision("done");
+        }
+
+        private String printFileCommand(String path) {
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                return "Get-Content '" + path + "'";
+            }
+            return "cat '" + path + "'";
         }
     }
 
