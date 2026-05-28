@@ -181,3 +181,68 @@ Tracer 负责记录运行轨迹。
 4. 再做 `Middleware`
 5. 再做 `StateStore`
 6. 最后补 `Tracer` 和可观测性
+
+## 9. 技术选型基线
+
+第一版默认采用以下技术栈：
+
+- JDK: `Java 21`
+- 构建: `Maven`
+- 测试: `JUnit 5`、`AssertJ`、`Mockito`
+- 架构约束测试: `ArchUnit`
+- 序列化: `Jackson`
+- 日志: `SLF4J` + `Logback`
+
+选型原则：
+
+- 核心层不依赖 Spring。
+- `app` 层只负责装配和启动，不承载业务逻辑。
+- 状态和轨迹优先用文件实现，便于审计和回放。
+- 以后需要更换模型提供方或工具实现时，只改适配层。
+- 当前仓库默认按 `Java 21` 语法线实现，后续如需兼容旧运行时再单独降级。
+
+## 10. 代码结构基线
+
+建议采用模块化单体，先不拆服务：
+
+```text
+src/main/java/com/jaising/agent
+├── app          启动入口与装配
+├── runtime      主循环与运行时控制
+├── provider     模型适配
+├── tool         工具注册与执行
+├── middleware   安全、白名单、循环限制
+├── state        checkpoint、摘要、恢复
+├── trace        轨迹记录与审计
+└── domain       纯数据模型
+```
+
+对应测试结构保持一致：
+
+```text
+src/test/java/com/jaising/agent
+├── runtime
+├── provider
+├── tool
+├── middleware
+├── state
+├── trace
+└── architecture
+```
+
+## 11. 单元测试基线
+
+第一版必须覆盖这些行为：
+
+- `runtime`：`think -> act -> observe -> decide` 主循环正确结束
+- `state`：checkpoint 可写入、可读取、可恢复
+- `tool`：工具注册、查找、执行、失败返回结构化错误
+- `middleware`：高危调用在执行前被拦截
+- `trace`：模型输入输出和工具调用都会被记录
+- `architecture`：分层不能互相直接依赖
+
+最小验收标准：
+
+- 所有新增 public 行为都有单元测试
+- 关键流程至少有一条成功路径和一条失败路径
+- 架构测试能阻止 runtime 直接依赖具体工具实现
