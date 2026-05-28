@@ -73,6 +73,16 @@ class SiliconFlowModelProviderTest {
 
         assertThat(decision).isEqualTo(new ThinkingDecision("think first"));
         assertThat(requestBody.get().has("tools")).isFalse();
+        assertSystemPromptContains(requestBody.get(),
+                "powershell -NoProfile -NonInteractive -Command",
+                "Do not use && or ||",
+                "Do not use ; to mean run the next command only when the previous command succeeds",
+                "$LASTEXITCODE",
+                "write_file",
+                "UTF-8",
+                "Set-Content",
+                "Out-File",
+                "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }");
     }
 
     @Test
@@ -92,6 +102,19 @@ class SiliconFlowModelProviderTest {
         assertThat(requestBody.get().get("tools")).hasSize(1);
         assertThat(requestBody.get().get("tools").get(0).get("type").asText()).isEqualTo("function");
         assertThat(requestBody.get().get("tools").get(0).get("function").get("name").asText()).isEqualTo("echo");
+        assertSystemPromptContains(requestBody.get(),
+                "powershell -NoProfile -NonInteractive -Command",
+                "Do not use && or ||",
+                "Do not use ; to mean run the next command only when the previous command succeeds",
+                "$LASTEXITCODE",
+                "write_file",
+                "UTF-8",
+                "Set-Content",
+                "Out-File",
+                "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }",
+                "每轮最多调用一个工具",
+                "Observation 已经满足用户目标",
+                "不要重复调用相同工具");
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
     }
@@ -262,6 +285,11 @@ class SiliconFlowModelProviderTest {
 
     private static String completionWithMessage(String messageJson) {
         return "{\"choices\":[{\"message\":" + messageJson + ",\"finish_reason\":\"stop\"}]}";
+    }
+
+    private void assertSystemPromptContains(JsonNode requestBody, String... expectedTexts) {
+        String systemPrompt = requestBody.get("messages").get(0).get("content").asText();
+        assertThat(systemPrompt).contains(expectedTexts);
     }
 
     private static String completionWithToolArguments(String arguments) throws Exception {

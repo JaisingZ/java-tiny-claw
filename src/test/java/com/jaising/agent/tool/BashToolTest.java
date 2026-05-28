@@ -45,7 +45,7 @@ class BashToolTest {
         ToolResult result = tool.execute(call(commandThatFailsWithOutput()), state());
 
         assertThat(result.success()).isTrue();
-        assertThat(result.output()).contains("Exit code: 7", "boom");
+        assertThat(result.output()).contains("exitCode=7", "boom");
     }
 
     @Test
@@ -97,8 +97,9 @@ class BashToolTest {
         ToolDefinition definition = tool.definition();
 
         assertThat(definition.name()).isEqualTo("bash");
-        assertThat(definition.description()).contains("PowerShell", "mkdir -p");
-        assertThat(definition.parameters().toString()).contains("command", "required");
+        assertThat(definition.description()).contains("PowerShell", "mkdir -p", "$LASTEXITCODE", "&&", ";");
+        assertThat(definition.parameters().toString()).contains("command", "required",
+                "powershell -NoProfile -NonInteractive -Command", "$LASTEXITCODE");
     }
 
     private ToolCall call(String command) {

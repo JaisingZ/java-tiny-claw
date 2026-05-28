@@ -108,7 +108,7 @@ public final class BashTool implements Tool {
         String output = outputFuture.join();
         int exitCode = process.exitValue();
         if (exitCode != 0) {
-            return ToolResult.success(formatOutput("Exit code: " + exitCode + "\n" + output));
+            return ToolResult.success(formatOutput("exitCode=" + exitCode + "\n" + output));
         }
         if (output.trim().isEmpty()) {
             return ToolResult.success("Command executed successfully with no output");
@@ -153,14 +153,19 @@ public final class BashTool implements Tool {
     private String toolDescription() {
         if (isWindows()) {
             return "Execute a PowerShell command inside the workspace. Do not use mkdir -p; "
-                    + "use New-Item -ItemType Directory -Force target when a directory must be created.";
+                    + "use New-Item -ItemType Directory -Force target when a directory must be created. "
+                    + "Do not use && or ||. Do not rely on ; for success gating; "
+                    + "check $LASTEXITCODE before running the next command.";
         }
         return "Execute a bash command inside the workspace";
     }
 
     private String commandDescription() {
         if (isWindows()) {
-            return "PowerShell command to execute inside the workspace";
+            return "PowerShell command to execute inside the workspace through "
+                    + "powershell -NoProfile -NonInteractive -Command. "
+                    + "For compile-then-run, use: javac target/Hello.java; "
+                    + "if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }";
         }
         return "bash command to execute inside the workspace";
     }

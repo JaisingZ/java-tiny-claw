@@ -102,6 +102,7 @@ public final class SiliconFlowModelProvider implements ModelProvider {
 
         ArrayNode messages = root.putArray("messages");
         addMessage(messages, "system", "你是 java-tiny-claw 的模型 Provider，请根据当前任务给出下一步决策。"
+                + environmentInstruction()
                 + phaseInstruction(phase));
         addMessage(messages, "user", state.goal());
         if (hasText(state.lastThought())) {
@@ -128,11 +129,23 @@ public final class SiliconFlowModelProvider implements ModelProvider {
 
     private String phaseInstruction(DecisionPhase phase) {
         if (phase == DecisionPhase.THINKING) {
-            return "当前是 THINKING 阶段：只输出内部计划，不要回答用户，不要调用工具。";
+            return "当前是 THINKING 阶段：只输出内部计划，不要回答用户，不要调用工具。"
+                    + "内部计划必须基于已有 Observation，不能把已失败命令再次作为候选方案。";
         }
         return "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个工具；不要输出空内容。"
                 + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。"
                 + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。";
+    }
+
+    private String environmentInstruction() {
+        return "运行环境事实：bash 工具在 Windows 下实际执行 powershell -NoProfile -NonInteractive -Command。"
+                + "Do not use && or || in PowerShell commands. "
+                + "Do not use ; to mean run the next command only when the previous command succeeds. "
+                + "多步命令必须检查 $LASTEXITCODE。"
+                + "创建或覆盖 Java 源码必须优先使用 write_file，源码必须是 UTF-8 文本，不能包含 UTF-16 或 NUL 字节。"
+                + "不要用 PowerShell Set-Content 或 Out-File 写 Java 源码。"
+                + "编译并运行 target/Hello.java 的推荐模板："
+                + "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }。";
     }
 
     private void addMessage(ArrayNode messages, String role, String content) {

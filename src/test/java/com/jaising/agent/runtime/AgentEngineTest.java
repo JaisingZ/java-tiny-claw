@@ -159,6 +159,32 @@ class AgentEngineTest {
     }
 
     /**
+     * 真实 bash 工具的非零退出码仍作为观测返回 并明确暴露 exitCode
+     */
+    @Test
+    void recordsNonZeroBashExitCodeAsObservation() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry()
+                .register(new BashTool(workDir, Duration.ofSeconds(5), 8_000));
+
+        AgentEngine engine = new AgentEngine(new FailingBashThenFinishProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-bash-exit-code", "fail once"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(result.state().observations()).hasSize(1);
+        assertThat(result.state().observations().get(0)).contains("exitCode=7", "boom");
+        assertThat(trace.events())
+                .filteredOn(event -> event.type() == TraceEventType.TOOL_RESULT)
+                .extracting(TraceEvent::detail)
+                .first()
+                .asString()
+                .contains("success=true", "exitCode=7");
+    }
+
+    /**
      * 真实 edit_file 工具可以局部修改文件
      */
     @Test
@@ -440,6 +466,30 @@ class AgentEngineTest {
                 return "Get-Content '" + path + "'";
             }
             return "cat '" + path + "'";
+        }
+    }
+
+    /**
+     * 先执行失败 bash 再结束
+     */
+    private static final class FailingBashThenFinishProvider implements ModelProvider {
+        /**
+         * 根据状态和阶段返回模型决策。
+         */
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            if (state.observations().isEmpty()) {
+                return new ToolDecision(new ToolCall("bash",
+                        Collections.<String, Object>singletonMap("command", commandThatFails())));
+            }
+            return new FinishDecision("done");
+        }
+
+        private String commandThatFails() {
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                return "Write-Output 'boom'; exit 7";
+            }
+            return "echo boom; exit 7";
         }
     }
 

@@ -341,7 +341,8 @@ final class MainLoopStartupCheck {
 
         private static String compileAndRunCommand() {
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                return "javac HelloFromStartup.java; if ($LASTEXITCODE -eq 0) { java HelloFromStartup }";
+                return "javac HelloFromStartup.java; "
+                        + "if ($LASTEXITCODE -eq 0) { java HelloFromStartup } else { exit $LASTEXITCODE }";
             }
             return "javac HelloFromStartup.java && java HelloFromStartup";
         }

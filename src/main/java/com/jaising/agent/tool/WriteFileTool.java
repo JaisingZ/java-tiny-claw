@@ -4,6 +4,7 @@ import com.jaising.agent.domain.AgentState;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -43,7 +44,7 @@ public final class WriteFileTool implements Tool {
 
         Map<String, Object> contentProperty = new LinkedHashMap<String, Object>();
         contentProperty.put("type", "string");
-        contentProperty.put("description", "Full file content to write");
+        contentProperty.put("description", "Full UTF-8 file content to write");
 
         Map<String, Object> properties = new LinkedHashMap<String, Object>();
         properties.put("path", pathProperty);
@@ -54,7 +55,7 @@ public final class WriteFileTool implements Tool {
         parameters.put("properties", properties);
         parameters.put("required", Arrays.asList("path", "content"));
 
-        return new ToolDefinition(name(), "Create or overwrite a file inside the workspace; "
+        return new ToolDefinition(name(), "Create or overwrite a UTF-8 text file inside the workspace; "
                 + "missing parent directories are created automatically", parameters);
     }
 
@@ -72,6 +73,10 @@ public final class WriteFileTool implements Tool {
         if (!(rawContent instanceof String)) {
             return ToolResult.failure("Missing required argument: content");
         }
+        String content = (String) rawContent;
+        if (content.indexOf('\0') >= 0) {
+            return ToolResult.failure("Content contains NUL bytes");
+        }
 
         Path target = workDir.resolve((String) rawPath).normalize();
         if (!target.startsWith(workDir)) {
@@ -83,12 +88,12 @@ public final class WriteFileTool implements Tool {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.writeString(target, (String) rawContent);
+            Files.writeString(target, content, StandardCharsets.UTF_8);
         } catch (IOException ex) {
             return ToolResult.failure("Failed to write file: " + ex.getMessage());
         }
 
         return ToolResult.success("Wrote file: " + rawPath
-                + " (" + ((String) rawContent).length() + " characters)");
+                + " (" + content.length() + " characters)");
     }
 }
