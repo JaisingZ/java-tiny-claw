@@ -133,6 +133,8 @@ public final class SiliconFlowModelProvider implements ModelProvider {
                     + "内部计划必须基于已有 Observation，不能把已失败命令再次作为候选方案。";
         }
         return "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个工具；不要输出空内容。"
+                + "每轮最多调用一个工具。"
+                + "如果 Observation 已经满足用户目标且没有失败信息，直接输出最终回答，不要重复调用相同工具。"
                 + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。"
                 + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。";
     }

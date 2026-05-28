@@ -18,6 +18,7 @@ import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
 import com.jaising.agent.trace.InMemoryTraceRecorder;
 import com.jaising.agent.trace.TraceEvent;
+import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
@@ -103,9 +104,7 @@ public final class AgentApplication {
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
 
-        printTrace(traceRecorder.events());
-        printResult(result);
-        printObservations(result);
+        printRunOutput(result, traceRecorder.events(), options.debug(), System.out);
     }
 
     private static void registerTool(ToolRegistry registry, Tool tool, RunLogger runLogger) {
@@ -113,26 +112,36 @@ public final class AgentApplication {
         runLogger.registryMounted(tool.name());
     }
 
-    private static void printTrace(List<TraceEvent> events) {
-        System.out.println("TRACE");
+    static void printRunOutput(RunResult result, List<TraceEvent> events, boolean debug, PrintStream output) {
+        if (!debug) {
+            printTrace(events, output);
+        }
+        printResult(result, output);
+        if (!debug) {
+            printObservations(result, output);
+        }
+    }
+
+    private static void printTrace(List<TraceEvent> events, PrintStream output) {
+        output.println("TRACE");
         for (TraceEvent event : events) {
-            System.out.println(event.type()
+            output.println(event.type()
                     + " step=" + event.step()
                     + " durationMs=" + event.durationMillis()
                     + " detail=" + event.detail());
         }
     }
 
-    private static void printResult(RunResult result) {
-        System.out.println("RESULT status=" + result.state().status()
+    private static void printResult(RunResult result, PrintStream output) {
+        output.println("RESULT status=" + result.state().status()
                 + " answer=" + result.state().finalAnswer()
                 + " failure=" + result.state().failureReason());
     }
 
-    private static void printObservations(RunResult result) {
-        System.out.println("OBSERVATIONS");
+    private static void printObservations(RunResult result, PrintStream output) {
+        output.println("OBSERVATIONS");
         for (String observation : result.state().observations()) {
-            System.out.println(observation);
+            output.println(observation);
         }
     }
 
