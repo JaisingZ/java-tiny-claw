@@ -36,6 +36,7 @@ public final class AgentEngine {
     private final TraceRecorder traceRecorder;
     private final int maxSteps;
     private final boolean enableThinking;
+    private final RunLogger runLogger;
 
     /**
      * 创建 AgentEngine。
@@ -52,6 +53,16 @@ public final class AgentEngine {
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
             List<? extends ToolMiddleware> middleware, StateStore stateStore,
             TraceRecorder traceRecorder, int maxSteps, boolean enableThinking) {
+        this(provider, toolRegistry, middleware, stateStore, traceRecorder, maxSteps, enableThinking,
+                NoopRunLogger.INSTANCE);
+    }
+
+    /**
+     * 创建 AgentEngine。
+     */
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
+            List<? extends ToolMiddleware> middleware, StateStore stateStore,
+            TraceRecorder traceRecorder, int maxSteps, boolean enableThinking, RunLogger runLogger) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
         this.middleware = Collections.unmodifiableList(new ArrayList<ToolMiddleware>(middleware));
@@ -59,6 +70,7 @@ public final class AgentEngine {
         this.traceRecorder = traceRecorder;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
+        this.runLogger = runLogger == null ? NoopRunLogger.INSTANCE : runLogger;
     }
 
     /**
@@ -75,6 +87,7 @@ public final class AgentEngine {
 
         // 逐轮推进直到结束或超步数
         while (state.status() == AgentStatus.RUNNING && state.stepCount() < maxSteps) {
+            runLogger.turnStarted(state.stepCount() + 1);
             if (enableThinking) {
                 LoopStep thinkingStep = runThinkingStep(state);
                 if (thinkingStep.done()) {
@@ -109,6 +122,7 @@ public final class AgentEngine {
      */
     private LoopStep runThinkingStep(AgentState state) {
         long thinkingStart = System.nanoTime();
+        runLogger.thinkingStarted();
         traceRecorder.record(new TraceEvent(TraceEventType.THINKING_REQUEST, state.taskId(),
                 state.stepCount(), "enableThinking=true phase=THINKING step=" + state.stepCount()
                         + " tools=[] observations=" + state.observations().size()
@@ -131,6 +145,7 @@ public final class AgentEngine {
         ThinkingDecision thinking = (ThinkingDecision) thinkingDecision;
         traceRecorder.record(new TraceEvent(TraceEventType.THINKING_RESPONSE, state.taskId(),
                 state.stepCount(), decisionSummary(thinking), thinkingDuration));
+        runLogger.thinkingCompleted(thinking, thinkingDuration);
         AgentState nextState = state.think(thinking.thought());
         stateStore.save(nextState);
         return LoopStep.continueWith(nextState);
@@ -143,6 +158,7 @@ public final class AgentEngine {
     private DecisionStep requestActionDecision(AgentState state) {
         long modelStart = System.nanoTime();
         List<ToolDefinition> toolDefinitions = toolRegistry.definitions();
+        runLogger.actionStarted(toolDefinitions);
         traceRecorder.record(new TraceEvent(TraceEventType.MODEL_REQUEST, state.taskId(),
                 state.stepCount(), "phase=ACTION step=" + state.stepCount()
                         + " tools=" + toolNames(toolDefinitions)
@@ -160,6 +176,9 @@ public final class AgentEngine {
         long modelDuration = elapsedMillis(modelStart);
         traceRecorder.record(new TraceEvent(TraceEventType.MODEL_RESPONSE, state.taskId(),
                 state.stepCount(), decisionSummary(decision), modelDuration));
+        if (decision instanceof ToolDecision) {
+            runLogger.toolDecision((ToolDecision) decision);
+        }
         return DecisionStep.continueWith(state, decision);
     }
 
@@ -173,6 +192,7 @@ public final class AgentEngine {
             stateStore.save(nextState);
             traceRecorder.record(new TraceEvent(TraceEventType.FINISHED, nextState.taskId(),
                     nextState.stepCount(), "answer=" + finish.answer(), 0L));
+            runLogger.finished(finish);
             return LoopStep.done(nextState);
         }
 
@@ -194,6 +214,7 @@ public final class AgentEngine {
         }
 
         long toolStart = System.nanoTime();
+        runLogger.toolStarted(toolDecision.call());
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_CALL, state.taskId(),
                 state.stepCount(), "tool=" + toolDecision.call().toolName()
                         + " args=" + toolDecision.call().arguments(), 0L));
@@ -206,6 +227,7 @@ public final class AgentEngine {
                         ? "success=true output=" + toolResult.output()
                         : "success=false error=" + toolResult.errorMessage(),
                 toolDuration));
+        runLogger.toolCompleted(toolDecision.call(), toolResult, toolDuration);
 
         if (!toolResult.success()) {
             return fail(state, toolResult.errorMessage());
@@ -224,6 +246,7 @@ public final class AgentEngine {
         stateStore.save(failed);
         traceRecorder.record(new TraceEvent(TraceEventType.FAILED, failed.taskId(),
                 failed.stepCount(), "reason=" + failed.failureReason(), 0L));
+        runLogger.failed(failed.failureReason());
         return LoopStep.done(failed);
     }
 

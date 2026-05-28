@@ -57,12 +57,12 @@ class SiliconFlowModelProviderLiveTest {
         assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
         assertThat(thinkingResponse(traceRecorder.events()).detail()).isNotBlank();
         assertThat(providerExchange.toString())
-                .contains("=== SiliconFlow request phase=THINKING ===")
-                .contains("=== SiliconFlow response phase=THINKING ===")
-                .contains("=== SiliconFlow decision phase=THINKING ===")
-                .contains("=== SiliconFlow request phase=ACTION ===")
-                .contains("=== SiliconFlow response phase=ACTION ===")
-                .contains("=== SiliconFlow decision phase=ACTION ===")
+                .contains("========== [Provider][THINKING] Request JSON ==========")
+                .contains("========== [Provider][THINKING] Response JSON ==========")
+                .contains("========== [Provider][THINKING] Parsed Decision ==========")
+                .contains("========== [Provider][ACTION] Request JSON ==========")
+                .contains("========== [Provider][ACTION] Response JSON ==========")
+                .contains("========== [Provider][ACTION] Parsed Decision ==========")
                 .contains("\"messages\"")
                 .contains("\"choices\"")
                 .doesNotContain("Bearer ");

@@ -288,6 +288,38 @@ class AgentEngineTest {
     }
 
     /**
+     * 可读运行日志按主循环顺序输出关键节点
+     */
+    @Test
+    void emitsReadableRunLoggerEventsInLoopOrder() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool());
+        RecordingRunLogger runLogger = new RecordingRunLogger();
+
+        AgentEngine engine = new AgentEngine(new ThinkingScriptedProvider(), registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4, true, runLogger);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-readable-log", "echo once"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(runLogger.events()).containsSubsequence(
+                "turn:1",
+                "thinking-start",
+                "thinking-complete:plan to call echo",
+                "action-start:[echo]",
+                "tool-decision:echo",
+                "tool-start:echo",
+                "tool-success:echo",
+                "turn:2",
+                "thinking-start",
+                "thinking-complete:plan to finish",
+                "action-start:[echo]",
+                "finish:done");
+    }
+
+    /**
      * 慢思考阶段模型异常直接失败
      */
     @Test
@@ -546,6 +578,81 @@ class AgentEngineTest {
         @Override
         public ToolResult execute(ToolCall call, AgentState state) {
             return ToolResult.failure("read failed");
+        }
+    }
+
+    /**
+     * 记录运行日志事件
+     */
+    private static final class RecordingRunLogger implements RunLogger {
+        private final List<String> events = new ArrayList<String>();
+
+        @Override
+        public void registryMounted(String toolName) {
+            events.add("registry:" + toolName);
+        }
+
+        @Override
+        public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
+                List<ToolDefinition> tools) {
+            events.add("engine-started");
+        }
+
+        @Override
+        public void turnStarted(int turn) {
+            events.add("turn:" + turn);
+        }
+
+        @Override
+        public void thinkingStarted() {
+            events.add("thinking-start");
+        }
+
+        @Override
+        public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
+            events.add("thinking-complete:" + decision.thought());
+        }
+
+        @Override
+        public void actionStarted(List<ToolDefinition> tools) {
+            events.add("action-start:" + toolNames(tools));
+        }
+
+        @Override
+        public void toolDecision(ToolDecision decision) {
+            events.add("tool-decision:" + decision.call().toolName());
+        }
+
+        @Override
+        public void toolStarted(ToolCall call) {
+            events.add("tool-start:" + call.toolName());
+        }
+
+        @Override
+        public void toolCompleted(ToolCall call, ToolResult result, long durationMillis) {
+            events.add((result.success() ? "tool-success:" : "tool-failed:") + call.toolName());
+        }
+
+        @Override
+        public void finished(FinishDecision decision) {
+            events.add("finish:" + decision.answer());
+        }
+
+        @Override
+        public void failed(String reason) {
+            events.add("failed:" + reason);
+        }
+
+        private List<String> events() {
+            return events;
+        }
+
+        private List<String> toolNames(List<ToolDefinition> tools) {
+            List<String> names = new ArrayList<String>();
+            for (ToolDefinition tool : tools) {
+                names.add(tool.name());
+            }
+            return names;
         }
     }
 }

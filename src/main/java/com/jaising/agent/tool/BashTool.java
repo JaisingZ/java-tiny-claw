@@ -58,7 +58,7 @@ public final class BashTool implements Tool {
     public ToolDefinition definition() {
         Map<String, Object> commandProperty = new LinkedHashMap<String, Object>();
         commandProperty.put("type", "string");
-        commandProperty.put("description", "Shell command to execute inside the workspace");
+        commandProperty.put("description", commandDescription());
 
         Map<String, Object> properties = new LinkedHashMap<String, Object>();
         properties.put("command", commandProperty);
@@ -68,7 +68,7 @@ public final class BashTool implements Tool {
         parameters.put("properties", properties);
         parameters.put("required", Arrays.asList("command"));
 
-        return new ToolDefinition(name(), "Execute a shell command inside the workspace", parameters);
+        return new ToolDefinition(name(), toolDescription(), parameters);
     }
 
     /**
@@ -148,5 +148,20 @@ public final class BashTool implements Tool {
 
     private boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("win");
+    }
+
+    private String toolDescription() {
+        if (isWindows()) {
+            return "Execute a PowerShell command inside the workspace. Do not use mkdir -p; "
+                    + "use New-Item -ItemType Directory -Force target when a directory must be created.";
+        }
+        return "Execute a bash command inside the workspace";
+    }
+
+    private String commandDescription() {
+        if (isWindows()) {
+            return "PowerShell command to execute inside the workspace";
+        }
+        return "bash command to execute inside the workspace";
     }
 }

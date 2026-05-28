@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jaising.agent.domain.AgentState;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
@@ -95,6 +97,81 @@ class SiliconFlowModelProviderTest {
     }
 
     @Test
+    void parsesMarkdownFencedToolArguments() throws Exception {
+        startServer(200, completionWithToolArguments("```json\n{\"text\":\"hello\"}\n```"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentState.create(new Task("task-fenced", "echo hello")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+
+        assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
+                Collections.<String, Object>singletonMap("text", "hello"))));
+    }
+
+    @Test
+    void parsesDoubleEscapedToolArguments() throws Exception {
+        startServer(200, completionWithToolArguments("\"{\\\"text\\\":\\\"hello\\\"}\""),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentState.create(new Task("task-escaped", "echo hello")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+
+        assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
+                Collections.<String, Object>singletonMap("text", "hello"))));
+    }
+
+    @Test
+    void parsesToolArgumentsWrappedInText() throws Exception {
+        startServer(200, completionWithToolArguments("arguments are {\"text\":\"hello\"}"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentState.create(new Task("task-wrapped", "echo hello")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+
+        assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
+                Collections.<String, Object>singletonMap("text", "hello"))));
+    }
+
+    @Test
+    void parsesToolArgumentsMissingTrailingObjectBrace() throws Exception {
+        startServer(200, completionWithToolArguments("{\"text\":\"hello\""),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentState.create(new Task("task-missing-brace", "echo hello")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+
+        assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
+                Collections.<String, Object>singletonMap("text", "hello"))));
+    }
+
+    @Test
+    void parsesToolArgumentsMissingTrailingBraceWhenTextContainsBraces() throws Exception {
+        startServer(200, completionWithToolArguments("{\"text\":\"literal { and } braces\""),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentState.create(new Task("task-string-braces", "echo braces")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+
+        assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
+                Collections.<String, Object>singletonMap("text", "literal { and } braces"))));
+    }
+
+    @Test
     void debugOutputPrintsRequestResponsePhaseAndDecision() throws Exception {
         AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
         startServer(200, completionWithMessage("{\"content\":\"done\"}"),
@@ -108,12 +185,12 @@ class SiliconFlowModelProviderTest {
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
 
         assertThat(debugOutput.toString())
-                .contains("=== SiliconFlow request phase=ACTION ===")
+                .contains("========== [Provider][ACTION] Request JSON ==========")
                 .contains("\"model\" : \"Qwen/Qwen3-8B\"")
                 .contains("\"content\" : \"debug it\"")
-                .contains("=== SiliconFlow response phase=ACTION ===")
+                .contains("========== [Provider][ACTION] Response JSON ==========")
                 .contains("\"content\" : \"done\"")
-                .contains("=== SiliconFlow decision phase=ACTION ===")
+                .contains("========== [Provider][ACTION] Parsed Decision ==========")
                 .contains("FinishDecision answer=done")
                 .doesNotContain("Bearer test-key");
     }
@@ -155,7 +232,7 @@ class SiliconFlowModelProviderTest {
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object")))))
                 .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("Invalid tool arguments JSON");
+                .hasMessageContaining("Invalid tool arguments JSON: not-json");
     }
 
     private void startServer(int statusCode, String responseBody,
@@ -185,5 +262,17 @@ class SiliconFlowModelProviderTest {
 
     private static String completionWithMessage(String messageJson) {
         return "{\"choices\":[{\"message\":" + messageJson + ",\"finish_reason\":\"stop\"}]}";
+    }
+
+    private static String completionWithToolArguments(String arguments) throws Exception {
+        ObjectNode message = MAPPER.createObjectNode();
+        ArrayNode toolCalls = message.putArray("tool_calls");
+        ObjectNode toolCall = toolCalls.addObject();
+        toolCall.put("id", "call-1");
+        toolCall.put("type", "function");
+        ObjectNode function = toolCall.putObject("function");
+        function.put("name", "echo");
+        function.put("arguments", arguments);
+        return completionWithMessage(MAPPER.writeValueAsString(message));
     }
 }

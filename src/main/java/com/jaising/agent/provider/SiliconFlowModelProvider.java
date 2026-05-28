@@ -20,9 +20,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -67,10 +71,10 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     @Override
     public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
-        debug("=== SiliconFlow request phase=" + phase + " ===");
+        debug("========== [Provider][" + phase + "] Request JSON ==========");
         debugJson(requestBody);
         JsonNode response = send(requestBody);
-        debug("=== SiliconFlow response phase=" + phase + " ===");
+        debug("========== [Provider][" + phase + "] Response JSON ==========");
         debugJson(response);
         JsonNode message = firstMessage(response);
 
@@ -86,7 +90,7 @@ public final class SiliconFlowModelProvider implements ModelProvider {
             }
         }
 
-        debug("=== SiliconFlow decision phase=" + phase + " ===");
+        debug("========== [Provider][" + phase + "] Parsed Decision ==========");
         debug(decisionSummary(decision));
         return decision;
     }
@@ -97,10 +101,11 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         root.put("stream", false);
 
         ArrayNode messages = root.putArray("messages");
-        addMessage(messages, "system", "你是 java-tiny-claw 的模型 Provider，请根据当前任务给出下一步决策。");
+        addMessage(messages, "system", "你是 java-tiny-claw 的模型 Provider，请根据当前任务给出下一步决策。"
+                + phaseInstruction(phase));
         addMessage(messages, "user", state.goal());
         if (hasText(state.lastThought())) {
-            addMessage(messages, "assistant", state.lastThought());
+            addMessage(messages, "system", "内部思考记录：" + state.lastThought());
         }
         for (String observation : state.observations()) {
             addMessage(messages, "user", "Observation: " + observation);
@@ -119,6 +124,15 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         }
 
         return root;
+    }
+
+    private String phaseInstruction(DecisionPhase phase) {
+        if (phase == DecisionPhase.THINKING) {
+            return "当前是 THINKING 阶段：只输出内部计划，不要回答用户，不要调用工具。";
+        }
+        return "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个工具；不要输出空内容。"
+                + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。"
+                + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。";
     }
 
     private void addMessage(ArrayNode messages, String role, String content) {
@@ -202,11 +216,150 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         if (!hasText(argumentsText)) {
             return Collections.emptyMap();
         }
-        try {
-            return objectMapper.readValue(argumentsText, ARGUMENTS_TYPE);
-        } catch (JsonProcessingException ex) {
-            throw new RuntimeException("Invalid tool arguments JSON", ex);
+
+        Set<String> candidates = argumentCandidates(argumentsText);
+        for (String candidate : candidates) {
+            Map<String, Object> parsed = tryParseArguments(candidate);
+            if (parsed != null) {
+                return parsed;
+            }
         }
+        throw new RuntimeException("Invalid tool arguments JSON: " + argumentsText);
+    }
+
+    private Set<String> argumentCandidates(String argumentsText) {
+        Set<String> candidates = new LinkedHashSet<String>();
+        addArgumentCandidate(candidates, argumentsText);
+
+        String stripped = stripMarkdownFence(argumentsText);
+        addArgumentCandidate(candidates, stripped);
+        addArgumentCandidate(candidates, extractJsonObject(stripped));
+
+        String unescaped = unescapeJsonString(argumentsText);
+        addArgumentCandidate(candidates, unescaped);
+        addArgumentCandidate(candidates, stripMarkdownFence(unescaped));
+        addArgumentCandidate(candidates, extractJsonObject(unescaped));
+        addArgumentCandidate(candidates, extractJsonObject(stripMarkdownFence(unescaped)));
+
+        addArgumentCandidate(candidates, extractJsonObject(argumentsText));
+        return candidates;
+    }
+
+    private void addArgumentCandidate(Set<String> candidates, String value) {
+        if (hasText(value)) {
+            String trimmed = value.trim();
+            candidates.add(trimmed);
+            String completed = completeTrailingJsonClosers(trimmed);
+            if (hasText(completed)) {
+                candidates.add(completed);
+            }
+        }
+    }
+
+    private Map<String, Object> tryParseArguments(String candidate) {
+        try {
+            JsonNode node = objectMapper.readTree(candidate);
+            if (node == null || !node.isObject()) {
+                return null;
+            }
+            return objectMapper.convertValue(node, ARGUMENTS_TYPE);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private String stripMarkdownFence(String value) {
+        if (!hasText(value)) {
+            return value;
+        }
+        String trimmed = value.trim();
+        if (!trimmed.startsWith("```")) {
+            return trimmed;
+        }
+        int firstLineEnd = trimmed.indexOf('\n');
+        int lastFence = trimmed.lastIndexOf("```");
+        if (firstLineEnd < 0 || lastFence <= firstLineEnd) {
+            return trimmed;
+        }
+        return trimmed.substring(firstLineEnd + 1, lastFence).trim();
+    }
+
+    private String extractJsonObject(String value) {
+        if (!hasText(value)) {
+            return value;
+        }
+        String trimmed = value.trim();
+        int start = trimmed.indexOf('{');
+        int end = trimmed.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return trimmed;
+        }
+        return trimmed.substring(start, end + 1).trim();
+    }
+
+    private String unescapeJsonString(String value) {
+        if (!hasText(value)) {
+            return value;
+        }
+        String trimmed = value.trim();
+        if (!trimmed.startsWith("\"") || !trimmed.endsWith("\"")) {
+            return trimmed;
+        }
+        try {
+            return objectMapper.readValue(trimmed, String.class);
+        } catch (JsonProcessingException ex) {
+            return trimmed;
+        }
+    }
+
+    private String completeTrailingJsonClosers(String value) {
+        if (!hasText(value)) {
+            return value;
+        }
+        String trimmed = value.trim();
+        if (!trimmed.startsWith("{")) {
+            return null;
+        }
+
+        Deque<Character> closers = new ArrayDeque<Character>();
+        boolean inString = false;
+        boolean escaped = false;
+        for (int index = 0; index < trimmed.length(); index++) {
+            char current = trimmed.charAt(index);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (inString) {
+                if (current == '\\') {
+                    escaped = true;
+                } else if (current == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (current == '"') {
+                inString = true;
+            } else if (current == '{') {
+                closers.push('}');
+            } else if (current == '[') {
+                closers.push(']');
+            } else if (current == '}' || current == ']') {
+                if (closers.isEmpty() || closers.pop() != current) {
+                    return null;
+                }
+            }
+        }
+
+        if (inString || closers.isEmpty() || closers.size() > 8) {
+            return null;
+        }
+
+        StringBuilder completed = new StringBuilder(trimmed);
+        while (!closers.isEmpty()) {
+            completed.append(closers.pop());
+        }
+        return completed.toString();
     }
 
     private String textOrFallback(JsonNode node, String primary, String fallback) {

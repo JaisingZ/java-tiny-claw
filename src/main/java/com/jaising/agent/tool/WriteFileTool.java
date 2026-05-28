@@ -54,7 +54,8 @@ public final class WriteFileTool implements Tool {
         parameters.put("properties", properties);
         parameters.put("required", Arrays.asList("path", "content"));
 
-        return new ToolDefinition(name(), "Create or overwrite a file inside the workspace", parameters);
+        return new ToolDefinition(name(), "Create or overwrite a file inside the workspace; "
+                + "missing parent directories are created automatically", parameters);
     }
 
     /**

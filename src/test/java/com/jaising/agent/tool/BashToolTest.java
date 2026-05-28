@@ -97,6 +97,7 @@ class BashToolTest {
         ToolDefinition definition = tool.definition();
 
         assertThat(definition.name()).isEqualTo("bash");
+        assertThat(definition.description()).contains("PowerShell", "mkdir -p");
         assertThat(definition.parameters().toString()).contains("command", "required");
     }
 

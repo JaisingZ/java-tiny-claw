@@ -89,6 +89,7 @@ class WriteFileToolTest {
         ToolDefinition definition = tool.definition();
 
         assertThat(definition.name()).isEqualTo("write_file");
+        assertThat(definition.description()).contains("parent directories");
         assertThat(definition.parameters().toString()).contains("path", "content", "required");
     }
 
