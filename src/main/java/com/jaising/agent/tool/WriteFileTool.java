@@ -96,4 +96,12 @@ public final class WriteFileTool implements Tool {
         return ToolResult.success("Wrote file: " + rawPath
                 + " (" + content.length() + " characters)");
     }
+
+    /**
+     * 明确标记具有副作用。
+     */
+    @Override
+    public boolean isSideEffect() {
+        return true;
+    }
 }

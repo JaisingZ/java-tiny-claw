@@ -3,6 +3,8 @@ package com.jaising.agent.tool;
 import com.jaising.agent.domain.AgentState;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,6 +21,8 @@ import java.util.concurrent.TimeUnit;
  * 在工作区执行 shell 命令的工具
  */
 public final class BashTool implements Tool {
+
+    private static final Logger logger = LoggerFactory.getLogger(BashTool.class);
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
     private static final int DEFAULT_MAX_OUTPUT_CHARS = 8_000;
@@ -78,13 +82,17 @@ public final class BashTool implements Tool {
     public ToolResult execute(ToolCall call, AgentState state) {
         Object rawCommand = call.arguments().get("command");
         if (!(rawCommand instanceof String) || ((String) rawCommand).trim().isEmpty()) {
+            logger.warn("BashTool execution failed: missing command argument");
             return ToolResult.failure("Missing required argument: command");
         }
 
+        String command = (String) rawCommand;
+        logger.info("Executing bash command: {}", command);
         Process process;
         try {
-            process = newProcess((String) rawCommand).start();
+            process = newProcess(command).start();
         } catch (IOException ex) {
+            logger.error("Failed to start bash process", ex);
             return ToolResult.failure("Failed to start command: " + ex.getMessage());
         }
 
@@ -168,5 +176,12 @@ public final class BashTool implements Tool {
                     + "if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }";
         }
         return "bash command to execute inside the workspace";
+    }
+    /**
+     * 默认标记为具有副作用，因为脚本内容不可知。
+     */
+    @Override
+    public boolean isSideEffect() {
+        return true;
     }
 }

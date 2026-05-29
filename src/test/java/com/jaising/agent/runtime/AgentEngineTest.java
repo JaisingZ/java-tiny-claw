@@ -7,6 +7,7 @@ import com.jaising.agent.domain.AgentStatus;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
+import com.jaising.agent.domain.ParallelToolDecision;
 import com.jaising.agent.domain.Task;
 import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
@@ -587,6 +588,66 @@ class AgentEngineTest {
         public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall("echo", Collections.singletonMap("text", "hello")));
         }
+    }
+
+    /**
+     * 并行工具决策执行成功
+     */
+    @Test
+    void runsParallelTools() {
+        InMemoryStateStore store = new InMemoryStateStore();
+        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new ReadOnlyEchoTool("read1", "hello"));
+        registry.register(new ReadOnlyEchoTool("read2", "world"));
+
+        ParallelProvider provider = new ParallelProvider();
+        AgentEngine engine = new AgentEngine(provider, registry,
+                Arrays.asList(new AllowAllMiddleware()), store, trace, 4);
+
+        com.jaising.agent.runtime.RunResult result = engine.run(new Task("task-parallel", "parallel echo"));
+
+        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        // 并行结果合并顺序取决于 CompletableFuture 完成顺序或处理顺序，这里简单检查包含关系
+        assertThat(result.state().observations().get(0)).contains("hello");
+        assertThat(result.state().observations().get(0)).contains("world");
+    }
+
+    private static final class ParallelProvider implements ModelProvider {
+        private int callCount = 0;
+
+        @Override
+        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> tools) {
+            callCount++;
+            if (callCount == 1) {
+                return new ParallelToolDecision(Arrays.asList(
+                        new ToolCall("read1", Collections.<String, Object>emptyMap()),
+                        new ToolCall("read2", Collections.<String, Object>emptyMap())
+                ));
+            }
+            return new FinishDecision("done");
+        }
+    }
+
+    private static final class ReadOnlyEchoTool implements Tool {
+        private final String name;
+        private final String output;
+
+        ReadOnlyEchoTool(String name, String output) {
+            this.name = name;
+            this.output = output;
+        }
+
+        @Override
+        public String name() { return name; }
+
+        @Override
+        public ToolResult execute(ToolCall call, AgentState state) {
+            return ToolResult.success(output);
+        }
+
+        @Override
+        public boolean isSideEffect() { return false; }
     }
 
     /**

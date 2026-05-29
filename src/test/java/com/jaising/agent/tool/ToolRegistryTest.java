@@ -23,25 +23,25 @@ class ToolRegistryTest {
     @Test
     void exposesRegisteredToolDefinitions() {
         ToolRegistry registry = new ToolRegistry();
-        registry.register(new WeatherTool());
+        registry.register(new ReadOnlyTool());
 
         List<ToolDefinition> definitions = registry.definitions();
 
         assertThat(definitions).containsExactly(new ToolDefinition(
-                "get_weather",
-                "查询城市天气",
+                "read_only",
+                "只读工具",
                 Collections.<String, Object>singletonMap("type", "object")));
     }
 
     @Test
     void executesRegisteredTool() {
         ToolRegistry registry = new ToolRegistry();
-        registry.register(new WeatherTool());
+        registry.register(new ReadOnlyTool());
 
-        ToolResult result = registry.execute(new ToolCall("get_weather",
+        ToolResult result = registry.execute(new ToolCall("read_only",
                 Collections.<String, Object>emptyMap()), state());
 
-        assertThat(result).isEqualTo(ToolResult.success("sunny"));
+        assertThat(result).isEqualTo(ToolResult.success("ok"));
     }
 
     @Test
@@ -120,21 +120,26 @@ class ToolRegistryTest {
         return "cat '" + path + "'";
     }
 
-    private static final class WeatherTool implements Tool {
+    private static final class ReadOnlyTool implements Tool {
         @Override
         public String name() {
-            return "get_weather";
+            return "read_only";
         }
 
         @Override
         public ToolDefinition definition() {
-            return new ToolDefinition(name(), "查询城市天气",
+            return new ToolDefinition(name(), "只读工具",
                     Collections.<String, Object>singletonMap("type", "object"));
         }
 
         @Override
         public ToolResult execute(ToolCall call, AgentState state) {
-            return ToolResult.success("sunny");
+            return ToolResult.success("ok");
+        }
+
+        @Override
+        public boolean isSideEffect() {
+            return false;
         }
     }
 

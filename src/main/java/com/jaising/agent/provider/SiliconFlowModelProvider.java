@@ -7,13 +7,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentStatus;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
+import com.jaising.agent.domain.ParallelToolDecision;
 import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URI;
@@ -21,6 +25,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
@@ -34,6 +39,8 @@ import java.util.function.Consumer;
  * 使用 OpenAI 兼容 Chat Completions 协议
  */
 public final class SiliconFlowModelProvider implements ModelProvider {
+
+    private static final Logger logger = LoggerFactory.getLogger(SiliconFlowModelProvider.class);
 
     private static final TypeReference<Map<String, Object>> ARGUMENTS_TYPE =
             new TypeReference<Map<String, Object>>() {
@@ -71,11 +78,9 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     @Override
     public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
-        debug("========== [Provider][" + phase + "] Request JSON ==========");
-        debugJson(requestBody);
+        logger.debug("[Provider][{}] Request body: {}", phase, requestBody);
         JsonNode response = send(requestBody);
-        debug("========== [Provider][" + phase + "] Response JSON ==========");
-        debugJson(response);
+        logger.debug("[Provider][{}] Response body: {}", phase, response);
         JsonNode message = firstMessage(response);
 
         Decision decision;
@@ -89,9 +94,7 @@ public final class SiliconFlowModelProvider implements ModelProvider {
                 decision = new FinishDecision(content);
             }
         }
-
-        debug("========== [Provider][" + phase + "] Parsed Decision ==========");
-        debug(decisionSummary(decision));
+        logger.info("[Provider][{}] Parsed decision: {}", phase, decisionSummary(decision));
         return decision;
     }
 
@@ -132,8 +135,8 @@ public final class SiliconFlowModelProvider implements ModelProvider {
             return "当前是 THINKING 阶段：只输出内部计划，不要回答用户，不要调用工具。"
                     + "内部计划必须基于已有 Observation，不能把已失败命令再次作为候选方案。";
         }
-        return "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个工具；不要输出空内容。"
-                + "每轮最多调用一个工具。"
+        return "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个或多个独立工具；不要输出空内容。"
+                + "如果多个操作互相独立（例如读取多个不同文件），建议在单轮中并行调用。"
                 + "如果 Observation 已经满足用户目标且没有失败信息，直接输出最终回答，不要重复调用相同工具。"
                 + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。"
                 + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。";
@@ -174,13 +177,16 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (IOException ex) {
+            logger.error("SiliconFlow request failed", ex);
             throw new RuntimeException("SiliconFlow request failed", ex);
         } catch (InterruptedException ex) {
+            logger.error("SiliconFlow request interrupted", ex);
             Thread.currentThread().interrupt();
             throw new RuntimeException("SiliconFlow request interrupted", ex);
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            logger.error("SiliconFlow request failed with status {}: {}", response.statusCode(), response.body());
             throw new RuntimeException("SiliconFlow request failed: " + response.statusCode()
                     + " " + response.body());
         }
@@ -216,15 +222,31 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     }
 
     private Decision parseToolDecision(JsonNode message) {
-        JsonNode toolCall = message.get("tool_calls").get(0);
-        JsonNode function = toolCall.get("function");
-        if (function == null || function.isNull()) {
-            throw new RuntimeException("SiliconFlow tool call missing function");
+        JsonNode toolCalls = message.get("tool_calls");
+        if (toolCalls == null || !toolCalls.isArray() || toolCalls.isEmpty()) {
+            throw new RuntimeException("SiliconFlow tool calls missing or empty");
         }
-        String name = text(function.get("name"));
-        String argumentsText = text(function.get("arguments"));
-        Map<String, Object> arguments = parseArguments(argumentsText);
-        return new ToolDecision(new ToolCall(name, arguments));
+
+        List<ToolCall> calls = new ArrayList<ToolCall>();
+        for (JsonNode toolCall : toolCalls) {
+            JsonNode function = toolCall.get("function");
+            if (function == null || function.isNull()) {
+                continue;
+            }
+            String name = text(function.get("name"));
+            String argumentsText = text(function.get("arguments"));
+            Map<String, Object> arguments = parseArguments(argumentsText);
+            calls.add(new ToolCall(name, arguments));
+        }
+
+        if (calls.isEmpty()) {
+            throw new RuntimeException("SiliconFlow tool calls missing function in all calls");
+        }
+
+        if (calls.size() == 1) {
+            return new ToolDecision(calls.get(0));
+        }
+        return new ParallelToolDecision(calls);
     }
 
     private Map<String, Object> parseArguments(String argumentsText) {
@@ -393,20 +415,15 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     }
 
     private void debugJson(JsonNode node) {
-        if (debugSink == null) {
-            return;
-        }
         try {
-            debugSink.accept(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node));
+            logger.debug(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node));
         } catch (JsonProcessingException ex) {
-            debugSink.accept(node.toString());
+            logger.debug(node.toString());
         }
     }
 
     private void debug(String message) {
-        if (debugSink != null) {
-            debugSink.accept(message);
-        }
+        logger.debug(message);
     }
 
     private String decisionSummary(Decision decision) {
@@ -419,6 +436,9 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         if (decision instanceof ToolDecision) {
             ToolCall call = ((ToolDecision) decision).call();
             return "ToolDecision tool=" + call.toolName() + " args=" + call.arguments();
+        }
+        if (decision instanceof ParallelToolDecision) {
+            return "ParallelToolDecision calls=" + ((ParallelToolDecision) decision).getCalls();
         }
         return decision.getClass().getSimpleName();
     }

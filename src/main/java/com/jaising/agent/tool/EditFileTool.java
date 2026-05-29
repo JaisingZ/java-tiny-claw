@@ -268,4 +268,12 @@ public final class EditFileTool implements Tool {
             return errorMessage;
         }
     }
+
+    /**
+     * 明确标记具有副作用。
+     */
+    @Override
+    public boolean isSideEffect() {
+        return true;
+    }
 }

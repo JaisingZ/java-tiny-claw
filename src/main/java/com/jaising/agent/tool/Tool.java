@@ -27,4 +27,12 @@ public interface Tool {
      * 执行工具调用。
      */
     ToolResult execute(ToolCall call, AgentState state);
+
+    /**
+     * 标识工具是否具有副作用（写操作）。
+     * 默认为 true（保守策略），只读工具（如读取文件）应重写为 false。
+     */
+    default boolean isSideEffect() {
+        return true;
+    }
 }

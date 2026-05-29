@@ -32,7 +32,7 @@ Tool Registry 不负责：
 
 ## 当前接口基线
 
-工具必须实现 `Tool` 接口：
+工具必须实现 `Tool` 接口，并明确其是否具有副作用：
 
 ```java
 String name();
@@ -40,6 +40,14 @@ String name();
 ToolDefinition definition();
 
 ToolResult execute(ToolCall call, AgentState state);
+
+/**
+ * 标识工具是否具有副作用（写操作）。
+ * 默认为 true（保守策略），只读工具（如读取文件）应重写为 false。
+ */
+default boolean isSideEffect() {
+    return true;
+}
 ```
 
 `ToolRegistry` 当前提供四类能力：
@@ -58,16 +66,16 @@ ToolResult execute(ToolCall call, AgentState state);
 
 ## 执行流程
 
-```text
-AgentEngine
-  -> Middleware.beforeTool(...)
-  -> ToolRegistry.execute(call, state)
-       -> require(call.toolName())
-       -> tool.execute(call, state)
-       -> ToolResult.success(...) 或 ToolResult.failure(...)
-  -> AgentEngine 记录 TOOL_RESULT trace
-  -> 成功则 observe，失败则 fail
-```
+AgentEngine 处理工具决策时遵循“只读并发、涉写串行”原则：
+
+1. **分类分组**：根据 `tool.isSideEffect()` 将单轮 `tool_calls` 分为“只读组”和“涉写组”。
+2. **并发执行（只读组）**：
+   - 使用线程池并行调用 `ToolRegistry.execute(call, state)`。
+   - 所有并发任务共享当前步骤的 `AgentState` 快照。
+3. **顺序执行（涉写组）**：
+   - 在只读组全部完成后，按顺序串行执行涉写工具。
+   - 每个写操作均在主线程中按模型返回顺序执行，确保状态一致性。
+4. **结果聚合**：汇总所有工具结果，按原始 ID 匹配后返回给模型。
 
 未知工具不会抛出到主循环外，而是返回：
 
@@ -83,11 +91,20 @@ ToolResult.failure("tool_error: <message>")
 
 这样主循环只需要处理统一的成功或失败结果。
 
+## 决策模型升级
+
+为了支持多工具并行，`Decision` 接口新增 `ParallelToolDecision` 实现：
+
+- **ParallelToolDecision**：承载 `List<ToolCall>`，指示 `AgentEngine` 启动并行/串行混合执行流程。
+- **单工具回退**：原有的 `ToolDecision` 视为仅包含一个调用的特例。
+
 ## 基础工具
 
 当前第一版真实物理工具集保持极简，只包含文件读写、局部编辑和命令执行。
 
 ### read_file
+
+- **属性**：`isSideEffect() -> false` (只读，支持并发)
 
 职责：
 
@@ -105,6 +122,8 @@ ToolResult.failure("tool_error: <message>")
 
 ### write_file
 
+- **属性**：`isSideEffect() -> true` (写操作，强制串行)
+
 职责：
 
 - 在工作区内创建或覆盖文件。
@@ -119,6 +138,8 @@ ToolResult.failure("tool_error: <message>")
 - 目录创建或写入失败返回失败结果。
 
 ### edit_file
+
+- **属性**：`isSideEffect() -> true` (写操作，强制串行)
 
 职责：
 
@@ -137,6 +158,8 @@ ToolResult.failure("tool_error: <message>")
 - 匹配不到或匹配到多处都返回失败结果；多处匹配时要求模型提供更多上下文，不能猜测替换位置。
 
 ### bash
+
+- **属性**：`isSideEffect() -> true` (默认保守策略，强制串行，因为脚本内容不可知)
 
 职责：
 
@@ -162,7 +185,13 @@ ToolResult.failure("tool_error: <message>")
 
 Tool Registry 是分发层，不是完整安全策略层。`bash` 按本地开发 YOLO 思路实现，不内置黑名单。
 
-执行前的授权、白名单、黑名单、审批和风险分级应放在 `Middleware`。具体工具仍必须保留自己的底线防御，例如 `read_file` 的路径边界检查。
+执行前的授权、白名单、黑名单、审批和风险分级应放在 `Middleware`。由于引入了并行执行，需遵循以下规范：
+
+- **线程安全**：所有注册到 Registry 的 `Middleware`（如权限校验、日志记录）必须实现为线程安全。
+- **资源保护**：Registry 或 Engine 应为并行执行设置最大线程数限制，防止模型产生的过量调用耗尽系统资源。
+- **异常隔离**：并发组中某个工具的失败不应直接导致主线程崩溃，应收集错误信息并继续处理后续决策。
+
+具体工具仍必须保留自己的底线防御，例如 `read_file` 的路径边界检查。
 
 当前安全分层：
 

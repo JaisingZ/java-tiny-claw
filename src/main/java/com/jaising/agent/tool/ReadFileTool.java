@@ -85,4 +85,12 @@ public final class ReadFileTool implements Tool {
         return ToolResult.success(content.substring(0, MAX_OUTPUT_CHARS)
                 + "\n\n[Output truncated to " + MAX_OUTPUT_CHARS + " characters]");
     }
+
+    /**
+     * 显式标记为只读。
+     */
+    @Override
+    public boolean isSideEffect() {
+        return false;
+    }
 }

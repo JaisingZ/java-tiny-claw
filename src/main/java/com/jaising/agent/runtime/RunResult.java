@@ -43,9 +43,10 @@ public final class RunResult {
         if (this == other) {
             return true;
         }
-        if (!(other instanceof RunResult that)) {
+        if (!(other instanceof RunResult)) {
             return false;
         }
+        RunResult that = (RunResult) other;
         return Objects.equals(state, that.state);
     }
 
