@@ -1,7 +1,6 @@
 package com.jaising.agent.app;
 
 import com.jaising.agent.domain.Task;
-import com.jaising.agent.middleware.AllowAllMiddleware;
 import com.jaising.agent.provider.SiliconFlowConfig;
 import com.jaising.agent.provider.SiliconFlowModelProvider;
 import com.jaising.agent.runtime.AgentEngine;
@@ -20,7 +19,6 @@ import com.jaising.agent.trace.InMemoryTraceRecorder;
 import com.jaising.agent.trace.TraceEvent;
 import java.io.PrintStream;
 import java.nio.file.Path;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -98,8 +96,7 @@ public final class AgentApplication {
                 : new SiliconFlowModelProvider(config);
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
-        AgentEngine engine = new AgentEngine(provider, registry,
-                Collections.singletonList(new AllowAllMiddleware()), new InMemoryStateStore(), traceRecorder,
+        AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), traceRecorder,
                 options.maxSteps(), options.thinking(), runLogger);
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));

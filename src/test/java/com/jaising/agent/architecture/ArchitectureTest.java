@@ -21,18 +21,16 @@ class ArchitectureTest {
                     .layer("Domain").definedBy("com.jaising.agent.domain..")
                     .layer("Provider").definedBy("com.jaising.agent.provider..")
                     .layer("Tool").definedBy("com.jaising.agent.tool..")
-                    .layer("Middleware").definedBy("com.jaising.agent.middleware..")
                     .layer("State").definedBy("com.jaising.agent.state..")
                     .layer("Trace").definedBy("com.jaising.agent.trace..")
                     .layer("Runtime").definedBy("com.jaising.agent.runtime..")
                     .layer("App").definedBy("com.jaising.agent.app..")
                     .whereLayer("Runtime").mayOnlyAccessLayers(
-                            "Domain", "Provider", "Tool", "Middleware", "State", "Trace")
+                            "Domain", "Provider", "Tool", "State", "Trace")
                     .whereLayer("Provider").mayOnlyAccessLayers("Domain")
                     .whereLayer("Tool").mayOnlyAccessLayers("Domain")
-                    .whereLayer("Middleware").mayOnlyAccessLayers("Domain")
                     .whereLayer("State").mayOnlyAccessLayers("Domain")
                     .whereLayer("Trace").mayOnlyAccessLayers("Domain")
                     .whereLayer("App").mayOnlyAccessLayers(
-                            "Domain", "Provider", "Tool", "Middleware", "State", "Trace", "Runtime");
+                            "Domain", "Provider", "Tool", "State", "Trace", "Runtime");
 }

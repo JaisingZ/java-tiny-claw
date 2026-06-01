@@ -11,7 +11,6 @@ import com.jaising.agent.domain.Task;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
-import com.jaising.agent.middleware.AllowListMiddleware;
 import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.BashTool;
@@ -22,9 +21,7 @@ import com.jaising.agent.trace.TraceEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,10 +47,7 @@ class MainLoopJavaPrimitiveSmokeTest {
                 .register(new WriteFileTool(workDir))
                 .register(new BashTool(workDir, Duration.ofSeconds(10), 8_000));
 
-        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry,
-                Arrays.asList(new AllowListMiddleware(
-                        new HashSet<String>(Arrays.asList("write_file", "bash")))),
-                store, trace, 5);
+        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry, store, trace, 5);
 
         RunResult result = engine.run(new Task("task-java-smoke", "create and run minimal java file"));
 

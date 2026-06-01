@@ -13,7 +13,6 @@ import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
-import com.jaising.agent.middleware.AllowAllMiddleware;
 import com.jaising.agent.runtime.AgentEngine;
 import com.jaising.agent.runtime.RunResult;
 import com.jaising.agent.state.InMemoryStateStore;
@@ -49,7 +48,6 @@ class SiliconFlowModelProviderLiveTest {
                 new SiliconFlowModelProvider(liveConfig(),
                         line -> providerExchange.append(line).append(System.lineSeparator())),
                 new ToolRegistry(),
-                Collections.singletonList(new AllowAllMiddleware()),
                 new InMemoryStateStore(),
                 traceRecorder,
                 1,
@@ -140,7 +138,6 @@ class SiliconFlowModelProviderLiveTest {
         AgentEngine engine = new AgentEngine(
                 new SiliconFlowModelProvider(liveConfig(), System.out),
                 registry,
-                Collections.singletonList(new AllowAllMiddleware()),
                 new InMemoryStateStore(),
                 traceRecorder,
                 5,

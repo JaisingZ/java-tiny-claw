@@ -11,25 +11,24 @@ import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
-import com.jaising.agent.middleware.MiddlewareDecision;
-import com.jaising.agent.middleware.ToolMiddleware;
 import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.state.StateStore;
+import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
 import com.jaising.agent.trace.TraceEvent;
 import com.jaising.agent.trace.TraceEventType;
 import com.jaising.agent.trace.TraceRecorder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 主循环运行时
@@ -41,7 +40,6 @@ public final class AgentEngine {
 
     private final ModelProvider provider;
     private final ToolRegistry toolRegistry;
-    private final List<ToolMiddleware> middleware;
     private final StateStore stateStore;
     private final TraceRecorder traceRecorder;
     private final int maxSteps;
@@ -52,38 +50,40 @@ public final class AgentEngine {
     /**
      * 创建 AgentEngine。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
-            List<? extends ToolMiddleware> middleware, StateStore stateStore,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
             TraceRecorder traceRecorder, int maxSteps) {
-        this(provider, toolRegistry, middleware, stateStore, traceRecorder, maxSteps, false);
+        this(provider, toolRegistry, stateStore, traceRecorder, maxSteps, false);
     }
 
     /**
      * 创建 AgentEngine。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
-            List<? extends ToolMiddleware> middleware, StateStore stateStore,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
             TraceRecorder traceRecorder, int maxSteps, boolean enableThinking) {
-        this(provider, toolRegistry, middleware, stateStore, traceRecorder, maxSteps, enableThinking,
+        this(provider, toolRegistry, stateStore, traceRecorder, maxSteps, enableThinking,
                 NoopRunLogger.INSTANCE);
     }
 
     /**
      * 创建 AgentEngine。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry,
-            List<? extends ToolMiddleware> middleware, StateStore stateStore,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
             TraceRecorder traceRecorder, int maxSteps, boolean enableThinking, RunLogger runLogger) {
+        this(provider, toolRegistry, stateStore, traceRecorder, maxSteps, enableThinking,
+                runLogger, createToolExecutor());
+    }
+
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
+            TraceRecorder traceRecorder, int maxSteps, boolean enableThinking, RunLogger runLogger,
+            ExecutorService toolExecutor) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
-        this.middleware = Collections.unmodifiableList(new ArrayList<ToolMiddleware>(middleware));
         this.stateStore = stateStore;
         this.traceRecorder = traceRecorder;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.runLogger = runLogger == null ? NoopRunLogger.INSTANCE : runLogger;
-        this.toolExecutor = Executors.newFixedThreadPool(
-                Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
+        this.toolExecutor = toolExecutor;
     }
 
     /**
@@ -91,57 +91,54 @@ public final class AgentEngine {
      * 只在运行态持续推进循环
      */
     public RunResult run(Task task) {
-        try {
-            return runInternal(task);
-        } finally {
-            // 注意：当前实现中 toolExecutor 是在 Engine 构造时创建的
-            // 如果 Engine 生命周期很长，这里 shut down 可能会导致后续运行失败
-            // 但如果 Engine 是单次任务使用的，在这里 shut down 是合适的
-            // 考虑到 AgentEngine 的设计，通常是长期持有的组件，不应该在这里 shut down
-            // 更好的做法是 Engine 提供 shutdown 方法，或者使用全局线程池
-        }
+        return runInternal(task);
+    }
+
+    private static ExecutorService createToolExecutor() {
+        return Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
     }
 
     private RunResult runInternal(Task task) {
         logger.info("Starting task: {} (ID: {})", task.goal(), task.taskId());
-        // 先恢复已有状态
         AgentState state = stateStore.load(task.taskId()).orElse(AgentState.create(task));
-        // 非运行态直接返回
         if (state.status() != AgentStatus.RUNNING) {
             return new RunResult(state);
         }
 
-        // 逐轮推进直到结束或超步数
         while (state.status() == AgentStatus.RUNNING && state.stepCount() < maxSteps) {
-            int currentStep = state.stepCount() + 1;
-            logger.info("Starting turn {}/{}", currentStep, maxSteps);
-            runLogger.turnStarted(currentStep);
-            if (enableThinking) {
-                LoopStep thinkingStep = runThinkingStep(state);
-                if (thinkingStep.done()) {
-                    return new RunResult(thinkingStep.state());
-                }
-                state = thinkingStep.state();
-            }
-
-            DecisionStep decisionStep = requestActionDecision(state);
-            if (decisionStep.done()) {
-                return new RunResult(decisionStep.state());
-            }
-
-            LoopStep actionStep = handleDecision(decisionStep.state(), decisionStep.decision());
-            if (actionStep.done()) {
-                return new RunResult(actionStep.state());
-            }
-            state = actionStep.state();
+            state = runTurn(state);
         }
 
-        // 到达步数上限后失败
         if (state.status() == AgentStatus.RUNNING) {
-            state = fail(state, "max_steps_exceeded").state();
+            state = fail(state, "max_steps_exceeded");
         }
 
         return new RunResult(state);
+    }
+
+    private AgentState runTurn(AgentState state) {
+        int currentStep = state.stepCount() + 1;
+        logger.info("Starting turn {}/{}", currentStep, maxSteps);
+        runLogger.turnStarted(currentStep);
+
+        if (enableThinking) {
+            try {
+                state = runThinkingPhase(state);
+            } catch (ProviderCallException ex) {
+                return fail(state, ex.reason());
+            }
+            if (state.status() != AgentStatus.RUNNING) {
+                return state;
+            }
+        }
+
+        Decision decision;
+        try {
+            decision = requestActionDecision(state);
+        } catch (ProviderCallException ex) {
+            return fail(state, ex.reason());
+        }
+        return applyDecision(state, decision);
     }
 
     /**
@@ -155,74 +152,72 @@ public final class AgentEngine {
      * 执行慢思考阶段
      * 只保存内部思考 不写入观测
      */
-    private LoopStep runThinkingStep(AgentState state) {
-        long thinkingStart = System.nanoTime();
+    private AgentState runThinkingPhase(AgentState state) {
         runLogger.thinkingStarted();
-        traceRecorder.record(new TraceEvent(TraceEventType.THINKING_REQUEST, state.taskId(),
-                state.stepCount(), "enableThinking=true phase=THINKING step=" + state.stepCount()
+        ProviderResponse response = invokeProvider(state, DecisionPhase.THINKING, Collections.<ToolDefinition>emptyList(),
+                TraceEventType.THINKING_REQUEST, TraceEventType.THINKING_RESPONSE,
+                "enableThinking=true phase=THINKING step=" + state.stepCount()
                         + " tools=[] observations=" + state.observations().size()
-                        + " goal=" + state.goal(), 0L));
+                        + " goal=" + state.goal());
 
-        Decision thinkingDecision;
-        try {
-            thinkingDecision = provider.decide(state, DecisionPhase.THINKING, Collections.emptyList());
-        } catch (RuntimeException ex) {
-            return fail(state, "provider_error: " + ex.getMessage());
-        }
-
-        long thinkingDuration = elapsedMillis(thinkingStart);
-        if (!(thinkingDecision instanceof ThinkingDecision)) {
-            traceRecorder.record(new TraceEvent(TraceEventType.THINKING_RESPONSE, state.taskId(),
-                    state.stepCount(), decisionSummary(thinkingDecision), thinkingDuration));
+        if (!(response.decision() instanceof ThinkingDecision)) {
             return fail(state, "unsupported_thinking_decision");
         }
 
-        ThinkingDecision thinking = (ThinkingDecision) thinkingDecision;
-        logger.info("Thinking complete in {}ms: {}", thinkingDuration, thinking.thought());
-        traceRecorder.record(new TraceEvent(TraceEventType.THINKING_RESPONSE, state.taskId(),
-                state.stepCount(), decisionSummary(thinking), thinkingDuration));
-        runLogger.thinkingCompleted(thinking, thinkingDuration);
+        ThinkingDecision thinking = (ThinkingDecision) response.decision();
+        logger.info("Thinking complete in {}ms: {}", response.durationMillis(), thinking.thought());
+        runLogger.thinkingCompleted(thinking, response.durationMillis());
         AgentState nextState = state.think(thinking.thought());
         stateStore.save(nextState);
-        return LoopStep.continueWith(nextState);
+        return nextState;
     }
 
     /**
      * 请求行动阶段决策
      * 工具定义只在行动阶段可见
      */
-    private DecisionStep requestActionDecision(AgentState state) {
-        long modelStart = System.nanoTime();
+    private Decision requestActionDecision(AgentState state) {
         List<ToolDefinition> toolDefinitions = toolRegistry.definitions();
         runLogger.actionStarted(toolDefinitions);
-        traceRecorder.record(new TraceEvent(TraceEventType.MODEL_REQUEST, state.taskId(),
-                state.stepCount(), "phase=ACTION step=" + state.stepCount()
+        ProviderResponse response = invokeProvider(state, DecisionPhase.ACTION, toolDefinitions,
+                TraceEventType.MODEL_REQUEST, TraceEventType.MODEL_RESPONSE,
+                "phase=ACTION step=" + state.stepCount()
                         + " tools=" + toolNames(toolDefinitions)
                         + " observations=" + state.observations().size()
                         + " hasLastThought=" + hasText(state.lastThought())
-                        + " goal=" + state.goal(), 0L));
+                        + " goal=" + state.goal());
+
+        logger.info("Action decision received in {}ms: {}", response.durationMillis(),
+                decisionSummary(response.decision()));
+        if (response.decision() instanceof ToolDecision) {
+            runLogger.toolDecision((ToolDecision) response.decision());
+        }
+        return response.decision();
+    }
+
+    private ProviderResponse invokeProvider(AgentState state, DecisionPhase phase,
+            List<ToolDefinition> availableTools, TraceEventType requestType, TraceEventType responseType,
+            String requestDetail) {
+        long start = System.nanoTime();
+        traceRecorder.record(new TraceEvent(requestType, state.taskId(), state.stepCount(), requestDetail, 0L));
 
         Decision decision;
         try {
-            decision = provider.decide(state, DecisionPhase.ACTION, toolDefinitions);
+            decision = provider.decide(state, phase, availableTools);
         } catch (RuntimeException ex) {
-            return DecisionStep.done(fail(state, "provider_error: " + ex.getMessage()).state());
+            throw new ProviderCallException("provider_error: " + ex.getMessage());
         }
 
-        long modelDuration = elapsedMillis(modelStart);
-        logger.info("Action decision received in {}ms: {}", modelDuration, decisionSummary(decision));
-        traceRecorder.record(new TraceEvent(TraceEventType.MODEL_RESPONSE, state.taskId(),
-                state.stepCount(), decisionSummary(decision), modelDuration));
-        if (decision instanceof ToolDecision) {
-            runLogger.toolDecision((ToolDecision) decision);
-        }
-        return DecisionStep.continueWith(state, decision);
+        long durationMillis = elapsedMillis(start);
+        traceRecorder.record(new TraceEvent(responseType, state.taskId(), state.stepCount(),
+                decisionSummary(decision), durationMillis));
+        return new ProviderResponse(decision, durationMillis);
     }
 
     /**
      * 根据模型决策推进主循环
      */
-    private LoopStep handleDecision(AgentState state, Decision decision) {
+    private AgentState applyDecision(AgentState state, Decision decision) {
         if (decision instanceof FinishDecision) {
             FinishDecision finish = (FinishDecision) decision;
             AgentState nextState = state.finish(finish.answer());
@@ -230,11 +225,11 @@ public final class AgentEngine {
             traceRecorder.record(new TraceEvent(TraceEventType.FINISHED, nextState.taskId(),
                     nextState.stepCount(), "answer=" + finish.answer(), 0L));
             runLogger.finished(finish);
-            return LoopStep.done(nextState);
+            return nextState;
         }
 
         if (decision instanceof ToolDecision) {
-            return handleToolDecision(state, (ToolDecision) decision);
+            return handleToolDecision(state, ((ToolDecision) decision).call());
         }
 
         if (decision instanceof ParallelToolDecision) {
@@ -248,83 +243,7 @@ public final class AgentEngine {
      * 执行工具决策
      * 成功时推进一步并追加观测
      */
-    private LoopStep handleToolDecision(AgentState state, ToolDecision toolDecision) {
-        return executeSingleTool(state, toolDecision.call());
-    }
-
-    /**
-     * 处理并行工具决策
-     * 只读工具并发执行，涉写工具顺序执行
-     */
-    private LoopStep handleParallelToolDecision(AgentState state, ParallelToolDecision decision) {
-        List<ToolCall> allCalls = decision.getCalls();
-        if (allCalls.isEmpty()) {
-            return LoopStep.continueWith(state.advance());
-        }
-
-        List<ToolCall> readOnlyCalls = new ArrayList<ToolCall>();
-        List<ToolCall> sideEffectCalls = new ArrayList<ToolCall>();
-
-        for (ToolCall call : allCalls) {
-            if (toolRegistry.require(call.toolName()).isSideEffect()) {
-                sideEffectCalls.add(call);
-            } else {
-                readOnlyCalls.add(call);
-            }
-        }
-
-        List<String> results = new ArrayList<String>();
-
-        // 1. 并发执行只读工具
-        if (!readOnlyCalls.isEmpty()) {
-            List<CompletableFuture<ToolResult>> futures = new ArrayList<CompletableFuture<ToolResult>>();
-            for (final ToolCall call : readOnlyCalls) {
-                futures.add(CompletableFuture.supplyAsync(new Supplier<ToolResult>() {
-                    @Override
-                    public ToolResult get() {
-                        return executeToolCall(state, call);
-                    }
-                }, toolExecutor));
-            }
-
-            try {
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-                for (CompletableFuture<ToolResult> future : futures) {
-                    ToolResult res = future.get();
-                    if (!res.success()) {
-                        return fail(state, res.errorMessage());
-                    }
-                    results.add(res.output());
-                }
-            } catch (Exception e) {
-                return fail(state, "parallel_execution_failed: " + e.getMessage());
-            }
-        }
-
-        // 2. 顺序执行涉写工具
-        for (ToolCall call : sideEffectCalls) {
-            ToolResult res = executeToolCall(state, call);
-            if (!res.success()) {
-                return fail(state, res.errorMessage());
-            }
-            results.add(res.output());
-        }
-
-        // 合并所有结果并推进一步
-        StringBuilder combinedOutput = new StringBuilder();
-        for (int i = 0; i < results.size(); i++) {
-            if (i > 0) {
-                combinedOutput.append("\n\n");
-            }
-            combinedOutput.append(results.get(i));
-        }
-
-        AgentState nextState = state.advance().observe(combinedOutput.toString());
-        stateStore.save(nextState);
-        return LoopStep.continueWith(nextState);
-    }
-
-    private LoopStep executeSingleTool(AgentState state, ToolCall call) {
+    private AgentState handleToolDecision(AgentState state, ToolCall call) {
         logger.info("Executing tool: {} with args: {}", call.toolName(), call.arguments());
         ToolResult toolResult = executeToolCall(state, call);
         if (!toolResult.success()) {
@@ -333,61 +252,111 @@ public final class AgentEngine {
         }
 
         logger.info("Tool {} execution successful", call.toolName());
-        AgentState nextState = state.advance().observe(toolResult.output());
-        stateStore.save(nextState);
-        return LoopStep.continueWith(nextState);
+        return advanceAndObserve(state, Collections.singletonList(toolResult.output()));
+    }
+
+    /**
+     * 处理并行工具决策
+     * 只读工具并发执行，涉写工具顺序执行
+     */
+    private AgentState handleParallelToolDecision(AgentState state, ParallelToolDecision decision) {
+        List<ToolCall> calls = decision.getCalls();
+        if (calls.isEmpty()) {
+            return advanceState(state);
+        }
+
+        Map<ToolCall, CompletableFuture<ToolResult>> readOnlyResults = new LinkedHashMap<ToolCall, CompletableFuture<ToolResult>>();
+        for (ToolCall call : calls) {
+            Tool tool = toolRegistry.snapshot().get(call.toolName());
+            if (tool == null) {
+                return fail(state, "Unknown tool: " + call.toolName());
+            }
+            if (!tool.isSideEffect()) {
+                readOnlyResults.put(call, CompletableFuture.supplyAsync(() -> executeToolCall(state, call), toolExecutor));
+            }
+        }
+
+        List<String> outputs = new ArrayList<String>();
+        for (ToolCall call : calls) {
+            ToolResult result;
+            CompletableFuture<ToolResult> future = readOnlyResults.get(call);
+            if (future != null) {
+                try {
+                    result = future.get();
+                } catch (Exception ex) {
+                    return fail(state, "parallel_execution_failed: " + ex.getMessage());
+                }
+            } else {
+                result = executeToolCall(state, call);
+            }
+
+            if (!result.success()) {
+                return fail(state, result.errorMessage());
+            }
+            outputs.add(result.output());
+        }
+
+        return advanceAndObserve(state, outputs);
     }
 
     private ToolResult executeToolCall(AgentState state, ToolCall call) {
-        MiddlewareDecision middlewareDecision = checkMiddleware(state, call);
-        if (!middlewareDecision.allowed()) {
-            return ToolResult.failure(middlewareDecision.reason());
-        }
-
         long toolStart = System.nanoTime();
         runLogger.toolStarted(call);
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_CALL, state.taskId(),
-                state.stepCount(), "tool=" + call.toolName()
-                + " args=" + call.arguments(), 0L));
+                state.stepCount(), "tool=" + call.toolName() + " args=" + call.arguments(), 0L));
 
         ToolResult toolResult = toolRegistry.execute(call, state);
 
         long toolDuration = elapsedMillis(toolStart);
         traceRecorder.record(new TraceEvent(TraceEventType.TOOL_RESULT, state.taskId(),
                 state.stepCount(), toolResult.success()
-                ? "success=true output=" + toolResult.output()
-                : "success=false error=" + toolResult.errorMessage(),
+                        ? "success=true output=" + toolResult.output()
+                        : "success=false error=" + toolResult.errorMessage(),
                 toolDuration));
         runLogger.toolCompleted(call, toolResult, toolDuration);
 
         return toolResult;
     }
 
+    private AgentState advanceState(AgentState state) {
+        AgentState nextState = state.advance();
+        stateStore.save(nextState);
+        return nextState;
+    }
+
+    private AgentState advanceAndObserve(AgentState state, List<String> outputs) {
+        AgentState nextState = state.advance();
+        if (outputs.isEmpty()) {
+            stateStore.save(nextState);
+            return nextState;
+        }
+        nextState = nextState.observe(joinOutputs(outputs));
+        stateStore.save(nextState);
+        return nextState;
+    }
+
+    private String joinOutputs(List<String> outputs) {
+        StringBuilder combinedOutput = new StringBuilder();
+        for (int i = 0; i < outputs.size(); i++) {
+            if (i > 0) {
+                combinedOutput.append("\n\n");
+            }
+            combinedOutput.append(outputs.get(i));
+        }
+        return combinedOutput.toString();
+    }
+
     /**
      * 统一记录失败状态
      */
-    private LoopStep fail(AgentState state, String reason) {
+    private AgentState fail(AgentState state, String reason) {
         logger.error("Step failed: {}", reason);
         AgentState failed = state.fail(reason);
         stateStore.save(failed);
         traceRecorder.record(new TraceEvent(TraceEventType.FAILED, failed.taskId(),
                 failed.stepCount(), "reason=" + failed.failureReason(), 0L));
         runLogger.failed(failed.failureReason());
-        return LoopStep.done(failed);
-    }
-
-    /**
-     * 统一执行工具前检查
-     * 任何拒绝都返回第一个原因
-     */
-    private MiddlewareDecision checkMiddleware(AgentState state, ToolCall call) {
-        for (ToolMiddleware toolMiddleware : middleware) {
-            MiddlewareDecision decision = toolMiddleware.beforeTool(state, call);
-            if (!decision.allowed()) {
-                return decision;
-            }
-        }
-        return MiddlewareDecision.allow();
+        return failed;
     }
 
     /**
@@ -438,67 +407,34 @@ public final class AgentEngine {
         return value != null && !value.trim().isEmpty();
     }
 
-    /**
-     * 主循环单步结果
-     */
-    private static final class LoopStep {
-        private final AgentState state;
-        private final boolean done;
-
-        private LoopStep(AgentState state, boolean done) {
-            this.state = state;
-            this.done = done;
-        }
-
-        private static LoopStep continueWith(AgentState state) {
-            return new LoopStep(state, false);
-        }
-
-        private static LoopStep done(AgentState state) {
-            return new LoopStep(state, true);
-        }
-
-        private AgentState state() {
-            return state;
-        }
-
-        private boolean done() {
-            return done;
-        }
-    }
-
-    /**
-     * 行动阶段模型决策结果
-     */
-    private static final class DecisionStep {
-        private final AgentState state;
+    private static final class ProviderResponse {
         private final Decision decision;
-        private final boolean done;
+        private final long durationMillis;
 
-        private DecisionStep(AgentState state, Decision decision, boolean done) {
-            this.state = state;
+        private ProviderResponse(Decision decision, long durationMillis) {
             this.decision = decision;
-            this.done = done;
-        }
-
-        private static DecisionStep continueWith(AgentState state, Decision decision) {
-            return new DecisionStep(state, decision, false);
-        }
-
-        private static DecisionStep done(AgentState state) {
-            return new DecisionStep(state, null, true);
-        }
-
-        private AgentState state() {
-            return state;
+            this.durationMillis = durationMillis;
         }
 
         private Decision decision() {
             return decision;
         }
 
-        private boolean done() {
-            return done;
+        private long durationMillis() {
+            return durationMillis;
+        }
+    }
+
+    private static final class ProviderCallException extends RuntimeException {
+        private final String reason;
+
+        private ProviderCallException(String reason) {
+            super(reason);
+            this.reason = reason;
+        }
+
+        private String reason() {
+            return reason;
         }
     }
 }

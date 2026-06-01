@@ -10,9 +10,6 @@ import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
-import com.jaising.agent.middleware.AllowAllMiddleware;
-import com.jaising.agent.middleware.AllowListMiddleware;
-import com.jaising.agent.middleware.ToolMiddleware;
 import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.provider.SiliconFlowConfig;
 import com.jaising.agent.provider.SiliconFlowModelProvider;
@@ -35,7 +32,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,7 +71,7 @@ final class MainLoopStartupCheck {
     private static void runSingleStageFinish() {
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         AgentEngine engine = new AgentEngine(new FinishOnlyProvider(), new ToolRegistry(),
-                Collections.singletonList(new AllowAllMiddleware()), new InMemoryStateStore(), trace, 2);
+                new InMemoryStateStore(), trace, 2);
 
         RunResult result = engine.run(new Task("startup-single-stage", "finish directly"));
 
@@ -92,8 +88,7 @@ final class MainLoopStartupCheck {
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         ToolRegistry registry = new ToolRegistry().register(new EchoTool());
         ThinkingThenActionProvider provider = new ThinkingThenActionProvider();
-        AgentEngine engine = new AgentEngine(provider, registry,
-                Collections.singletonList(new AllowAllMiddleware()), new InMemoryStateStore(), trace, 4, true);
+        AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), trace, 4, true);
 
         RunResult result = engine.run(new Task("startup-thinking-action", "think then echo"));
 
@@ -122,8 +117,6 @@ final class MainLoopStartupCheck {
                 .register(new WriteFileTool(workDir))
                 .register(new BashTool(workDir, Duration.ofSeconds(10), 8_000));
         AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry,
-                Collections.singletonList(new AllowListMiddleware(
-                        new HashSet<String>(Arrays.asList("write_file", "bash")))),
                 new InMemoryStateStore(), trace, 5);
 
         RunResult result = engine.run(new Task("startup-real-tools", "write compile run"));
@@ -141,30 +134,20 @@ final class MainLoopStartupCheck {
     }
 
     private static void runFailureModes() {
-        runFailure("failure-middleware-deny", new ToolOnlyProvider("echo"),
-                new ToolRegistry().register(new EchoTool()),
-                Collections.singletonList(new AllowListMiddleware(
-                        new HashSet<String>(Collections.singleton("missing")))),
-                "Tool not allowed: echo", 4);
         runFailure("failure-missing-tool", new ToolOnlyProvider("missing"),
-                new ToolRegistry(), Collections.singletonList(new AllowAllMiddleware()),
-                "Unknown tool: missing", 4);
+                new ToolRegistry(), "Unknown tool: missing", 4);
         runFailure("failure-tool-error", new ToolOnlyProvider("fail_tool"),
-                new ToolRegistry().register(new FailingTool()), Collections.singletonList(new AllowAllMiddleware()),
-                "startup tool failed", 4);
+                new ToolRegistry().register(new FailingTool()), "startup tool failed", 4);
         runFailure("failure-provider-error", new ThrowingProvider(),
-                new ToolRegistry(), Collections.singletonList(new AllowAllMiddleware()),
-                "provider_error: startup provider failed", 4);
+                new ToolRegistry(), "provider_error: startup provider failed", 4);
         runFailure("failure-max-steps", new ToolOnlyProvider("echo"),
-                new ToolRegistry().register(new EchoTool()), Collections.singletonList(new AllowAllMiddleware()),
-                "max_steps_exceeded", 1);
+                new ToolRegistry().register(new EchoTool()), "max_steps_exceeded", 1);
     }
 
     private static void runFailure(String caseName, ModelProvider provider, ToolRegistry registry,
-            List<? extends ToolMiddleware> middleware, String failureReason, int maxSteps) {
+            String failureReason, int maxSteps) {
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-        AgentEngine engine = new AgentEngine(provider, registry, middleware,
-                new InMemoryStateStore(), trace, maxSteps);
+        AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), trace, maxSteps);
 
         RunResult result = engine.run(new Task(caseName, caseName));
 
@@ -184,7 +167,6 @@ final class MainLoopStartupCheck {
         AgentEngine engine = new AgentEngine(
                 new SiliconFlowModelProvider(config, System.out),
                 new ToolRegistry(),
-                Collections.singletonList(new AllowAllMiddleware()),
                 new InMemoryStateStore(),
                 trace,
                 1,
