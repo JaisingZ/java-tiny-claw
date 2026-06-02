@@ -43,9 +43,8 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 ## 协议适配策略
 
-第一版真实 Provider 实现 SiliconFlow OpenAI-compatible 协议，配置由 `properties` 文件读取，并由 `app` 层装配注入：
+当前默认真实 Provider 实现 LM Studio OpenAI-compatible 协议，配置由 `properties` 文件读取，并由 `app` 层装配注入：
 
-- `apiKey`
 - `baseUrl`
 - `model`
 
@@ -58,9 +57,10 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 当前实现：
 
-- `SiliconFlowConfig` 负责读取 `agent.properties` 或 `-Dagent.config=...` 指定的配置文件。
-- `SiliconFlowModelProvider` 使用 Java 21 `HttpClient` 调用 `/chat/completions`。
+- `LmStudioConfig` 负责读取 `agent.properties` 或 `-Dagent.config=...` 指定的配置文件。
+- `LmStudioModelProvider` 使用 Java 21 `HttpClient` 调用 `/chat/completions`。
 - 请求固定为非流式 `stream=false`，流式响应后续单独设计。
+- 当前 `app` 层只默认装配 LM Studio，不支持运行时切换不同 Provider。
 
 ## 工具调用策略
 

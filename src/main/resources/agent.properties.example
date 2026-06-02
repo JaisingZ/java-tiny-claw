@@ -1,3 +1,2 @@
-siliconflow.apiKey=
-siliconflow.baseUrl=https://api.siliconflow.cn/v1
-siliconflow.model=Qwen/Qwen3-8B
+lmstudio.baseUrl=http://localhost:1234/v1
+lmstudio.model=qwen-local

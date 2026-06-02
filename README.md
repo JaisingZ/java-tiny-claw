@@ -6,7 +6,7 @@
 
 - Main Loop：支持 `FinishDecision`、`ToolDecision` 和失败收口。
 - Two-stage ReAct：可选开启 `THINKING -> ACTION` 两阶段循环。
-- SiliconFlow Provider：使用 OpenAI 兼容 Chat Completions 协议调用模型。
+- LM Studio Provider：默认通过 OpenAI 兼容 Chat Completions 协议调用本地模型。
 - 工具系统：内置 `read_file`、`write_file`、`edit_file`、`bash`。
 - Middleware：支持工具执行前拦截，例如 allow-list。
 - StateStore：支持内存状态和文件状态存储。
@@ -20,7 +20,7 @@
 src/main/java/com/jaising/agent
   app/          命令行入口和启动自检
   runtime/      AgentEngine、RunLogger、RunResult
-  provider/     ModelProvider 和 SiliconFlow 实现
+  provider/     ModelProvider、LM Studio 默认实现和 SiliconFlow 实现
   tool/         工具接口、注册表和内置工具
   middleware/   工具执行前拦截
   state/        状态存储
@@ -43,7 +43,7 @@ scripts/        一键启动自检脚本
 C:\Program Files\BellSoft\LibericaJDK-21
 ```
 
-## 配置 SiliconFlow
+## 配置 LM Studio
 
 复制示例配置：
 
@@ -51,15 +51,14 @@ C:\Program Files\BellSoft\LibericaJDK-21
 Copy-Item src\main\resources\agent.properties.example src\main\resources\agent.properties
 ```
 
-填写 `siliconflow.apiKey`：
+确保 LM Studio 已启动本地服务并加载目标模型，然后填写：
 
 ```properties
-siliconflow.apiKey=你的 API Key
-siliconflow.baseUrl=https://api.siliconflow.cn/v1
-siliconflow.model=Qwen/Qwen3-8B
+lmstudio.baseUrl=http://localhost:1234/v1
+lmstudio.model=qwen-local
 ```
 
-不要提交真实 API Key。
+默认不需要 API Key；如果你在 LM Studio 里额外开启了鉴权，本项目当前版本还未接入认证头。
 
 ## 构建与测试
 
@@ -81,7 +80,7 @@ mvn -q -DskipTests compile
 .\scripts\run-main-loop-startup.ps1
 ```
 
-追加真实 SiliconFlow 链路验证：
+追加真实 LM Studio 链路验证：
 
 ```powershell
 .\scripts\run-main-loop-startup.ps1 -Live
@@ -124,6 +123,7 @@ java -cp $cp com.jaising.agent.app.AgentApplication run --debug --thinking --max
 
 ## 注意事项
 
+- 先在 LM Studio 的 Developer 页面启动本地服务，并确认目标模型已可用。
 - `bash` 工具在 Windows 下实际执行 PowerShell，不是 Linux bash。
 - PowerShell 5 不支持 `&&` / `||`；多步命令应检查 `$LASTEXITCODE`。
 - `write_file` 会自动创建父目录，并以 UTF-8 写入文本文件。

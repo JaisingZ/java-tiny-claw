@@ -10,9 +10,9 @@ import com.jaising.agent.domain.ThinkingDecision;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
+import com.jaising.agent.provider.LmStudioConfig;
+import com.jaising.agent.provider.LmStudioModelProvider;
 import com.jaising.agent.provider.ModelProvider;
-import com.jaising.agent.provider.SiliconFlowConfig;
-import com.jaising.agent.provider.SiliconFlowModelProvider;
 import com.jaising.agent.runtime.AgentEngine;
 import com.jaising.agent.runtime.ConsoleRunLogger;
 import com.jaising.agent.runtime.RunLogger;
@@ -65,7 +65,7 @@ final class MainLoopStartupCheck {
         runRealToolsWriteBash(logger);
         runFailureModes(logger);
         if (live) {
-            runLiveSiliconFlow(logger);
+            runLiveLmStudio(logger);
         }
 
         logger.writeLine("=== Main Loop Startup Check: PASSED ===");
@@ -162,23 +162,23 @@ final class MainLoopStartupCheck {
         requireTraceContains(trace.events(), TraceEventType.FAILED, "reason=" + failureReason);
     }
 
-    private static void runLiveSiliconFlow(RunLogger logger) {
-        SiliconFlowConfig config = SiliconFlowConfig.loadDefault();
-        require(hasText(config.apiKey()), "siliconflow.apiKey is empty");
+    private static void runLiveLmStudio(RunLogger logger) {
+        LmStudioConfig config = LmStudioConfig.loadDefault();
+        require(hasText(config.model()), "lmstudio.model is empty");
 
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         AgentEngine engine = new AgentEngine(
-                new SiliconFlowModelProvider(config, logger::writeLine),
+                new LmStudioModelProvider(config, logger::writeLine),
                 new ToolRegistry(),
                 new InMemoryStateStore(),
                 trace,
                 1,
                 true);
 
-        RunResult result = engine.run(new Task("startup-live-siliconflow",
+        RunResult result = engine.run(new Task("startup-live-lmstudio",
                 "请直接用中文回答：Main Loop live 启动测试完成。不要调用工具。"));
 
-        emitCase(logger, "live-siliconflow", trace.events(), result);
+        emitCase(logger, "live-lmstudio", trace.events(), result);
 
         requireStatus(result, AgentStatus.SUCCESS);
         requireTraceContains(trace.events(), TraceEventType.THINKING_RESPONSE, "ThinkingDecision thought=");

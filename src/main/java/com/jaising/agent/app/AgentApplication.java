@@ -1,8 +1,8 @@
 package com.jaising.agent.app;
 
 import com.jaising.agent.domain.Task;
-import com.jaising.agent.provider.SiliconFlowConfig;
-import com.jaising.agent.provider.SiliconFlowModelProvider;
+import com.jaising.agent.provider.LmStudioConfig;
+import com.jaising.agent.provider.LmStudioModelProvider;
 import com.jaising.agent.runtime.AgentEngine;
 import com.jaising.agent.runtime.ConsoleRunLogger;
 import com.jaising.agent.runtime.RunLogger;
@@ -58,8 +58,8 @@ public final class AgentApplication {
     }
 
     private static void startHarness() {
-        SiliconFlowConfig config = SiliconFlowConfig.loadDefault();
-        new SiliconFlowModelProvider(config);
+        LmStudioConfig config = LmStudioConfig.loadDefault();
+        new LmStudioModelProvider(config);
         ToolRegistry registry = new ToolRegistry()
                 .register(new ReadFileTool(Path.of(".")))
                 .register(new WriteFileTool(Path.of(".")))
@@ -81,7 +81,7 @@ public final class AgentApplication {
     }
 
     private static void runPrompt(RunOptions options) {
-        SiliconFlowConfig config = SiliconFlowConfig.loadDefault();
+        LmStudioConfig config = LmStudioConfig.loadDefault();
         RunLogger runLogger = ConsoleRunLogger.standardOutput(options.debug());
         Path workDir = Path.of(".");
         ToolRegistry registry = new ToolRegistry();
@@ -90,9 +90,9 @@ public final class AgentApplication {
         registerTool(registry, new EditFileTool(workDir), runLogger);
         registerTool(registry, new BashTool(workDir), runLogger);
         InMemoryTraceRecorder traceRecorder = new InMemoryTraceRecorder();
-        SiliconFlowModelProvider provider = options.debug()
-                ? new SiliconFlowModelProvider(config, runLogger::writeLine)
-                : new SiliconFlowModelProvider(config);
+        LmStudioModelProvider provider = options.debug()
+                ? new LmStudioModelProvider(config, runLogger::writeLine)
+                : new LmStudioModelProvider(config);
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
         AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), traceRecorder,
