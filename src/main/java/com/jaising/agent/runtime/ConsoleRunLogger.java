@@ -26,36 +26,57 @@ public final class ConsoleRunLogger implements RunLogger {
     private final PrintStream output;
     private final boolean verboseEvents;
 
+    /**
+     * 创建默认输出详细事件的控制台日志。
+     */
     public ConsoleRunLogger(PrintStream output) {
         this(output, true);
     }
 
+    /**
+     * 创建可控制事件详细程度的控制台日志。
+     */
     public ConsoleRunLogger(PrintStream output, boolean verboseEvents) {
         this.output = output;
         this.verboseEvents = verboseEvents;
     }
 
+    /**
+     * 创建使用 UTF-8 标准输出的控制台日志。
+     */
     public static ConsoleRunLogger standardOutput(boolean verboseEvents) {
         return new ConsoleRunLogger(
                 new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8),
                 verboseEvents);
     }
 
+    /**
+     * 直接输出一行文本。
+     */
     @Override
     public void writeLine(String line) {
         output.println(line);
     }
 
+    /**
+     * 直接输出空行。
+     */
     @Override
     public void writeBlankLine() {
         output.println();
     }
 
+    /**
+     * 记录工具已挂载到注册表。
+     */
     @Override
     public void registryMounted(String toolName) {
         logEvent("[Registry] 成功挂载工具: " + toolName);
     }
 
+    /**
+     * 记录主循环启动配置。
+     */
     @Override
     public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
             List<ToolDefinition> tools) {
@@ -66,6 +87,9 @@ public final class ConsoleRunLogger implements RunLogger {
         logEvent("[Engine] 可用工具: " + toolNames(tools));
     }
 
+    /**
+     * 记录一个 turn 开始。
+     */
     @Override
     public void turnStarted(int turn) {
         if (!verboseEvents) {
@@ -75,11 +99,17 @@ public final class ConsoleRunLogger implements RunLogger {
         logEvent("========== [Turn " + turn + "] 开始 ==========");
     }
 
+    /**
+     * 记录 thinking 阶段开始。
+     */
     @Override
     public void thinkingStarted() {
         logEvent("[Engine][Phase 1] 隐藏工具，进入慢思考...");
     }
 
+    /**
+     * 记录 thinking 阶段完成和思考文本。
+     */
     @Override
     public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
         if (!verboseEvents) {
@@ -91,22 +121,34 @@ public final class ConsoleRunLogger implements RunLogger {
         writeLine(decision.thought());
     }
 
+    /**
+     * 记录 action 阶段开始和可见工具。
+     */
     @Override
     public void actionStarted(List<ToolDefinition> tools) {
         logEvent("[Engine][Phase 2] 恢复工具挂载，等待模型采取行动...");
         logEvent("[Engine][Phase 2] 可见工具: " + toolNames(tools));
     }
 
+    /**
+     * 记录模型选择的单工具调用。
+     */
     @Override
     public void toolDecision(ToolDecision decision) {
         logEvent("[Engine] 模型请求调用工具: " + decision.call().toolName());
     }
 
+    /**
+     * 记录工具开始执行。
+     */
     @Override
     public void toolStarted(ToolCall call) {
         logEvent("  -> 🛠️ 执行工具: " + call.toolName() + ", 参数: " + call.arguments());
     }
 
+    /**
+     * 记录工具执行结果。
+     */
     @Override
     public void toolCompleted(ToolCall call, ToolResult result, long durationMillis) {
         if (!verboseEvents) {
@@ -121,6 +163,9 @@ public final class ConsoleRunLogger implements RunLogger {
                 + " (耗时 " + durationMillis + "ms)");
     }
 
+    /**
+     * 记录模型最终回答。
+     */
     @Override
     public void finished(FinishDecision decision) {
         if (!verboseEvents) {
@@ -131,6 +176,9 @@ public final class ConsoleRunLogger implements RunLogger {
         writeLine(decision.answer());
     }
 
+    /**
+     * 记录主循环失败原因。
+     */
     @Override
     public void failed(String reason) {
         logEvent("[Engine] 任务失败: " + reason);

@@ -1,8 +1,8 @@
 package com.jaising.agent.domain;
 
 /**
- * 模型决策
- * 只描述下一步动作类型
+ * main loop 决策类型统一标记。
+ * 不同决策对象表示下一步执行策略。
  */
 public interface Decision {
 }

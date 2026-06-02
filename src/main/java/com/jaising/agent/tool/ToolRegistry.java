@@ -10,15 +10,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 工具注册表
- * 负责命名 注册 查找和分发
+ * Main Loop 的工具注册表。
+ * 负责按名称注册、查找、分发工具调用。
  */
 public final class ToolRegistry {
 
     private final Map<String, Tool> tools = new LinkedHashMap<String, Tool>();
 
     /**
-     * 注册工具
+     * 注册工具并返回当前注册表，便于链式挂载。
      */
     public ToolRegistry register(Tool tool) {
         tools.put(tool.name(), tool);
@@ -26,8 +26,7 @@ public final class ToolRegistry {
     }
 
     /**
-     * 按名称查找工具
-     * 找不到就直接失败
+     * 按名称查找工具，找不到时抛出异常。
      */
     public Tool require(String toolName) {
         Tool tool = tools.get(toolName);
@@ -38,10 +37,9 @@ public final class ToolRegistry {
     }
 
     /**
-     * 路由并执行工具调用
-     * 未知工具和工具异常都包装成结构化失败
+     * 路由并执行工具调用，未知工具和工具异常会包装成失败结果。
      */
-    public ToolResult execute(ToolCall call, AgentContext state) {
+    public ToolResult execute(ToolCall call, AgentContext context) {
         Tool tool;
         try {
             tool = require(call.toolName());
@@ -50,21 +48,21 @@ public final class ToolRegistry {
         }
 
         try {
-            return tool.execute(call, state);
+            return tool.execute(call, context);
         } catch (RuntimeException ex) {
             return ToolResult.failure("tool_error: " + ex.getMessage());
         }
     }
 
     /**
-     * 输出快照
+     * 返回当前工具映射的只读快照。
      */
     public Map<String, Tool> snapshot() {
         return Collections.unmodifiableMap(tools);
     }
 
     /**
-     * 输出工具定义快照
+     * 返回提供给模型的工具定义快照。
      */
     public List<ToolDefinition> definitions() {
         List<ToolDefinition> definitions = new ArrayList<ToolDefinition>();

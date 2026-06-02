@@ -18,7 +18,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 在工作区执行 shell 命令的工具
+ * 在工作区执行 shell 命令的工具。
+ * Windows 下实际执行 PowerShell。
  */
 public final class BashTool implements Tool {
 
@@ -32,14 +33,14 @@ public final class BashTool implements Tool {
     private final int maxOutputChars;
 
     /**
-     * 创建 bash 工具
+     * 创建使用默认超时和输出限制的 bash 工具。
      */
     public BashTool(Path workDir) {
         this(workDir, DEFAULT_TIMEOUT, DEFAULT_MAX_OUTPUT_CHARS);
     }
 
     /**
-     * 创建 bash 工具
+     * 创建可配置超时和输出限制的 bash 工具。
      */
     public BashTool(Path workDir, Duration timeout, int maxOutputChars) {
         this.workDir = workDir.toAbsolutePath().normalize();
@@ -76,10 +77,10 @@ public final class BashTool implements Tool {
     }
 
     /**
-     * 执行命令。
+     * 执行命令并返回合并后的标准输出和错误输出。
      */
     @Override
-    public ToolResult execute(ToolCall call, AgentContext state) {
+    public ToolResult execute(ToolCall call, AgentContext context) {
         Object rawCommand = call.arguments().get("command");
         if (!(rawCommand instanceof String) || ((String) rawCommand).trim().isEmpty()) {
             logger.warn("BashTool execution failed: missing command argument");

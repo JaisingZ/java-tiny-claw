@@ -3,36 +3,36 @@ package com.jaising.agent.domain;
 import java.util.Objects;
 
 /**
- * 内部思考决策
- * 只承载计划文本 不代表可执行动作
+ * main loop 的思考决策。
+ * 仅作为模型的中间推理文本，不触发工具调用。
  */
 public final class ThinkingDecision implements Decision {
 
     private final String thought;
 
     /**
-     * 创建内部思考
+     * 创建思考决策。
      */
     public ThinkingDecision(String thought) {
         this.thought = thought;
     }
 
     /**
-     * 执行 thought 操作。
+     * 获取思考内容。
      */
     public String thought() {
         return thought;
     }
 
     /**
-     * 读取 Thought。
+     * 获取思考内容（兼容 get 风格调用）。
      */
     public String getThought() {
         return thought;
     }
 
     /**
-     * 比较对象是否相等。
+     * 判断思考内容是否等价。
      */
     @Override
     public boolean equals(Object other) {
@@ -47,7 +47,7 @@ public final class ThinkingDecision implements Decision {
     }
 
     /**
-     * 计算对象哈希值。
+     * 计算思考决策哈希码。
      */
     @Override
     public int hashCode() {
@@ -55,7 +55,7 @@ public final class ThinkingDecision implements Decision {
     }
 
     /**
-     * 返回可读字符串。
+     * 返回便于日志的可读表示。
      */
     @Override
     public String toString() {

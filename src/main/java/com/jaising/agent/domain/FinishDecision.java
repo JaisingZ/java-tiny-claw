@@ -3,38 +3,36 @@ package com.jaising.agent.domain;
 import java.util.Objects;
 
 /**
- * 结束决策
- * 表示任务已经可以收口
+ * main loop 的结束决策。
+ * 用于告知循环已经得到最终答案并可返回给调用方。
  */
 public final class FinishDecision implements Decision {
 
     private final String answer;
 
     /**
-     * 创建结束决策
-     * 携带最终答案
+     * 创建结束决策。
      */
     public FinishDecision(String answer) {
         this.answer = answer;
     }
 
     /**
-     * 读取最终答案
-     * 供运行时写回状态
+     * 读取最终答案文本。
      */
     public String answer() {
         return answer;
     }
 
     /**
-     * 读取 Answer。
+     * 读取最终答案文本（兼容 get 风格调用）。
      */
     public String getAnswer() {
         return answer;
     }
 
     /**
-     * 比较对象是否相等。
+     * 判断答案是否等价。
      */
     @Override
     public boolean equals(Object other) {
@@ -49,7 +47,7 @@ public final class FinishDecision implements Decision {
     }
 
     /**
-     * 计算对象哈希值。
+     * 计算决策哈希码。
      */
     @Override
     public int hashCode() {
@@ -57,7 +55,7 @@ public final class FinishDecision implements Decision {
     }
 
     /**
-     * 返回可读字符串。
+     * 返回便于日志的可读表示。
      */
     @Override
     public String toString() {

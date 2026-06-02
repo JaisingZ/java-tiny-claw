@@ -84,6 +84,39 @@ mvn -q -DskipTests compile
 .\scripts\run-main-loop-startup.ps1 -Live
 ```
 
+`-Live` 会额外使用当前 `agent.properties` 中的 LM Studio 配置，跑一轮真实 Provider 链路：
+
+```text
+=== Main Loop Startup Check ===
+workDir=D:\WorkSpace\java-tiny-claw\target\main-loop-startup-work
+live=true
+CASE single-stage-finish
+RESULT status=SUCCESS answer=single-stage-ready failure=null
+CASE two-stage-thinking-action
+RESULT status=SUCCESS answer=thinking-action-ready failure=null
+CASE real-tools-write-bash
+RESULT status=SUCCESS answer=java sample executed failure=null
+CASE failure-missing-tool
+RESULT status=FAILED answer=null failure=Unknown tool: missing
+CASE failure-tool-error
+RESULT status=FAILED answer=null failure=startup tool failed
+CASE failure-provider-error
+RESULT status=FAILED answer=null failure=provider_error: startup provider failed
+CASE failure-max-steps
+RESULT status=FAILED answer=null failure=max_steps_exceeded
+CASE live-lmstudio
+RESULT status=SUCCESS answer=Main Loop live 启动测试完成。 failure=null
+=== Main Loop Startup Check: PASSED ===
+```
+
+Provider debug 输出会显示 `THINKING` / `ACTION` 两阶段的请求、响应和解析后的 `Decision`，但长文本和工具 schema 会被摘要截断。
+
+也可以只跑 LM Studio Provider 的 live 测试：
+
+```powershell
+mvn "-Dlmstudio.live=true" "-Dtest=LmStudioModelProviderLiveTest" test
+```
+
 ## 命令行运行
 
 先构建项目和运行时 classpath：

@@ -33,8 +33,8 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * LM Studio 模型提供方
- * 使用 OpenAI 兼容 Chat Completions 协议
+ * LM Studio 模型提供方。
+ * 使用 OpenAI 兼容 Chat Completions 协议驱动 Main Loop 决策。
  */
 public final class LmStudioModelProvider implements ModelProvider {
 
@@ -53,10 +53,16 @@ public final class LmStudioModelProvider implements ModelProvider {
     private final ObjectMapper objectMapper;
     private final Consumer<String> debugSink;
 
+    /**
+     * 创建不输出 provider debug 信息的 LM Studio provider。
+     */
     public LmStudioModelProvider(LmStudioConfig config) {
         this(config, HttpClient.newHttpClient(), new ObjectMapper(), null);
     }
 
+    /**
+     * 创建可输出 provider 请求和响应摘要的 LM Studio provider。
+     */
     public LmStudioModelProvider(LmStudioConfig config, Consumer<String> debugSink) {
         this(config, HttpClient.newHttpClient(), new ObjectMapper(), debugSink);
     }
@@ -73,9 +79,12 @@ public final class LmStudioModelProvider implements ModelProvider {
         this.debugSink = debugSink;
     }
 
+    /**
+     * 根据当前上下文向 LM Studio 请求下一步决策。
+     */
     @Override
-    public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
-        ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
+    public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        ObjectNode requestBody = buildRequestBody(context, phase, availableTools);
         debugJson(phase, "Request JSON", requestBody);
         JsonNode response = send(requestBody);
         debugJson(phase, "Response JSON", response);
@@ -96,7 +105,8 @@ public final class LmStudioModelProvider implements ModelProvider {
         return decision;
     }
 
-    private ObjectNode buildRequestBody(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+    private ObjectNode buildRequestBody(AgentContext context, DecisionPhase phase,
+            List<ToolDefinition> availableTools) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", config.model());
         root.put("stream", false);
@@ -106,11 +116,11 @@ public final class LmStudioModelProvider implements ModelProvider {
         addMessage(messages, "system", "你是 java-tiny-claw 的模型 Provider，请根据当前任务给出下一步决策。"
                 + environmentInstruction()
                 + phaseInstruction(phase));
-        addMessage(messages, "user", state.goal());
-        if (phase == DecisionPhase.THINKING && hasText(state.lastThought())) {
-            addMessage(messages, "system", "内部思考记录：" + state.lastThought());
+        addMessage(messages, "user", context.goal());
+        if (phase == DecisionPhase.THINKING && hasText(context.lastThought())) {
+            addMessage(messages, "system", "内部思考记录：" + context.lastThought());
         }
-        for (String observation : state.observations()) {
+        for (String observation : context.observations()) {
             addMessage(messages, "user", "Observation: " + observation);
         }
 

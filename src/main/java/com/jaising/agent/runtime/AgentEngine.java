@@ -40,14 +40,23 @@ public final class AgentEngine {
     private final RunLogger runLogger;
     private final ExecutorService toolExecutor;
 
+    /**
+     * 创建不启用 thinking 的主循环。
+     */
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps) {
         this(provider, toolRegistry, maxSteps, false);
     }
 
+    /**
+     * 创建可选 thinking 阶段的主循环。
+     */
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking) {
         this(provider, toolRegistry, maxSteps, enableThinking, NoopRunLogger.INSTANCE);
     }
 
+    /**
+     * 创建带可读日志输出的主循环。
+     */
     public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
             RunLogger runLogger) {
         this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor());
@@ -63,6 +72,9 @@ public final class AgentEngine {
         this.toolExecutor = toolExecutor;
     }
 
+    /**
+     * 执行任务直到模型结束、工具失败、provider 失败或达到最大步数。
+     */
     public RunResult run(Task task) {
         logger.info("Starting task: {} (ID: {})", task.goal(), task.taskId());
         AgentContext context = AgentContext.create(task);
@@ -76,6 +88,9 @@ public final class AgentEngine {
         return fail(context, "max_steps_exceeded");
     }
 
+    /**
+     * 关闭并行工具执行线程池。
+     */
     public void shutdown() {
         toolExecutor.shutdown();
     }

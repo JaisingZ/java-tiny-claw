@@ -204,8 +204,11 @@ final class MainLoopStartupCheck {
      * 直接返回完成决策。
      */
     private static final class FinishOnlyProvider implements ModelProvider {
+        /**
+         * 返回固定完成结果，用于验证单阶段结束路径。
+         */
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new FinishDecision("single-stage-ready");
         }
     }
@@ -217,16 +220,19 @@ final class MainLoopStartupCheck {
         private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
         private final List<List<ToolDefinition>> toolsByPhase = new ArrayList<List<ToolDefinition>>();
 
+        /**
+         * 按上下文推进 thinking、工具调用和完成决策。
+         */
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
             phases.add(phase);
             toolsByPhase.add(availableTools);
             if (phase == DecisionPhase.THINKING) {
-                return new ThinkingDecision(state.observations().isEmpty()
+                return new ThinkingDecision(context.observations().isEmpty()
                         ? "plan to echo"
                         : "plan to finish");
             }
-            if (state.observations().isEmpty()) {
+            if (context.observations().isEmpty()) {
                 return new ToolDecision(new ToolCall("echo",
                         Collections.<String, Object>singletonMap("text", "hello-startup")));
             }
@@ -246,15 +252,18 @@ final class MainLoopStartupCheck {
      * write_file -> bash -> finish。
      */
     private static final class WriteCompileRunProvider implements ModelProvider {
+        /**
+         * 根据已有观测依次请求写文件、编译运行和完成。
+         */
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
-            if (state.observations().isEmpty()) {
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            if (context.observations().isEmpty()) {
                 Map<String, Object> arguments = new LinkedHashMap<String, Object>();
                 arguments.put("path", "HelloFromStartup.java");
                 arguments.put("content", javaSource());
                 return new ToolDecision(new ToolCall("write_file", arguments));
             }
-            if (state.observations().size() == 1) {
+            if (context.observations().size() == 1) {
                 return new ToolDecision(new ToolCall("bash",
                         Collections.<String, Object>singletonMap("command", compileAndRunCommand())));
             }
@@ -288,8 +297,11 @@ final class MainLoopStartupCheck {
             this.toolName = toolName;
         }
 
+        /**
+         * 返回固定工具调用，用于验证失败或步数路径。
+         */
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall(toolName,
                     Collections.<String, Object>singletonMap("text", "hello-startup")));
         }
@@ -299,8 +311,11 @@ final class MainLoopStartupCheck {
      * 固定抛出 provider 异常。
      */
     private static final class ThrowingProvider implements ModelProvider {
+        /**
+         * 抛出固定异常，用于验证 provider 失败收口。
+         */
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
             throw new RuntimeException("startup provider failed");
         }
     }
@@ -309,13 +324,19 @@ final class MainLoopStartupCheck {
      * 简单回显工具。
      */
     private static final class EchoTool implements Tool {
+        /**
+         * 返回自检回显工具名。
+         */
         @Override
         public String name() {
             return "echo";
         }
 
+        /**
+         * 返回 text 参数作为工具输出。
+         */
         @Override
-        public ToolResult execute(ToolCall call, AgentContext state) {
+        public ToolResult execute(ToolCall call, AgentContext context) {
             return ToolResult.success(String.valueOf(call.arguments().get("text")));
         }
     }
@@ -324,13 +345,19 @@ final class MainLoopStartupCheck {
      * 固定失败工具。
      */
     private static final class FailingTool implements Tool {
+        /**
+         * 返回固定失败工具名。
+         */
         @Override
         public String name() {
             return "fail_tool";
         }
 
+        /**
+         * 返回固定失败结果。
+         */
         @Override
-        public ToolResult execute(ToolCall call, AgentContext state) {
+        public ToolResult execute(ToolCall call, AgentContext context) {
             return ToolResult.failure("startup tool failed");
         }
     }

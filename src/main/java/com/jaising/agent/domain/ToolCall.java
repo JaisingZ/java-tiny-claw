@@ -6,8 +6,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 工具调用
- * 保存工具名和参数
+ * main loop 的工具调用载体。
+ * 记录一次工具名和调用参数快照。
  */
 public final class ToolCall {
 
@@ -15,8 +15,7 @@ public final class ToolCall {
     private final Map<String, Object> arguments;
 
     /**
-     * 创建工具调用
-     * 参数保持不可变
+     * 创建工具调用。
      */
     public ToolCall(String toolName, Map<String, Object> arguments) {
         this.toolName = toolName;
@@ -24,35 +23,35 @@ public final class ToolCall {
     }
 
     /**
-     * 执行 toolName 操作。
+     * 获取工具名称。
      */
     public String toolName() {
         return toolName;
     }
 
     /**
-     * 执行 arguments 操作。
+     * 获取调用参数。
      */
     public Map<String, Object> arguments() {
         return arguments;
     }
 
     /**
-     * 读取 ToolName。
+     * 获取工具名称（兼容 get 风格调用）。
      */
     public String getToolName() {
         return toolName;
     }
 
     /**
-     * 读取 Arguments。
+     * 获取调用参数（兼容 get 风格调用）。
      */
     public Map<String, Object> getArguments() {
         return arguments;
     }
 
     /**
-     * 比较对象是否相等。
+     * 判断工具调用是否等价。
      */
     @Override
     public boolean equals(Object other) {
@@ -67,7 +66,7 @@ public final class ToolCall {
     }
 
     /**
-     * 计算对象哈希值。
+     * 计算工具调用哈希码。
      */
     @Override
     public int hashCode() {
@@ -75,7 +74,7 @@ public final class ToolCall {
     }
 
     /**
-     * 返回可读字符串。
+     * 返回便于日志的可读表示。
      */
     @Override
     public String toString() {

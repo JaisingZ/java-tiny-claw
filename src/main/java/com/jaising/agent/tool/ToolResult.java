@@ -3,8 +3,8 @@ package com.jaising.agent.tool;
 import java.util.Objects;
 
 /**
- * 工具结果
- * 统一表示成功和失败
+ * 工具执行结果。
+ * 统一表示成功输出和失败原因。
  */
 public final class ToolResult {
 
@@ -23,56 +23,56 @@ public final class ToolResult {
     }
 
     /**
-     * 成功结果
+     * 创建成功结果。
      */
     public static ToolResult success(String output) {
         return new ToolResult(true, output, null);
     }
 
     /**
-     * 失败结果
+     * 创建失败结果。
      */
     public static ToolResult failure(String errorMessage) {
         return new ToolResult(false, null, errorMessage);
     }
 
     /**
-     * 创建成功结果。
+     * 返回工具是否成功。
      */
     public boolean success() {
         return success;
     }
 
     /**
-     * 执行 output 操作。
+     * 返回工具成功输出。
      */
     public String output() {
         return output;
     }
 
     /**
-     * 执行 errorMessage 操作。
+     * 返回工具失败原因。
      */
     public String errorMessage() {
         return errorMessage;
     }
 
     /**
-     * 判断 Success。
+     * JavaBean 风格成功标记 getter。
      */
     public boolean isSuccess() {
         return success;
     }
 
     /**
-     * 读取 Output。
+     * JavaBean 风格输出 getter。
      */
     public String getOutput() {
         return output;
     }
 
     /**
-     * 读取 ErrorMessage。
+     * JavaBean 风格失败原因 getter。
      */
     public String getErrorMessage() {
         return errorMessage;

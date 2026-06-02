@@ -6,8 +6,8 @@ import com.jaising.agent.domain.ToolDefinition;
 import java.util.Collections;
 
 /**
- * 工具接口
- * 负责执行具体动作并返回结果
+ * Main Loop 可调用的工具接口。
+ * 负责执行具体动作并返回工具观测结果。
  */
 public interface Tool {
     /**
@@ -24,9 +24,9 @@ public interface Tool {
     }
 
     /**
-     * 执行工具调用。
+     * 在当前上下文中执行工具调用。
      */
-    ToolResult execute(ToolCall call, AgentContext state);
+    ToolResult execute(ToolCall call, AgentContext context);
 
     /**
      * 标识工具是否具有副作用（写操作）。

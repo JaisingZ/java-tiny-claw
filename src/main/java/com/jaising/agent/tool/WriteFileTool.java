@@ -12,14 +12,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 写入工作区内文件的工具
+ * 写入工作区内文件的工具。
  */
 public final class WriteFileTool implements Tool {
 
     private final Path workDir;
 
     /**
-     * 创建 write_file 工具
+     * 创建限定在指定工作区内的 write_file 工具。
      */
     public WriteFileTool(Path workDir) {
         this.workDir = workDir.toAbsolutePath().normalize();
@@ -60,10 +60,10 @@ public final class WriteFileTool implements Tool {
     }
 
     /**
-     * 执行文件写入。
+     * 执行 UTF-8 文本文件写入。
      */
     @Override
-    public ToolResult execute(ToolCall call, AgentContext state) {
+    public ToolResult execute(ToolCall call, AgentContext context) {
         Object rawPath = call.arguments().get("path");
         if (!(rawPath instanceof String) || ((String) rawPath).trim().isEmpty()) {
             return ToolResult.failure("Missing required argument: path");

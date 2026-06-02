@@ -3,37 +3,36 @@ package com.jaising.agent.domain;
 import java.util.Objects;
 
 /**
- * 工具决策
- * 告诉运行时下一步执行哪个工具
+ * main loop 的工具决策。
+ * 表示本轮应执行单个工具调用。
  */
 public final class ToolDecision implements Decision {
 
     private final ToolCall call;
 
     /**
-     * 创建工具决策
-     * 直接包住一次调用
+     * 创建工具决策。
      */
     public ToolDecision(ToolCall call) {
         this.call = call;
     }
 
     /**
-     * 执行 call 操作。
+     * 获取待执行的工具调用。
      */
     public ToolCall call() {
         return call;
     }
 
     /**
-     * 读取 Call。
+     * 获取待执行的工具调用（兼容 get 风格调用）。
      */
     public ToolCall getCall() {
         return call;
     }
 
     /**
-     * 比较对象是否相等。
+     * 判断工具决策是否等价。
      */
     @Override
     public boolean equals(Object other) {
@@ -48,7 +47,7 @@ public final class ToolDecision implements Decision {
     }
 
     /**
-     * 计算对象哈希值。
+     * 计算工具决策哈希码。
      */
     @Override
     public int hashCode() {
@@ -56,7 +55,7 @@ public final class ToolDecision implements Decision {
     }
 
     /**
-     * 返回可读字符串。
+     * 返回便于日志的可读表示。
      */
     @Override
     public String toString() {
