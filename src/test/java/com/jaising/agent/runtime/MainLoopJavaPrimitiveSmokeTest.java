@@ -2,8 +2,7 @@ package com.jaising.agent.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jaising.agent.domain.AgentState;
-import com.jaising.agent.domain.AgentStatus;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -12,11 +11,9 @@ import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
 import com.jaising.agent.provider.ModelProvider;
-import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.BashTool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
-import com.jaising.agent.trace.InMemoryTraceRecorder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -36,24 +33,22 @@ class MainLoopJavaPrimitiveSmokeTest {
     Path workDir;
 
     /**
-     * 写入 Java 文件 编译并执行 然后打印 trace。
+     * 写入 Java 文件 编译并执行。
      */
     @Test
     void writesCompilesAndRunsJavaFileThroughMainLoop() {
-        InMemoryStateStore store = new InMemoryStateStore();
-        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         ToolRegistry registry = new ToolRegistry()
                 .register(new WriteFileTool(workDir))
                 .register(new BashTool(workDir, Duration.ofSeconds(10), 8_000));
 
-        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry, store, trace, 5);
+        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry, 5);
 
         RunResult result = engine.run(new Task("task-java-smoke", "create and run minimal java file"));
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(result.state().finalAnswer()).isEqualTo("java sample executed");
-        assertThat(result.state().observations()).hasSize(2);
-        assertThat(result.state().observations().get(1)).contains("hello-from-main-loop");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("java sample executed");
+        assertThat(result.observations()).hasSize(2);
+        assertThat(result.observations().get(1)).contains("hello-from-main-loop");
         assertThat(Files.exists(workDir.resolve("HelloFromAgent.java"))).isTrue();
         assertThat(Files.exists(workDir.resolve("HelloFromAgent.class"))).isTrue();
     }
@@ -64,7 +59,7 @@ class MainLoopJavaPrimitiveSmokeTest {
     private static final class WriteCompileRunProvider implements ModelProvider {
 
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (state.observations().isEmpty()) {
                 Map<String, Object> arguments = new LinkedHashMap<String, Object>();
                 arguments.put("path", "HelloFromAgent.java");

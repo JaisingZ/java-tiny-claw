@@ -7,17 +7,13 @@ import com.jaising.agent.runtime.AgentEngine;
 import com.jaising.agent.runtime.ConsoleRunLogger;
 import com.jaising.agent.runtime.RunLogger;
 import com.jaising.agent.runtime.RunResult;
-import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.BashTool;
 import com.jaising.agent.tool.EditFileTool;
 import com.jaising.agent.tool.ReadFileTool;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
-import com.jaising.agent.trace.InMemoryTraceRecorder;
-import com.jaising.agent.trace.TraceEvent;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -89,18 +85,16 @@ public final class AgentApplication {
         registerTool(registry, new WriteFileTool(workDir), runLogger);
         registerTool(registry, new EditFileTool(workDir), runLogger);
         registerTool(registry, new BashTool(workDir), runLogger);
-        InMemoryTraceRecorder traceRecorder = new InMemoryTraceRecorder();
         LmStudioModelProvider provider = options.debug()
                 ? new LmStudioModelProvider(config, runLogger::writeLine)
                 : new LmStudioModelProvider(config);
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
-        AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), traceRecorder,
-                options.maxSteps(), options.thinking(), runLogger);
+        AgentEngine engine = new AgentEngine(provider, registry, options.maxSteps(), options.thinking(), runLogger);
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
 
-        emitRunOutput(runLogger, result, traceRecorder.events(), options.debug());
+        emitRunOutput(runLogger, result, options.debug());
     }
 
     private static void registerTool(ToolRegistry registry, Tool tool, RunLogger runLogger) {
@@ -108,35 +102,22 @@ public final class AgentApplication {
         runLogger.registryMounted(tool.name());
     }
 
-    static void emitRunOutput(RunLogger logger, RunResult result, List<TraceEvent> events, boolean debug) {
-        if (!debug) {
-            emitTrace(logger, events);
-        }
+    static void emitRunOutput(RunLogger logger, RunResult result, boolean debug) {
         emitResult(logger, result);
         if (!debug) {
             emitObservations(logger, result);
         }
     }
 
-    private static void emitTrace(RunLogger logger, List<TraceEvent> events) {
-        logger.writeLine("TRACE");
-        for (TraceEvent event : events) {
-            logger.writeLine(event.type()
-                    + " step=" + event.step()
-                    + " durationMs=" + event.durationMillis()
-                    + " detail=" + event.detail());
-        }
-    }
-
     private static void emitResult(RunLogger logger, RunResult result) {
-        logger.writeLine("RESULT status=" + result.state().status()
-                + " answer=" + result.state().finalAnswer()
-                + " failure=" + result.state().failureReason());
+        logger.writeLine("RESULT status=" + result.status()
+                + " answer=" + result.finalAnswer()
+                + " failure=" + result.failureReason());
     }
 
     private static void emitObservations(RunLogger logger, RunResult result) {
         logger.writeLine("OBSERVATIONS");
-        for (String observation : result.state().observations()) {
+        for (String observation : result.observations()) {
             logger.writeLine(observation);
         }
     }

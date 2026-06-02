@@ -1,41 +1,87 @@
 package com.jaising.agent.runtime;
 
-import com.jaising.agent.domain.AgentState;
-
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 /**
  * 运行结果
- * 封装最终状态便于调用方读取
+ * 直接暴露最终状态和观测
  */
 public final class RunResult {
 
-    private final AgentState state;
+    private final RunStatus status;
+    private final String finalAnswer;
+    private final String failureReason;
+    private final int stepCount;
+    private final List<String> observations;
 
     /**
      * 创建运行结果
-     * 直接包住最终状态
      */
-    public RunResult(AgentState state) {
-        this.state = state;
+    public RunResult(RunStatus status, String finalAnswer, String failureReason, int stepCount,
+            List<String> observations) {
+        this.status = status;
+        this.finalAnswer = finalAnswer;
+        this.failureReason = failureReason;
+        this.stepCount = stepCount;
+        List<String> safeObservations = observations == null
+                ? Collections.<String>emptyList()
+                : observations;
+        this.observations = Collections.unmodifiableList(new ArrayList<String>(safeObservations));
+    }
+
+    public static RunResult success(int stepCount, List<String> observations, String answer) {
+        return new RunResult(RunStatus.SUCCESS, answer, null, stepCount, observations);
+    }
+
+    public static RunResult failed(int stepCount, List<String> observations, String reason) {
+        return new RunResult(RunStatus.FAILED, null, reason, stepCount, observations);
+    }
+
+    public RunStatus status() {
+        return status;
+    }
+
+    public String finalAnswer() {
+        return finalAnswer;
+    }
+
+    public String failureReason() {
+        return failureReason;
+    }
+
+    public int stepCount() {
+        return stepCount;
+    }
+
+    public List<String> observations() {
+        return observations;
+    }
+
+    public RunStatus getStatus() {
+        return status;
+    }
+
+    public String getFinalAnswer() {
+        return finalAnswer;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
+    }
+
+    public int getStepCount() {
+        return stepCount;
+    }
+
+    public List<String> getObservations() {
+        return observations;
     }
 
     /**
-     * 执行 state 操作。
-     */
-    public AgentState state() {
-        return state;
-    }
-
-    /**
-     * 读取 State。
-     */
-    public AgentState getState() {
-        return state;
-    }
-
-    /**
-     * 按状态比较
+     * 按值比较
      * 便于测试断言
      */
     @Override
@@ -47,7 +93,11 @@ public final class RunResult {
             return false;
         }
         RunResult that = (RunResult) other;
-        return Objects.equals(state, that.state);
+        return stepCount == that.stepCount
+                && status == that.status
+                && Objects.equals(finalAnswer, that.finalAnswer)
+                && Objects.equals(failureReason, that.failureReason)
+                && Objects.equals(observations, that.observations);
     }
 
     /**
@@ -55,6 +105,6 @@ public final class RunResult {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(state);
+        return Objects.hash(status, finalAnswer, failureReason, stepCount, observations);
     }
 }

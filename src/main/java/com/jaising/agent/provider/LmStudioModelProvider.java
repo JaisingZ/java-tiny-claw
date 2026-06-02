@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -74,7 +74,7 @@ public final class LmStudioModelProvider implements ModelProvider {
     }
 
     @Override
-    public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+    public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
         debugJson(phase, "Request JSON", requestBody);
         JsonNode response = send(requestBody);
@@ -96,7 +96,7 @@ public final class LmStudioModelProvider implements ModelProvider {
         return decision;
     }
 
-    private ObjectNode buildRequestBody(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+    private ObjectNode buildRequestBody(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", config.model());
         root.put("stream", false);

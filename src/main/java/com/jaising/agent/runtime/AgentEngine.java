@@ -1,7 +1,6 @@
 package com.jaising.agent.runtime;
 
-import com.jaising.agent.domain.AgentState;
-import com.jaising.agent.domain.AgentStatus;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -12,13 +11,9 @@ import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
 import com.jaising.agent.provider.ModelProvider;
-import com.jaising.agent.state.StateStore;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
-import com.jaising.agent.trace.TraceEvent;
-import com.jaising.agent.trace.TraceEventType;
-import com.jaising.agent.trace.TraceRecorder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -31,8 +26,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 主循环运行时
- * 负责模型决策 工具执行 状态推进和审计
+ * 主循环运行时。
+ * 只负责短期上下文推进、模型决策和工具执行。
  */
 public final class AgentEngine {
 
@@ -40,152 +35,96 @@ public final class AgentEngine {
 
     private final ModelProvider provider;
     private final ToolRegistry toolRegistry;
-    private final StateStore stateStore;
-    private final TraceRecorder traceRecorder;
     private final int maxSteps;
     private final boolean enableThinking;
     private final RunLogger runLogger;
     private final ExecutorService toolExecutor;
 
-    /**
-     * 创建 AgentEngine。
-     */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
-            TraceRecorder traceRecorder, int maxSteps) {
-        this(provider, toolRegistry, stateStore, traceRecorder, maxSteps, false);
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps) {
+        this(provider, toolRegistry, maxSteps, false);
     }
 
-    /**
-     * 创建 AgentEngine。
-     */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
-            TraceRecorder traceRecorder, int maxSteps, boolean enableThinking) {
-        this(provider, toolRegistry, stateStore, traceRecorder, maxSteps, enableThinking,
-                NoopRunLogger.INSTANCE);
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking) {
+        this(provider, toolRegistry, maxSteps, enableThinking, NoopRunLogger.INSTANCE);
     }
 
-    /**
-     * 创建 AgentEngine。
-     */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
-            TraceRecorder traceRecorder, int maxSteps, boolean enableThinking, RunLogger runLogger) {
-        this(provider, toolRegistry, stateStore, traceRecorder, maxSteps, enableThinking,
-                runLogger, createToolExecutor());
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger) {
+        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor());
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, StateStore stateStore,
-            TraceRecorder traceRecorder, int maxSteps, boolean enableThinking, RunLogger runLogger,
-            ExecutorService toolExecutor) {
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger, ExecutorService toolExecutor) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
-        this.stateStore = stateStore;
-        this.traceRecorder = traceRecorder;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.runLogger = runLogger == null ? NoopRunLogger.INSTANCE : runLogger;
         this.toolExecutor = toolExecutor;
     }
 
-    /**
-     * 运行一个任务
-     * 只在运行态持续推进循环
-     */
     public RunResult run(Task task) {
-        return runInternal(task);
+        logger.info("Starting task: {} (ID: {})", task.goal(), task.taskId());
+        AgentContext context = AgentContext.create(task);
+        while (context.stepCount() < maxSteps) {
+            TurnResult turn = runTurn(context);
+            if (turn.result() != null) {
+                return turn.result();
+            }
+            context = turn.context();
+        }
+        return fail(context, "max_steps_exceeded");
+    }
+
+    public void shutdown() {
+        toolExecutor.shutdown();
     }
 
     private static ExecutorService createToolExecutor() {
         return Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
     }
 
-    private RunResult runInternal(Task task) {
-        logger.info("Starting task: {} (ID: {})", task.goal(), task.taskId());
-        AgentState state = stateStore.load(task.taskId()).orElse(AgentState.create(task));
-        if (state.status() != AgentStatus.RUNNING) {
-            return new RunResult(state);
-        }
-
-        while (state.status() == AgentStatus.RUNNING && state.stepCount() < maxSteps) {
-            state = runTurn(state);
-        }
-
-        if (state.status() == AgentStatus.RUNNING) {
-            state = fail(state, "max_steps_exceeded");
-        }
-
-        return new RunResult(state);
-    }
-
-    private AgentState runTurn(AgentState state) {
-        int currentStep = state.stepCount() + 1;
+    private TurnResult runTurn(AgentContext context) {
+        int currentStep = context.stepCount() + 1;
         logger.info("Starting turn {}/{}", currentStep, maxSteps);
         runLogger.turnStarted(currentStep);
 
         if (enableThinking) {
             try {
-                state = runThinkingPhase(state);
+                context = runThinkingPhase(context);
             } catch (ProviderCallException ex) {
-                return fail(state, ex.reason());
-            }
-            if (state.status() != AgentStatus.RUNNING) {
-                return state;
+                return TurnResult.done(fail(context, ex.reason()));
             }
         }
 
         Decision decision;
         try {
-            decision = requestActionDecision(state);
+            decision = requestActionDecision(context);
         } catch (ProviderCallException ex) {
-            return fail(state, ex.reason());
+            return TurnResult.done(fail(context, ex.reason()));
         }
-        return applyDecision(state, decision);
+        return applyDecision(context, decision);
     }
 
-    /**
-     * 关闭资源
-     */
-    public void shutdown() {
-        toolExecutor.shutdown();
-    }
-
-    /**
-     * 执行慢思考阶段
-     * 只保存内部思考 不写入观测
-     */
-    private AgentState runThinkingPhase(AgentState state) {
+    private AgentContext runThinkingPhase(AgentContext context) {
         runLogger.thinkingStarted();
-        ProviderResponse response = invokeProvider(state, DecisionPhase.THINKING, Collections.<ToolDefinition>emptyList(),
-                TraceEventType.THINKING_REQUEST, TraceEventType.THINKING_RESPONSE,
-                "enableThinking=true phase=THINKING step=" + state.stepCount()
-                        + " tools=[] observations=" + state.observations().size()
-                        + " goal=" + state.goal());
+        ProviderResponse response = invokeProvider(context, DecisionPhase.THINKING,
+                Collections.<ToolDefinition>emptyList());
 
         if (!(response.decision() instanceof ThinkingDecision)) {
-            return fail(state, "unsupported_thinking_decision");
+            throw new ProviderCallException("unsupported_thinking_decision");
         }
 
         ThinkingDecision thinking = (ThinkingDecision) response.decision();
         logger.info("Thinking complete in {}ms: {}", response.durationMillis(), thinking.thought());
         runLogger.thinkingCompleted(thinking, response.durationMillis());
-        AgentState nextState = state.think(thinking.thought());
-        stateStore.save(nextState);
-        return nextState;
+        return context.think(thinking.thought());
     }
 
-    /**
-     * 请求行动阶段决策
-     * 工具定义只在行动阶段可见
-     */
-    private Decision requestActionDecision(AgentState state) {
+    private Decision requestActionDecision(AgentContext context) {
         List<ToolDefinition> toolDefinitions = toolRegistry.definitions();
         runLogger.actionStarted(toolDefinitions);
-        ProviderResponse response = invokeProvider(state, DecisionPhase.ACTION, toolDefinitions,
-                TraceEventType.MODEL_REQUEST, TraceEventType.MODEL_RESPONSE,
-                "phase=ACTION step=" + state.stepCount()
-                        + " tools=" + toolNames(toolDefinitions)
-                        + " observations=" + state.observations().size()
-                        + " hasLastThought=" + hasText(state.lastThought())
-                        + " goal=" + state.goal());
+        ProviderResponse response = invokeProvider(context, DecisionPhase.ACTION, toolDefinitions);
 
         logger.info("Action decision received in {}ms: {}", response.durationMillis(),
                 decisionSummary(response.decision()));
@@ -195,84 +134,64 @@ public final class AgentEngine {
         return response.decision();
     }
 
-    private ProviderResponse invokeProvider(AgentState state, DecisionPhase phase,
-            List<ToolDefinition> availableTools, TraceEventType requestType, TraceEventType responseType,
-            String requestDetail) {
+    private ProviderResponse invokeProvider(AgentContext context, DecisionPhase phase,
+            List<ToolDefinition> availableTools) {
         long start = System.nanoTime();
-        traceRecorder.record(new TraceEvent(requestType, state.taskId(), state.stepCount(), requestDetail, 0L));
-
         Decision decision;
         try {
-            decision = provider.decide(state, phase, availableTools);
+            decision = provider.decide(context, phase, availableTools);
         } catch (RuntimeException ex) {
             throw new ProviderCallException("provider_error: " + ex.getMessage());
         }
-
-        long durationMillis = elapsedMillis(start);
-        traceRecorder.record(new TraceEvent(responseType, state.taskId(), state.stepCount(),
-                decisionSummary(decision), durationMillis));
-        return new ProviderResponse(decision, durationMillis);
+        return new ProviderResponse(decision, elapsedMillis(start));
     }
 
-    /**
-     * 根据模型决策推进主循环
-     */
-    private AgentState applyDecision(AgentState state, Decision decision) {
+    private TurnResult applyDecision(AgentContext context, Decision decision) {
         if (decision instanceof FinishDecision) {
             FinishDecision finish = (FinishDecision) decision;
-            AgentState nextState = state.finish(finish.answer());
-            stateStore.save(nextState);
-            traceRecorder.record(new TraceEvent(TraceEventType.FINISHED, nextState.taskId(),
-                    nextState.stepCount(), "answer=" + finish.answer(), 0L));
             runLogger.finished(finish);
-            return nextState;
+            return TurnResult.done(RunResult.success(context.stepCount(), context.observations(), finish.answer()));
         }
 
         if (decision instanceof ToolDecision) {
-            return handleToolDecision(state, ((ToolDecision) decision).call());
+            return handleToolDecision(context, ((ToolDecision) decision).call());
         }
 
         if (decision instanceof ParallelToolDecision) {
-            return handleParallelToolDecision(state, (ParallelToolDecision) decision);
+            return handleParallelToolDecision(context, (ParallelToolDecision) decision);
         }
 
-        return fail(state, "unsupported_decision");
+        return TurnResult.done(fail(context, "unsupported_decision"));
     }
 
-    /**
-     * 执行工具决策
-     * 成功时推进一步并追加观测
-     */
-    private AgentState handleToolDecision(AgentState state, ToolCall call) {
+    private TurnResult handleToolDecision(AgentContext context, ToolCall call) {
         logger.info("Executing tool: {} with args: {}", call.toolName(), call.arguments());
-        ToolResult toolResult = executeToolCall(state, call);
+        ToolResult toolResult = executeToolCall(context, call);
         if (!toolResult.success()) {
             logger.warn("Tool {} execution failed: {}", call.toolName(), toolResult.errorMessage());
-            return fail(state, toolResult.errorMessage());
+            return TurnResult.done(fail(context, toolResult.errorMessage()));
         }
 
         logger.info("Tool {} execution successful", call.toolName());
-        return advanceAndObserve(state, Collections.singletonList(toolResult.output()));
+        return TurnResult.next(advanceAndObserve(context, Collections.singletonList(toolResult.output())));
     }
 
-    /**
-     * 处理并行工具决策
-     * 只读工具并发执行，涉写工具顺序执行
-     */
-    private AgentState handleParallelToolDecision(AgentState state, ParallelToolDecision decision) {
+    private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision) {
         List<ToolCall> calls = decision.getCalls();
         if (calls.isEmpty()) {
-            return advanceState(state);
+            return TurnResult.next(context.advance());
         }
 
-        Map<ToolCall, CompletableFuture<ToolResult>> readOnlyResults = new LinkedHashMap<ToolCall, CompletableFuture<ToolResult>>();
+        Map<ToolCall, CompletableFuture<ToolResult>> readOnlyResults =
+                new LinkedHashMap<ToolCall, CompletableFuture<ToolResult>>();
         for (ToolCall call : calls) {
             Tool tool = toolRegistry.snapshot().get(call.toolName());
             if (tool == null) {
-                return fail(state, "Unknown tool: " + call.toolName());
+                return TurnResult.done(fail(context, "Unknown tool: " + call.toolName()));
             }
             if (!tool.isSideEffect()) {
-                readOnlyResults.put(call, CompletableFuture.supplyAsync(() -> executeToolCall(state, call), toolExecutor));
+                readOnlyResults.put(call,
+                        CompletableFuture.supplyAsync(() -> executeToolCall(context, call), toolExecutor));
             }
         }
 
@@ -284,55 +203,41 @@ public final class AgentEngine {
                 try {
                     result = future.get();
                 } catch (Exception ex) {
-                    return fail(state, "parallel_execution_failed: " + ex.getMessage());
+                    return TurnResult.done(fail(context, "parallel_execution_failed: " + ex.getMessage()));
                 }
             } else {
-                result = executeToolCall(state, call);
+                result = executeToolCall(context, call);
             }
 
             if (!result.success()) {
-                return fail(state, result.errorMessage());
+                return TurnResult.done(fail(context, result.errorMessage()));
             }
             outputs.add(result.output());
         }
 
-        return advanceAndObserve(state, outputs);
+        return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
-    private ToolResult executeToolCall(AgentState state, ToolCall call) {
+    private ToolResult executeToolCall(AgentContext context, ToolCall call) {
         long toolStart = System.nanoTime();
         runLogger.toolStarted(call);
-        traceRecorder.record(new TraceEvent(TraceEventType.TOOL_CALL, state.taskId(),
-                state.stepCount(), "tool=" + call.toolName() + " args=" + call.arguments(), 0L));
-
-        ToolResult toolResult = toolRegistry.execute(call, state);
-
-        long toolDuration = elapsedMillis(toolStart);
-        traceRecorder.record(new TraceEvent(TraceEventType.TOOL_RESULT, state.taskId(),
-                state.stepCount(), toolResult.success()
-                        ? "success=true output=" + toolResult.output()
-                        : "success=false error=" + toolResult.errorMessage(),
-                toolDuration));
-        runLogger.toolCompleted(call, toolResult, toolDuration);
-
+        ToolResult toolResult = toolRegistry.execute(call, context);
+        runLogger.toolCompleted(call, toolResult, elapsedMillis(toolStart));
         return toolResult;
     }
 
-    private AgentState advanceState(AgentState state) {
-        AgentState nextState = state.advance();
-        stateStore.save(nextState);
-        return nextState;
+    private AgentContext advanceAndObserve(AgentContext context, List<String> outputs) {
+        AgentContext nextContext = context.advance();
+        if (outputs.isEmpty()) {
+            return nextContext;
+        }
+        return nextContext.observe(joinOutputs(outputs));
     }
 
-    private AgentState advanceAndObserve(AgentState state, List<String> outputs) {
-        AgentState nextState = state.advance();
-        if (outputs.isEmpty()) {
-            stateStore.save(nextState);
-            return nextState;
-        }
-        nextState = nextState.observe(joinOutputs(outputs));
-        stateStore.save(nextState);
-        return nextState;
+    private RunResult fail(AgentContext context, String reason) {
+        logger.error("Step failed: {}", reason);
+        runLogger.failed(reason);
+        return RunResult.failed(context.stepCount(), context.observations(), reason);
     }
 
     private String joinOutputs(List<String> outputs) {
@@ -346,31 +251,10 @@ public final class AgentEngine {
         return combinedOutput.toString();
     }
 
-    /**
-     * 统一记录失败状态
-     */
-    private AgentState fail(AgentState state, String reason) {
-        logger.error("Step failed: {}", reason);
-        AgentState failed = state.fail(reason);
-        stateStore.save(failed);
-        traceRecorder.record(new TraceEvent(TraceEventType.FAILED, failed.taskId(),
-                failed.stepCount(), "reason=" + failed.failureReason(), 0L));
-        runLogger.failed(failed.failureReason());
-        return failed;
-    }
-
-    /**
-     * 计算毫秒耗时
-     * 仅用于 trace
-     */
     private long elapsedMillis(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000L;
     }
 
-    /**
-     * 汇总模型决策
-     * 用于 trace 打印
-     */
     private String decisionSummary(Decision decision) {
         if (decision instanceof ThinkingDecision) {
             return "ThinkingDecision thought=" + ((ThinkingDecision) decision).thought();
@@ -383,28 +267,35 @@ public final class AgentEngine {
             return "ToolDecision tool=" + call.toolName() + " args=" + call.arguments();
         }
         if (decision instanceof ParallelToolDecision) {
-            List<ToolCall> calls = ((ParallelToolDecision) decision).getCalls();
-            return "ParallelToolDecision calls=" + calls;
+            return "ParallelToolDecision calls=" + ((ParallelToolDecision) decision).getCalls();
         }
         return decision.getClass().getSimpleName();
     }
 
-    /**
-     * 汇总可见工具名称
-     */
-    private List<String> toolNames(List<ToolDefinition> definitions) {
-        List<String> names = new ArrayList<String>();
-        for (ToolDefinition definition : definitions) {
-            names.add(definition.name());
-        }
-        return names;
-    }
+    private static final class TurnResult {
+        private final AgentContext context;
+        private final RunResult result;
 
-    /**
-     * 判断字符串是否有内容
-     */
-    private boolean hasText(String value) {
-        return value != null && !value.trim().isEmpty();
+        private TurnResult(AgentContext context, RunResult result) {
+            this.context = context;
+            this.result = result;
+        }
+
+        private static TurnResult next(AgentContext context) {
+            return new TurnResult(context, null);
+        }
+
+        private static TurnResult done(RunResult result) {
+            return new TurnResult(null, result);
+        }
+
+        private AgentContext context() {
+            return context;
+        }
+
+        private RunResult result() {
+            return result;
+        }
     }
 
     private static final class ProviderResponse {

@@ -1,6 +1,6 @@
 package com.jaising.agent.tool;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
 import java.io.IOException;
@@ -69,7 +69,7 @@ public final class EditFileTool implements Tool {
      * 执行文件局部编辑。
      */
     @Override
-    public ToolResult execute(ToolCall call, AgentState state) {
+    public ToolResult execute(ToolCall call, AgentContext state) {
         Object rawPath = call.arguments().get("path");
         if (!(rawPath instanceof String) || ((String) rawPath).trim().isEmpty()) {
             return ToolResult.failure("Missing required argument: path");

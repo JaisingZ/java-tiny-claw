@@ -2,7 +2,7 @@ package com.jaising.agent.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Task;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
@@ -173,7 +173,7 @@ class EditFileToolTest {
         return arguments;
     }
 
-    private AgentState state() {
-        return AgentState.create(new Task("task-1", "test"));
+    private AgentContext state() {
+        return AgentContext.create(new Task("task-1", "test"));
     }
 }

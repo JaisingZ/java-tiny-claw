@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -48,7 +48,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-1", "finish it")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-1", "finish it")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
 
         assertThat(decision).isEqualTo(new FinishDecision("done"));
@@ -68,7 +68,7 @@ class SiliconFlowModelProviderTest {
         ToolDefinition tool = new ToolDefinition("echo", "echo",
                 Collections.<String, Object>singletonMap("type", "object"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-2", "think")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-2", "think")),
                 DecisionPhase.THINKING, Collections.singletonList(tool));
 
         assertThat(decision).isEqualTo(new ThinkingDecision("think first"));
@@ -96,7 +96,7 @@ class SiliconFlowModelProviderTest {
         ToolDefinition tool = new ToolDefinition("echo", "回显文本",
                 Collections.<String, Object>singletonMap("type", "object"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-3", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-3", "echo hello")),
                 DecisionPhase.ACTION, Collections.singletonList(tool));
 
         assertThat(requestBody.get().get("tools")).hasSize(1);
@@ -127,7 +127,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-fenced", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-fenced", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -142,7 +142,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-escaped", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-escaped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -157,7 +157,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-wrapped", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-wrapped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -172,7 +172,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-missing-brace", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-missing-brace", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -187,7 +187,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-string-braces", "echo braces")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-string-braces", "echo braces")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -205,7 +205,7 @@ class SiliconFlowModelProviderTest {
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"),
                 line -> debugOutput.append(line).append('\n'));
 
-        provider.decide(AgentState.create(new Task("task-debug", "debug it")),
+        provider.decide(AgentContext.create(new Task("task-debug", "debug it")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
 
         assertThat(debugOutput.toString())
@@ -220,13 +220,39 @@ class SiliconFlowModelProviderTest {
     }
 
     @Test
+    void debugOutputSummarizesToolsAndTruncatesLongRequestText() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+                new AtomicReference<String>(), requestBody);
+        StringBuilder debugOutput = new StringBuilder();
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"),
+                line -> debugOutput.append(line).append('\n'));
+        ToolDefinition readFile = new ToolDefinition("read_file", "read file",
+                Collections.<String, Object>singletonMap("type", "object"));
+        ToolDefinition writeFile = new ToolDefinition("write_file", "write file",
+                Collections.<String, Object>singletonMap("type", "object"));
+
+        provider.decide(AgentContext.create(new Task("task-debug-long",
+                        "请直接回答：" + "A".repeat(400))),
+                DecisionPhase.ACTION, java.util.List.of(readFile, writeFile));
+
+        assertThat(debugOutput.toString())
+                .contains("\"tools_summary\"")
+                .contains("\"count\" : 2")
+                .contains("\"names\" : [ \"read_file\", \"write_file\" ]")
+                .contains("...(truncated ")
+                .doesNotContain("\"parameters\"");
+    }
+
+    @Test
     void throwsWhenHttpStatusIsNotSuccessful() throws Exception {
         startServer(401, "{\"error\":{\"message\":\"unauthorized\"}}",
                 new AtomicReference<String>(), new AtomicReference<JsonNode>());
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("bad-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        assertThatThrownBy(() -> provider.decide(AgentState.create(new Task("task-4", "fail")),
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-4", "fail")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("SiliconFlow request failed: 401");
@@ -238,7 +264,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        assertThatThrownBy(() -> provider.decide(AgentState.create(new Task("task-5", "empty")),
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-5", "empty")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("SiliconFlow returned empty choices");
@@ -252,7 +278,7 @@ class SiliconFlowModelProviderTest {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
-        assertThatThrownBy(() -> provider.decide(AgentState.create(new Task("task-6", "bad json")),
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-6", "bad json")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object")))))
                 .isInstanceOf(RuntimeException.class)

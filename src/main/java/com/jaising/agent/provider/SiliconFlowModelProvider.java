@@ -6,8 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.jaising.agent.domain.AgentState;
-import com.jaising.agent.domain.AgentStatus;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -40,6 +39,7 @@ import java.util.function.Consumer;
 public final class SiliconFlowModelProvider implements ModelProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(SiliconFlowModelProvider.class);
+    private static final int MAX_DEBUG_TEXT_LENGTH = 240;
 
     private static final TypeReference<Map<String, Object>> ARGUMENTS_TYPE =
             new TypeReference<Map<String, Object>>() {
@@ -71,12 +71,10 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     }
 
     @Override
-    public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+    public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
-        logger.debug("[Provider][{}] Request body: {}", phase, requestBody);
         debugJson(phase, "Request JSON", requestBody);
         JsonNode response = send(requestBody);
-        logger.debug("[Provider][{}] Response body: {}", phase, response);
         debugJson(phase, "Response JSON", response);
         JsonNode message = firstMessage(response);
 
@@ -91,12 +89,11 @@ public final class SiliconFlowModelProvider implements ModelProvider {
                 decision = new FinishDecision(content);
             }
         }
-        logger.info("[Provider][{}] Parsed decision: {}", phase, decisionSummary(decision));
         debugDecision(phase, decision);
         return decision;
     }
 
-    private ObjectNode buildRequestBody(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+    private ObjectNode buildRequestBody(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", config.model());
         root.put("stream", false);
@@ -413,14 +410,12 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     }
 
     private void debugJson(DecisionPhase phase, String title, JsonNode node) {
-        String pretty = prettyJson(node);
-        logger.debug("[Provider][{}] {}:\n{}", phase, title, pretty);
+        String pretty = prettyJson(toDebugJson(title, node));
         emitDebugBlock(phase, title, pretty);
     }
 
     private void debugDecision(DecisionPhase phase, Decision decision) {
         String summary = decisionSummary(decision);
-        logger.debug("[Provider][{}] Parsed decision: {}", phase, summary);
         emitDebugBlock(phase, "Parsed Decision", summary);
     }
 
@@ -438,6 +433,71 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         } catch (JsonProcessingException ex) {
             return node.toString();
         }
+    }
+
+    private JsonNode toDebugJson(String title, JsonNode node) {
+        if (node == null) {
+            return null;
+        }
+
+        JsonNode copy = node.deepCopy();
+        if ("Request JSON".equals(title) && copy instanceof ObjectNode) {
+            summarizeRequestJson((ObjectNode) copy);
+        }
+        truncateLargeText(copy);
+        return copy;
+    }
+
+    private void summarizeRequestJson(ObjectNode request) {
+        JsonNode tools = request.get("tools");
+        if (tools != null && tools.isArray()) {
+            ObjectNode summary = request.putObject("tools_summary");
+            summary.put("count", tools.size());
+            ArrayNode names = summary.putArray("names");
+            for (JsonNode tool : tools) {
+                names.add(text(tool.path("function").path("name")));
+            }
+            request.remove("tools");
+        }
+    }
+
+    private void truncateLargeText(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node instanceof ObjectNode) {
+            ObjectNode object = (ObjectNode) node;
+            List<String> fieldNames = new ArrayList<String>();
+            object.fieldNames().forEachRemaining(fieldNames::add);
+            for (String fieldName : fieldNames) {
+                JsonNode value = object.get(fieldName);
+                if (value != null && value.isTextual()) {
+                    object.put(fieldName, truncateText(value.asText("")));
+                } else {
+                    truncateLargeText(value);
+                }
+            }
+            return;
+        }
+        if (node instanceof ArrayNode) {
+            ArrayNode array = (ArrayNode) node;
+            for (int index = 0; index < array.size(); index++) {
+                JsonNode value = array.get(index);
+                if (value != null && value.isTextual()) {
+                    array.set(index, objectMapper.getNodeFactory().textNode(truncateText(value.asText(""))));
+                } else {
+                    truncateLargeText(value);
+                }
+            }
+        }
+    }
+
+    private String truncateText(String value) {
+        if (!hasText(value) || value.length() <= MAX_DEBUG_TEXT_LENGTH) {
+            return value;
+        }
+        return value.substring(0, MAX_DEBUG_TEXT_LENGTH)
+                + "...(truncated " + (value.length() - MAX_DEBUG_TEXT_LENGTH) + " chars)";
     }
 
     private String decisionSummary(Decision decision) {

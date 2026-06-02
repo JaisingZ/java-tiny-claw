@@ -6,11 +6,13 @@ Provider 是模型协议适配层，负责隔离不同大模型厂商的 API 差
 
 当前项目的核心原则是：`Runtime` 只维护 Agent 主循环，`Provider` 只负责把模型输入输出翻译成项目内部协议。任何 OpenAI、Claude、DeepSeek 或其它模型协议差异，都不应泄漏到 `AgentEngine`。
 
+当前 tiny-claw 精简版将历史接口参数从 `AgentState` 迁移到 `AgentContext`，不再做持久化状态或 trace 组装。
+
 ## 边界
 
 Provider 负责：
 
-- 根据 `AgentState` 和 `DecisionPhase` 请求模型。
+- 根据 `AgentContext` 和 `DecisionPhase` 请求模型。
 - 把内部状态、上下文和工具信息翻译成厂商 API 请求。
 - 把厂商响应翻译回内部 `Decision`。
 - 处理厂商协议差异、请求失败和响应格式校验。
@@ -20,17 +22,17 @@ Provider 不负责：
 - 推进主循环。
 - 执行工具。
 - 判断工具是否允许执行。
-- 保存状态。
-- 记录运行轨迹。
+- 维护本轮运行上下文（仅内存）。
+- 输出运行日志（由 `RunLogger` 负责）
 
-这些职责分别属于 `Runtime`、`Tool Registry`、`Middleware`、`StateStore` 和 `Tracer`。
+这些职责分别属于 `Runtime`、`Tool Registry`、`Middleware`，以及 `RunLogger`；历史中的 `StateStore` 和 `TraceRecorder` 在当前 tiny-claw 版本不实现。
 
 ## 当前接口基线
 
 Java 版 Provider 以当前接口为准：
 
 ```java
-Decision decide(AgentState state, DecisionPhase phase);
+Decision decide(AgentContext context, DecisionPhase phase);
 ```
 
 Provider 只能返回项目内部的 `Decision` 类型：

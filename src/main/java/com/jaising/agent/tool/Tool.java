@@ -1,6 +1,6 @@
 package com.jaising.agent.tool;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
 import java.util.Collections;
@@ -26,7 +26,7 @@ public interface Tool {
     /**
      * 执行工具调用。
      */
-    ToolResult execute(ToolCall call, AgentState state);
+    ToolResult execute(ToolCall call, AgentContext state);
 
     /**
      * 标识工具是否具有副作用（写操作）。

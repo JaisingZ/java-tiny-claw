@@ -1,6 +1,6 @@
 # java-tiny-claw
 
-`java-tiny-claw` 是一个用于学习和验证 Agent Harness 的 Java 项目。它聚焦一个可控、可测试、可审计的 Main Loop：读取任务状态，请求模型决策，执行工具或结束任务，保存状态并记录 trace。
+`java-tiny-claw` 是一个用于学习和验证 Agent Harness 的 Java 项目。它聚焦一个可控、可测试、可回放的 Main Loop：读取任务上下文，请求模型决策，执行工具或结束任务，并返回最终 `RunResult`。
 
 ## 主要功能
 
@@ -9,9 +9,9 @@
 - LM Studio Provider：默认通过 OpenAI 兼容 Chat Completions 协议调用本地模型。
 - 工具系统：内置 `read_file`、`write_file`、`edit_file`、`bash`。
 - Middleware：支持工具执行前拦截，例如 allow-list。
-- StateStore：支持内存状态和文件状态存储。
-- TraceRecorder：记录结构化运行轨迹，便于测试和审计。
-- RunLogger：`--debug` 时输出可读运行日志和 Provider 请求/响应。
+- 运行时上下文：`AgentContext` 仅在内存中保存当前步进上下文。
+- RunLogger：输出可读运行日志；`--debug` 时包含更详细事件与 Provider 请求/响应。
+- RunResult：保留最终决策结果与可读观测。
 - 启动自检：通过真实 `AgentApplication startup-check` 验证 Main Loop 核心能力。
 
 ## 项目结构
@@ -19,13 +19,11 @@
 ```text
 src/main/java/com/jaising/agent
   app/          命令行入口和启动自检
-  runtime/      AgentEngine、RunLogger、RunResult
+  runtime/      AgentEngine、AgentContext、RunLogger、RunResult
   provider/     ModelProvider、LM Studio 默认实现和 SiliconFlow 实现
   tool/         工具接口、注册表和内置工具
   middleware/   工具执行前拦截
-  state/        状态存储
-  trace/        结构化 trace 事件记录
-  domain/       Task、AgentState、Decision 等领域对象
+  domain/       Task、Decision、ToolCall、AgentContext 相关对象
 
 docs/           设计说明和 Main Loop 规划
 scripts/        一键启动自检脚本
@@ -128,5 +126,6 @@ java -cp $cp com.jaising.agent.app.AgentApplication run --debug --thinking --max
 - PowerShell 5 不支持 `&&` / `||`；多步命令应检查 `$LASTEXITCODE`。
 - `write_file` 会自动创建父目录，并以 UTF-8 写入文本文件。
 - 创建或覆盖 Java 源码应优先使用 `write_file`，不要用 PowerShell `Set-Content` / `Out-File` 写源码。
-- `run --debug` 输出实时人类可读日志和 Provider JSON，末尾只打印 `RESULT`；非 debug 模式会打印 `TRACE / RESULT / OBSERVATIONS`。
-- `TraceRecorder` 是结构化审计链路，`RunLogger` 是面向人的实时日志，两者职责不同。
+- `run --debug` 输出实时可读日志和 Provider JSON，末尾会打印 `RESULT`；非 debug 模式会继续打印 `OBSERVATIONS` 和 `RESULT`。
+- 当前版本为精简实现，不提供 `com.jaising.agent.state`、`com.jaising.agent.trace` 的持久化状态层或结构化 trace 层。
+- `RunLogger` 是面向人的运行日志来源，`RunResult` 是最终输出结果；两者已足够覆盖当前运行观测。

@@ -1,6 +1,6 @@
 package com.jaising.agent.tool;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
 import java.util.ArrayList;
@@ -41,7 +41,7 @@ public final class ToolRegistry {
      * 路由并执行工具调用
      * 未知工具和工具异常都包装成结构化失败
      */
-    public ToolResult execute(ToolCall call, AgentState state) {
+    public ToolResult execute(ToolCall call, AgentContext state) {
         Tool tool;
         try {
             tool = require(call.toolName());

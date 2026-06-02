@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -48,7 +48,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-1", "finish it")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-1", "finish it")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
 
         assertThat(decision).isEqualTo(new FinishDecision("done"));
@@ -68,7 +68,7 @@ class LmStudioModelProviderTest {
         ToolDefinition tool = new ToolDefinition("echo", "echo",
                 Collections.<String, Object>singletonMap("type", "object"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-2", "think")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-2", "think")),
                 DecisionPhase.THINKING, Collections.singletonList(tool));
 
         assertThat(decision).isEqualTo(new ThinkingDecision("think first"));
@@ -99,7 +99,7 @@ class LmStudioModelProviderTest {
         ToolDefinition tool = new ToolDefinition("echo", "回显文本",
                 Collections.<String, Object>singletonMap("type", "object"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-3", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-3", "echo hello")),
                 DecisionPhase.ACTION, Collections.singletonList(tool));
 
         assertThat(requestBody.get().get("max_tokens").asInt()).isEqualTo(1024);
@@ -127,7 +127,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        AgentState state = AgentState.create(new Task("task-action-no-last-thought", "finish"))
+        AgentContext state = AgentContext.create(new Task("task-action-no-last-thought", "finish"))
                 .think("这是一段不该回传给 ACTION 阶段的内部思考");
 
         Decision decision = provider.decide(state, DecisionPhase.ACTION,
@@ -146,7 +146,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-fenced", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-fenced", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -161,7 +161,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-escaped", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-escaped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -176,7 +176,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-wrapped", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-wrapped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -191,7 +191,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-missing-brace", "echo hello")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-missing-brace", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -206,7 +206,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-string-braces", "echo braces")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-string-braces", "echo braces")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
 
@@ -224,7 +224,7 @@ class LmStudioModelProviderTest {
                 new LmStudioConfig(baseUrl(), "qwen-local"),
                 line -> debugOutput.append(line).append('\n'));
 
-        provider.decide(AgentState.create(new Task("task-debug", "debug it")),
+        provider.decide(AgentContext.create(new Task("task-debug", "debug it")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
 
         assertThat(debugOutput.toString())
@@ -246,7 +246,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        Decision decision = provider.decide(AgentState.create(new Task("task-thinking-long", "think")),
+        Decision decision = provider.decide(AgentContext.create(new Task("task-thinking-long", "think")),
                 DecisionPhase.THINKING, Collections.<ToolDefinition>emptyList());
 
         assertThat(decision).isInstanceOf(ThinkingDecision.class);
@@ -262,7 +262,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        assertThatThrownBy(() -> provider.decide(AgentState.create(new Task("task-4", "fail")),
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-4", "fail")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("LM Studio request failed: 500");
@@ -274,7 +274,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        assertThatThrownBy(() -> provider.decide(AgentState.create(new Task("task-5", "empty")),
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-5", "empty")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("LM Studio returned empty choices");
@@ -288,7 +288,7 @@ class LmStudioModelProviderTest {
         LmStudioModelProvider provider = new LmStudioModelProvider(
                 new LmStudioConfig(baseUrl(), "qwen-local"));
 
-        assertThatThrownBy(() -> provider.decide(AgentState.create(new Task("task-6", "bad json")),
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-6", "bad json")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object")))))
                 .isInstanceOf(RuntimeException.class)

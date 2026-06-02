@@ -1,6 +1,6 @@
 package com.jaising.agent.provider;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.ToolDefinition;
@@ -14,5 +14,5 @@ public interface ModelProvider {
     /**
      * 根据状态和阶段返回模型决策。
      */
-    Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools);
+    Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools);
 }

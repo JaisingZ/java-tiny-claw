@@ -2,7 +2,7 @@ package com.jaising.agent.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -11,15 +11,11 @@ import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
 import com.jaising.agent.provider.ModelProvider;
-import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.BashTool;
 import com.jaising.agent.tool.EditFileTool;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
-import com.jaising.agent.trace.InMemoryTraceRecorder;
-import com.jaising.agent.trace.TraceEvent;
-import com.jaising.agent.trace.TraceEventType;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -48,10 +44,10 @@ class AgentEngineIntegrationTest {
 
         RunResult result = fixture.run(new WriteThenBashProvider(), "task-write-bash", "write and read");
 
-        assertThat(result.state().status()).isEqualTo(com.jaising.agent.domain.AgentStatus.SUCCESS);
-        assertThat(result.state().observations()).hasSize(2);
-        assertThat(result.state().observations().get(1)).contains("hello");
-        assertThat(result.state().finalAnswer()).isEqualTo("done");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(2);
+        assertThat(result.observations().get(1)).contains("hello");
+        assertThat(result.finalAnswer()).isEqualTo("done");
     }
 
     /**
@@ -63,15 +59,9 @@ class AgentEngineIntegrationTest {
 
         RunResult result = fixture.run(new FailingBashThenFinishProvider(), "task-bash-exit-code", "fail once");
 
-        assertThat(result.state().status()).isEqualTo(com.jaising.agent.domain.AgentStatus.SUCCESS);
-        assertThat(result.state().observations()).hasSize(1);
-        assertThat(result.state().observations().get(0)).contains("exitCode=7", "boom");
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.TOOL_RESULT)
-                .extracting(TraceEvent::detail)
-                .first()
-                .asString()
-                .contains("success=true", "exitCode=7");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0)).contains("exitCode=7", "boom");
     }
 
     /**
@@ -83,14 +73,10 @@ class AgentEngineIntegrationTest {
 
         RunResult result = fixture.run(new WriteThenEditProvider(), "task-write-edit", "write and edit");
 
-        assertThat(result.state().status()).isEqualTo(com.jaising.agent.domain.AgentStatus.SUCCESS);
-        assertThat(result.state().observations()).hasSize(2);
-        assertThat(result.state().observations().get(1)).contains("line_by_line_trim");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(2);
+        assertThat(result.observations().get(1)).contains("line_by_line_trim");
         assertThat(Files.readString(workDir.resolve("Server.java"))).contains("throw new IllegalStateException()");
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.TOOL_CALL)
-                .extracting(TraceEvent::detail)
-                .anyMatch(detail -> detail.contains("edit_file"));
     }
 
     private EngineFixture fixture(Tool... tools) {
@@ -102,7 +88,7 @@ class AgentEngineIntegrationTest {
      */
     private static final class WriteThenBashProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (state.observations().isEmpty()) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
                 arguments.put("path", "hello.txt");
@@ -129,7 +115,7 @@ class AgentEngineIntegrationTest {
      */
     private static final class FailingBashThenFinishProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (state.observations().isEmpty()) {
                 return new ToolDecision(new ToolCall("bash",
                         Collections.<String, Object>singletonMap("command", commandThatFails())));
@@ -150,7 +136,7 @@ class AgentEngineIntegrationTest {
      */
     private static final class WriteThenEditProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (state.observations().isEmpty()) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
                 arguments.put("path", "Server.java");
@@ -175,8 +161,6 @@ class AgentEngineIntegrationTest {
     }
 
     private static final class EngineFixture {
-        private final InMemoryStateStore store = new InMemoryStateStore();
-        private final InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         private final ToolRegistry registry = new ToolRegistry();
 
         private EngineFixture(Tool... tools) {
@@ -185,8 +169,7 @@ class AgentEngineIntegrationTest {
 
         private RunResult run(ModelProvider provider, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
-            AgentEngine engine = new AgentEngine(provider, registry, store, trace, 4,
-                    false, NoopRunLogger.INSTANCE, executor);
+            AgentEngine engine = new AgentEngine(provider, registry, 4, false, NoopRunLogger.INSTANCE, executor);
             try {
                 return engine.run(new Task(taskId, goal));
             } finally {

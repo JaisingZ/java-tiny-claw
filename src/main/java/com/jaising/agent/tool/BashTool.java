@@ -1,6 +1,6 @@
 package com.jaising.agent.tool;
 
-import com.jaising.agent.domain.AgentState;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDefinition;
 import org.slf4j.Logger;
@@ -79,7 +79,7 @@ public final class BashTool implements Tool {
      * 执行命令。
      */
     @Override
-    public ToolResult execute(ToolCall call, AgentState state) {
+    public ToolResult execute(ToolCall call, AgentContext state) {
         Object rawCommand = call.arguments().get("command");
         if (!(rawCommand instanceof String) || ((String) rawCommand).trim().isEmpty()) {
             logger.warn("BashTool execution failed: missing command argument");

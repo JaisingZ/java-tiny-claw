@@ -1,7 +1,6 @@
 package com.jaising.agent.app;
 
-import com.jaising.agent.domain.AgentState;
-import com.jaising.agent.domain.AgentStatus;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -17,15 +16,12 @@ import com.jaising.agent.runtime.AgentEngine;
 import com.jaising.agent.runtime.ConsoleRunLogger;
 import com.jaising.agent.runtime.RunLogger;
 import com.jaising.agent.runtime.RunResult;
-import com.jaising.agent.state.InMemoryStateStore;
+import com.jaising.agent.runtime.RunStatus;
 import com.jaising.agent.tool.BashTool;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
 import com.jaising.agent.tool.WriteFileTool;
-import com.jaising.agent.trace.InMemoryTraceRecorder;
-import com.jaising.agent.trace.TraceEvent;
-import com.jaising.agent.trace.TraceEventType;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -72,68 +68,52 @@ final class MainLoopStartupCheck {
     }
 
     private static void runSingleStageFinish(RunLogger logger) {
-        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-        AgentEngine engine = new AgentEngine(new FinishOnlyProvider(), new ToolRegistry(),
-                new InMemoryStateStore(), trace, 2);
+        AgentEngine engine = new AgentEngine(new FinishOnlyProvider(), new ToolRegistry(), 2);
 
         RunResult result = engine.run(new Task("startup-single-stage", "finish directly"));
 
-        emitCase(logger, "single-stage-finish", trace.events(), result);
+        emitCase(logger, "single-stage-finish", result);
 
-        requireStatus(result, AgentStatus.SUCCESS);
-        require("single-stage-ready".equals(result.state().finalAnswer()), "single-stage final answer mismatch");
-        requireTraceOrder(trace.events(), TraceEventType.MODEL_REQUEST, TraceEventType.MODEL_RESPONSE,
-                TraceEventType.FINISHED);
-        requireTraceContains(trace.events(), TraceEventType.MODEL_RESPONSE, "FinishDecision answer=single-stage-ready");
+        requireStatus(result, RunStatus.SUCCESS);
+        require("single-stage-ready".equals(result.finalAnswer()), "single-stage final answer mismatch");
     }
 
     private static void runTwoStageThinkingAction(RunLogger logger) {
-        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         ToolRegistry registry = new ToolRegistry().register(new EchoTool());
         ThinkingThenActionProvider provider = new ThinkingThenActionProvider();
-        AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), trace, 4, true);
+        AgentEngine engine = new AgentEngine(provider, registry, 4, true);
 
         RunResult result = engine.run(new Task("startup-thinking-action", "think then echo"));
 
-        emitCase(logger, "two-stage-thinking-action", trace.events(), result);
+        emitCase(logger, "two-stage-thinking-action", result);
 
-        requireStatus(result, AgentStatus.SUCCESS);
-        require(result.state().observations().contains("hello-startup"), "thinking action observation missing");
+        requireStatus(result, RunStatus.SUCCESS);
+        require(result.observations().contains("hello-startup"), "thinking action observation missing");
         require(provider.phases().equals(Arrays.asList(DecisionPhase.THINKING, DecisionPhase.ACTION,
                 DecisionPhase.THINKING, DecisionPhase.ACTION)), "unexpected decision phases: " + provider.phases());
         require(provider.toolsByPhase().get(0).isEmpty(), "thinking phase should not see tools");
         require(provider.toolsByPhase().get(1).size() == 1
                 && "echo".equals(provider.toolsByPhase().get(1).get(0).name()), "action phase should see echo");
-        requireTraceOrder(trace.events(), TraceEventType.THINKING_REQUEST, TraceEventType.THINKING_RESPONSE,
-                TraceEventType.MODEL_REQUEST, TraceEventType.MODEL_RESPONSE, TraceEventType.TOOL_CALL,
-                TraceEventType.TOOL_RESULT, TraceEventType.FINISHED);
-        requireTraceContains(trace.events(), TraceEventType.THINKING_REQUEST, "tools=[]");
-        requireTraceContains(trace.events(), TraceEventType.MODEL_REQUEST, "tools=[echo]");
-        requireTraceContains(trace.events(), TraceEventType.MODEL_RESPONSE, "ToolDecision tool=echo");
     }
 
     private static void runRealToolsWriteBash(RunLogger logger) throws IOException {
         Path workDir = WORK_ROOT.resolve("real-tools-write-bash");
         resetDirectory(workDir);
-        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         ToolRegistry registry = new ToolRegistry()
                 .register(new WriteFileTool(workDir))
                 .register(new BashTool(workDir, Duration.ofSeconds(10), 8_000));
-        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry,
-                new InMemoryStateStore(), trace, 5);
+        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry, 5);
 
         RunResult result = engine.run(new Task("startup-real-tools", "write compile run"));
 
-        emitCase(logger, "real-tools-write-bash", trace.events(), result);
+        emitCase(logger, "real-tools-write-bash", result);
 
-        requireStatus(result, AgentStatus.SUCCESS);
-        require("java sample executed".equals(result.state().finalAnswer()), "real tools final answer mismatch");
-        require(result.state().observations().size() == 2, "real tools should record two observations");
-        require(result.state().observations().get(1).contains("hello-from-startup"), "java output missing");
+        requireStatus(result, RunStatus.SUCCESS);
+        require("java sample executed".equals(result.finalAnswer()), "real tools final answer mismatch");
+        require(result.observations().size() == 2, "real tools should record two observations");
+        require(result.observations().get(1).contains("hello-from-startup"), "java output missing");
         require(Files.exists(workDir.resolve("HelloFromStartup.java")), "java source was not written");
         require(Files.exists(workDir.resolve("HelloFromStartup.class")), "java class was not compiled");
-        requireTraceContains(trace.events(), TraceEventType.MODEL_REQUEST, "tools=[write_file, bash]");
-        requireTraceContains(trace.events(), TraceEventType.TOOL_RESULT, "success=true");
     }
 
     private static void runFailureModes(RunLogger logger) {
@@ -149,82 +129,47 @@ final class MainLoopStartupCheck {
 
     private static void runFailure(RunLogger logger, String caseName, ModelProvider provider, ToolRegistry registry,
             String failureReason, int maxSteps) {
-        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
-        AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), trace, maxSteps);
+        AgentEngine engine = new AgentEngine(provider, registry, maxSteps);
 
         RunResult result = engine.run(new Task(caseName, caseName));
 
-        emitCase(logger, caseName, trace.events(), result);
+        emitCase(logger, caseName, result);
 
-        requireStatus(result, AgentStatus.FAILED);
-        require(failureReason.equals(result.state().failureReason()),
-                "expected failure '" + failureReason + "' but was '" + result.state().failureReason() + "'");
-        requireTraceContains(trace.events(), TraceEventType.FAILED, "reason=" + failureReason);
+        requireStatus(result, RunStatus.FAILED);
+        require(failureReason.equals(result.failureReason()),
+                "expected failure '" + failureReason + "' but was '" + result.failureReason() + "'");
     }
 
     private static void runLiveLmStudio(RunLogger logger) {
         LmStudioConfig config = LmStudioConfig.loadDefault();
         require(hasText(config.model()), "lmstudio.model is empty");
 
-        InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         AgentEngine engine = new AgentEngine(
                 new LmStudioModelProvider(config, logger::writeLine),
                 new ToolRegistry(),
-                new InMemoryStateStore(),
-                trace,
                 1,
                 true);
 
         RunResult result = engine.run(new Task("startup-live-lmstudio",
                 "请直接用中文回答：Main Loop live 启动测试完成。不要调用工具。"));
 
-        emitCase(logger, "live-lmstudio", trace.events(), result);
+        emitCase(logger, "live-lmstudio", result);
 
-        requireStatus(result, AgentStatus.SUCCESS);
-        requireTraceContains(trace.events(), TraceEventType.THINKING_RESPONSE, "ThinkingDecision thought=");
-        requireTraceContains(trace.events(), TraceEventType.MODEL_RESPONSE, "FinishDecision answer=");
+        requireStatus(result, RunStatus.SUCCESS);
+        require(hasText(result.finalAnswer()), "live final answer is empty");
     }
 
-    private static void emitCase(RunLogger logger, String caseName, List<TraceEvent> events, RunResult result) {
+    private static void emitCase(RunLogger logger, String caseName, RunResult result) {
         logger.writeLine("CASE " + caseName);
-        logger.writeLine("TRACE");
-        for (TraceEvent event : events) {
-            logger.writeLine(event.type()
-                    + " step=" + event.step()
-                    + " durationMs=" + event.durationMillis()
-                    + " detail=" + event.detail());
-        }
-        logger.writeLine("RESULT status=" + result.state().status()
-                + " answer=" + result.state().finalAnswer()
-                + " failure=" + result.state().failureReason());
+        logger.writeLine("RESULT status=" + result.status()
+                + " answer=" + result.finalAnswer()
+                + " failure=" + result.failureReason());
     }
 
-    private static void requireStatus(RunResult result, AgentStatus status) {
-        require(result.state().status() == status,
-                "expected status " + status + " but was " + result.state().status()
-                        + " failure=" + result.state().failureReason());
-    }
-
-    private static void requireTraceContains(List<TraceEvent> events, TraceEventType type, String text) {
-        for (TraceEvent event : events) {
-            if (event.type() == type && event.detail().contains(text)) {
-                return;
-            }
-        }
-        throw new IllegalStateException("Missing trace " + type + " containing: " + text);
-    }
-
-    private static void requireTraceOrder(List<TraceEvent> events, TraceEventType... expectedTypes) {
-        int index = 0;
-        for (TraceEvent event : events) {
-            if (event.type() == expectedTypes[index]) {
-                index++;
-                if (index == expectedTypes.length) {
-                    return;
-                }
-            }
-        }
-        throw new IllegalStateException("Trace order missing: " + Arrays.toString(expectedTypes));
+    private static void requireStatus(RunResult result, RunStatus status) {
+        require(result.status() == status,
+                "expected status " + status + " but was " + result.status()
+                        + " failure=" + result.failureReason());
     }
 
     private static void require(boolean condition, String message) {
@@ -260,7 +205,7 @@ final class MainLoopStartupCheck {
      */
     private static final class FinishOnlyProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new FinishDecision("single-stage-ready");
         }
     }
@@ -273,7 +218,7 @@ final class MainLoopStartupCheck {
         private final List<List<ToolDefinition>> toolsByPhase = new ArrayList<List<ToolDefinition>>();
 
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             phases.add(phase);
             toolsByPhase.add(availableTools);
             if (phase == DecisionPhase.THINKING) {
@@ -302,7 +247,7 @@ final class MainLoopStartupCheck {
      */
     private static final class WriteCompileRunProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             if (state.observations().isEmpty()) {
                 Map<String, Object> arguments = new LinkedHashMap<String, Object>();
                 arguments.put("path", "HelloFromStartup.java");
@@ -344,7 +289,7 @@ final class MainLoopStartupCheck {
         }
 
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             return new ToolDecision(new ToolCall(toolName,
                     Collections.<String, Object>singletonMap("text", "hello-startup")));
         }
@@ -355,7 +300,7 @@ final class MainLoopStartupCheck {
      */
     private static final class ThrowingProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             throw new RuntimeException("startup provider failed");
         }
     }
@@ -370,7 +315,7 @@ final class MainLoopStartupCheck {
         }
 
         @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
+        public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.success(String.valueOf(call.arguments().get("text")));
         }
     }
@@ -385,7 +330,7 @@ final class MainLoopStartupCheck {
         }
 
         @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
+        public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.failure("startup tool failed");
         }
     }

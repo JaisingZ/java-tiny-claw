@@ -2,36 +2,39 @@
 
 ## 目标
 
-把 Agent 的最小闭环收敛为一个明确、可测试、可审计的主循环。
+把 Agent 的最小闭环收敛为一个明确、可测试、可观测的主循环。
 
-主循环只做四件事：
+当前 tiny-claw 的实现是“精简版”：主循环只做四件事：
 
-1. 读取状态
+1. 初始化/更新运行时上下文 `AgentContext`
 2. 请求模型决策
 3. 执行工具或结束任务
-4. 保存状态并记录 trace
+4. 落日志并返回 `RunResult`
+
+历史上 `StateStore` 与 `TraceRecorder` 是可选扩展，但当前版本**不实现状态持久化和结构化 trace 层**。
 
 ## 最小流程
 
 ```text
-load state
-if status != RUNNING: return
+ctx = buildInitialContext(task)
 
-while status == RUNNING && stepCount < maxSteps:
+while stepCount < maxSteps:
+  if ctx.shouldStop(): return failure(ctx)
   request model decision
   if FinishDecision:
-    finish and return
+    finish and return ctx.toRunResult()
   if ToolDecision:
     middleware check
-    resolve tool
+    resolve tool from registry
     execute tool
     if success:
-      advance + observe
+      observe and enrich ctx
       continue
     fail and return
-  fail unsupported decision and return
+  else:
+    fail unsupported decision and return
 
-if still RUNNING:
+if limit reached:
   fail max_steps_exceeded
 ```
 
@@ -40,8 +43,8 @@ if still RUNNING:
 - `ModelProvider` 只负责给出 `Decision`
 - `ToolRegistry` 只负责暴露工具定义、查找工具、路由执行工具
 - `ToolMiddleware` 只负责执行前拦截
-- `StateStore` 只负责状态持久化
-- `TraceRecorder` 只负责过程记录
+- `AgentContext` 只负责本轮运行时上下文（内存）
+- `RunLogger` 负责可读日志输出（debug/非 debug 模式分别输出）
 
 ## 失败规则
 
@@ -62,5 +65,5 @@ if still RUNNING:
 
 - 能从 `Task` 跑到 `SUCCESS` 或 `FAILED`
 - 至少覆盖一条成功路径和三条失败路径
-- 每轮关键步骤都有 trace
+- 每轮关键步骤都有 `RunLogger` 可读日志
 - `maxSteps` 能截断无限循环

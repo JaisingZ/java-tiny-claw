@@ -2,8 +2,7 @@ package com.jaising.agent.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.jaising.agent.domain.AgentState;
-import com.jaising.agent.domain.AgentStatus;
+import com.jaising.agent.domain.AgentContext;
 import com.jaising.agent.domain.Decision;
 import com.jaising.agent.domain.DecisionPhase;
 import com.jaising.agent.domain.FinishDecision;
@@ -14,13 +13,9 @@ import com.jaising.agent.domain.ToolCall;
 import com.jaising.agent.domain.ToolDecision;
 import com.jaising.agent.domain.ToolDefinition;
 import com.jaising.agent.provider.ModelProvider;
-import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.Tool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.ToolResult;
-import com.jaising.agent.trace.InMemoryTraceRecorder;
-import com.jaising.agent.trace.TraceEvent;
-import com.jaising.agent.trace.TraceEventType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -47,34 +42,24 @@ class AgentEngineTest {
                 tool("echo", "text", "hello"),
                 finish("done")), "task-1", "echo once");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(result.state().finalAnswer()).isEqualTo("done");
-        assertThat(result.state().observations()).containsExactly("hello");
-        assertThat(fixture.store.load("task-1")).isPresent();
-        assertThat(fixture.store.load("task-1").orElseThrow().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(fixture.trace.events()).extracting(TraceEvent::type).contains(
-                TraceEventType.MODEL_REQUEST,
-                TraceEventType.TOOL_CALL,
-                TraceEventType.TOOL_RESULT,
-                TraceEventType.MODEL_REQUEST,
-                TraceEventType.FINISHED);
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("done");
+        assertThat(result.observations()).containsExactly("hello");
     }
 
     /**
      * 关闭慢思考时保持单阶段循环
      */
     @Test
-    void doesNotEmitThinkingTraceWhenThinkingIsDisabled() {
+    void runsSingleStageLoopWhenThinkingIsDisabled() {
         EngineFixture fixture = fixture().withTools(new EchoTool());
 
         RunResult result = fixture.run(scriptedProvider(
                 tool("echo", "text", "hello"),
                 finish("done")), "task-1-disabled", "echo once");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(fixture.trace.events()).extracting(TraceEvent::type).doesNotContain(
-                TraceEventType.THINKING_REQUEST,
-                TraceEventType.THINKING_RESPONSE);
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly("hello");
     }
 
     /**
@@ -86,12 +71,12 @@ class AgentEngineTest {
 
         RunResult result = fixture.run(constantProvider(tool("missing")), "task-2", "missing tool");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-        assertThat(result.state().failureReason()).isEqualTo("Unknown tool: missing");
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("Unknown tool: missing");
     }
 
     /**
-     * 工具返回失败时主循环失败并保留工具结果 trace
+     * 工具返回失败时主循环失败
      */
     @Test
     void failsWhenToolReturnsFailure() {
@@ -99,12 +84,8 @@ class AgentEngineTest {
 
         RunResult result = fixture.run(constantProvider(tool("fail_tool")), "task-tool-fails", "tool fails");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-        assertThat(result.state().failureReason()).isEqualTo("read failed");
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.TOOL_RESULT)
-                .extracting(TraceEvent::detail)
-                .containsExactly("success=false error=read failed");
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("read failed");
     }
 
     /**
@@ -116,9 +97,9 @@ class AgentEngineTest {
 
         RunResult result = fixture.run(constantProvider(tool("echo", "text", "hello")), "task-4", "loop forever");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-        assertThat(result.state().failureReason()).isEqualTo("max_steps_exceeded");
-        assertThat(result.state().stepCount()).isEqualTo(1);
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("max_steps_exceeded");
+        assertThat(result.stepCount()).isEqualTo(1);
     }
 
     /**
@@ -131,10 +112,9 @@ class AgentEngineTest {
 
         RunResult result = fixture.run(provider, "task-5", "echo once");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(result.state().finalAnswer()).isEqualTo("done");
-        assertThat(result.state().observations()).containsExactly("hello");
-        assertThat(result.state().lastThought()).isEqualTo("plan to finish");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("done");
+        assertThat(result.observations()).containsExactly("hello");
         assertThat(provider.phases()).containsExactly(
                 DecisionPhase.THINKING,
                 DecisionPhase.ACTION,
@@ -145,37 +125,6 @@ class AgentEngineTest {
                 "echo",
                 "echo",
                 Collections.<String, Object>singletonMap("type", "object")));
-        assertThat(fixture.trace.events()).extracting(TraceEvent::type).containsSubsequence(
-                TraceEventType.THINKING_REQUEST,
-                TraceEventType.THINKING_RESPONSE,
-                TraceEventType.MODEL_REQUEST,
-                TraceEventType.MODEL_RESPONSE,
-                TraceEventType.TOOL_CALL,
-                TraceEventType.TOOL_RESULT,
-                TraceEventType.FINISHED);
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.THINKING_RESPONSE)
-                .extracting(TraceEvent::detail)
-                .containsExactly("ThinkingDecision thought=plan to call echo",
-                        "ThinkingDecision thought=plan to finish");
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.THINKING_REQUEST)
-                .extracting(TraceEvent::detail)
-                .first()
-                .asString()
-                .contains("enableThinking=true", "phase=THINKING", "tools=[]");
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.MODEL_REQUEST)
-                .extracting(TraceEvent::detail)
-                .first()
-                .asString()
-                .contains("phase=ACTION", "tools=[echo]", "observations=0");
-        assertThat(fixture.trace.events())
-                .filteredOn(event -> event.type() == TraceEventType.MODEL_RESPONSE)
-                .extracting(TraceEvent::detail)
-                .first()
-                .asString()
-                .contains("ToolDecision tool=echo", "args={text=hello}");
     }
 
     /**
@@ -188,7 +137,7 @@ class AgentEngineTest {
 
         RunResult result = fixture.run(new ThinkingScriptedProvider(), "task-readable-log", "echo once");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
         assertThat(runLogger.events()).containsSubsequence(
                 "turn:1",
                 "thinking-start",
@@ -218,8 +167,8 @@ class AgentEngineTest {
             return finish("unused");
         }, "task-6", "think fails");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-        assertThat(result.state().failureReason()).isEqualTo("provider_error: boom");
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("provider_error: boom");
     }
 
     /**
@@ -231,9 +180,9 @@ class AgentEngineTest {
 
         RunResult result = fixture.run(constantProvider(tool("echo", "text", "hello")), "task-7", "bad thinking");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-        assertThat(result.state().failureReason()).isEqualTo("unsupported_thinking_decision");
-        assertThat(result.state().observations()).isEmpty();
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("unsupported_thinking_decision");
+        assertThat(result.observations()).isEmpty();
     }
 
     /**
@@ -248,8 +197,8 @@ class AgentEngineTest {
                 parallel(call("read1"), call("read2")),
                 finish("done")), "task-parallel", "parallel echo");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(result.state().observations()).containsExactly("hello\n\nworld");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly("hello\n\nworld");
     }
 
     /**
@@ -262,25 +211,24 @@ class AgentEngineTest {
         RunResult result = fixture.run(scriptedProvider(
                 parallel(call("read1"), call("missing"))), "task-parallel-missing", "parallel missing");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.FAILED);
-        assertThat(result.state().failureReason()).isEqualTo("Unknown tool: missing");
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("Unknown tool: missing");
     }
 
     /**
-     * 空并行决策也会推进一步并持久化
+     * 空并行决策也会推进一步
      */
     @Test
-    void advancesAndPersistsWhenParallelDecisionIsEmpty() {
+    void advancesWhenParallelDecisionIsEmpty() {
         EngineFixture fixture = fixture();
 
         RunResult result = fixture.run(scriptedProvider(
                 parallel(),
                 finish("done")), "task-parallel-empty", "parallel empty");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(result.state().stepCount()).isEqualTo(1);
-        assertThat(result.state().observations()).isEmpty();
-        assertThat(fixture.store.load("task-parallel-empty").orElseThrow().stepCount()).isEqualTo(1);
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.stepCount()).isEqualTo(1);
+        assertThat(result.observations()).isEmpty();
     }
 
     /**
@@ -299,8 +247,8 @@ class AgentEngineTest {
                 parallel(call("read1"), call("write1"), call("read2"), call("write2")),
                 finish("done")), "task-parallel-mixed", "parallel mixed");
 
-        assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
-        assertThat(result.state().observations()).containsExactly("hello\n\nwrite-a\n\nworld\n\nwrite-b");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly("hello\n\nwrite-a\n\nworld\n\nwrite-b");
         assertThat(executionOrder).containsSubsequence("write1", "write2");
     }
 
@@ -320,10 +268,10 @@ class AgentEngineTest {
                 parallel(call("read1"), call("read2")),
                 finish("done")), "task-parallel-shape", "parallel shape");
 
-        assertThat(singleResult.state().stepCount()).isEqualTo(1);
-        assertThat(singleResult.state().observations()).hasSize(1);
-        assertThat(parallelResult.state().stepCount()).isEqualTo(1);
-        assertThat(parallelResult.state().observations()).hasSize(1);
+        assertThat(singleResult.stepCount()).isEqualTo(1);
+        assertThat(singleResult.observations()).hasSize(1);
+        assertThat(parallelResult.stepCount()).isEqualTo(1);
+        assertThat(parallelResult.observations()).hasSize(1);
     }
 
     private EngineFixture fixture() {
@@ -335,7 +283,7 @@ class AgentEngineTest {
             private int index = 0;
 
             @Override
-            public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
                 int current = index;
                 if (current < decisions.length - 1) {
                     index++;
@@ -377,7 +325,7 @@ class AgentEngineTest {
         private final List<List<ToolDefinition>> toolsByPhase = new ArrayList<List<ToolDefinition>>();
 
         @Override
-        public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
             phases.add(phase);
             toolsByPhase.add(availableTools);
             if (phase == DecisionPhase.THINKING) {
@@ -408,7 +356,7 @@ class AgentEngineTest {
         }
 
         @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
+        public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.success(String.valueOf(call.arguments().get("text")));
         }
     }
@@ -428,7 +376,7 @@ class AgentEngineTest {
         }
 
         @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
+        public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.success(output);
         }
 
@@ -457,7 +405,7 @@ class AgentEngineTest {
         }
 
         @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
+        public ToolResult execute(ToolCall call, AgentContext state) {
             executionOrder.add(name);
             return ToolResult.success(output);
         }
@@ -478,7 +426,7 @@ class AgentEngineTest {
         }
 
         @Override
-        public ToolResult execute(ToolCall call, AgentState state) {
+        public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.failure("read failed");
         }
     }
@@ -603,8 +551,6 @@ class AgentEngineTest {
     }
 
     private final class EngineFixture {
-        private final InMemoryStateStore store = new InMemoryStateStore();
-        private final InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         private final ToolRegistry registry = new ToolRegistry();
         private RunLogger runLogger = new RunLoggerAdapter();
         private int maxSteps = 4;
@@ -634,8 +580,7 @@ class AgentEngineTest {
 
         private RunResult run(ModelProvider provider, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
-            AgentEngine engine = new AgentEngine(provider, registry, store, trace,
-                    maxSteps, thinking, runLogger, executor);
+            AgentEngine engine = new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor);
             try {
                 return engine.run(new Task(taskId, goal));
             } finally {
