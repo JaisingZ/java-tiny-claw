@@ -19,7 +19,6 @@ import com.jaising.agent.domain.ToolDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -55,10 +54,6 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         this(config, HttpClient.newHttpClient(), new ObjectMapper(), null);
     }
 
-    public SiliconFlowModelProvider(SiliconFlowConfig config, PrintStream debugOutput) {
-        this(config, HttpClient.newHttpClient(), new ObjectMapper(), debugOutput::println);
-    }
-
     public SiliconFlowModelProvider(SiliconFlowConfig config, Consumer<String> debugSink) {
         this(config, HttpClient.newHttpClient(), new ObjectMapper(), debugSink);
     }
@@ -79,8 +74,10 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     public Decision decide(AgentState state, DecisionPhase phase, List<ToolDefinition> availableTools) {
         ObjectNode requestBody = buildRequestBody(state, phase, availableTools);
         logger.debug("[Provider][{}] Request body: {}", phase, requestBody);
+        debugJson(phase, "Request JSON", requestBody);
         JsonNode response = send(requestBody);
         logger.debug("[Provider][{}] Response body: {}", phase, response);
+        debugJson(phase, "Response JSON", response);
         JsonNode message = firstMessage(response);
 
         Decision decision;
@@ -95,6 +92,7 @@ public final class SiliconFlowModelProvider implements ModelProvider {
             }
         }
         logger.info("[Provider][{}] Parsed decision: {}", phase, decisionSummary(decision));
+        debugDecision(phase, decision);
         return decision;
     }
 
@@ -414,16 +412,32 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         return node.asText("");
     }
 
-    private void debugJson(JsonNode node) {
-        try {
-            logger.debug(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node));
-        } catch (JsonProcessingException ex) {
-            logger.debug(node.toString());
-        }
+    private void debugJson(DecisionPhase phase, String title, JsonNode node) {
+        String pretty = prettyJson(node);
+        logger.debug("[Provider][{}] {}:\n{}", phase, title, pretty);
+        emitDebugBlock(phase, title, pretty);
     }
 
-    private void debug(String message) {
-        logger.debug(message);
+    private void debugDecision(DecisionPhase phase, Decision decision) {
+        String summary = decisionSummary(decision);
+        logger.debug("[Provider][{}] Parsed decision: {}", phase, summary);
+        emitDebugBlock(phase, "Parsed Decision", summary);
+    }
+
+    private void emitDebugBlock(DecisionPhase phase, String title, String body) {
+        if (debugSink == null) {
+            return;
+        }
+        debugSink.accept("========== [Provider][" + phase + "] " + title + " ==========");
+        debugSink.accept(body);
+    }
+
+    private String prettyJson(JsonNode node) {
+        try {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node);
+        } catch (JsonProcessingException ex) {
+            return node.toString();
+        }
     }
 
     private String decisionSummary(Decision decision) {

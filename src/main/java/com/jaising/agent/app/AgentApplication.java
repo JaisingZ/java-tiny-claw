@@ -5,7 +5,6 @@ import com.jaising.agent.provider.SiliconFlowConfig;
 import com.jaising.agent.provider.SiliconFlowModelProvider;
 import com.jaising.agent.runtime.AgentEngine;
 import com.jaising.agent.runtime.ConsoleRunLogger;
-import com.jaising.agent.runtime.NoopRunLogger;
 import com.jaising.agent.runtime.RunLogger;
 import com.jaising.agent.runtime.RunResult;
 import com.jaising.agent.state.InMemoryStateStore;
@@ -17,7 +16,6 @@ import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
 import com.jaising.agent.trace.InMemoryTraceRecorder;
 import com.jaising.agent.trace.TraceEvent;
-import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
@@ -67,7 +65,8 @@ public final class AgentApplication {
                 .register(new WriteFileTool(Path.of(".")))
                 .register(new EditFileTool(Path.of(".")))
                 .register(new BashTool(Path.of(".")));
-        System.out.println("java-tiny-claw agent harness provider=" + config.model()
+        RunLogger logger = ConsoleRunLogger.standardOutput(false);
+        logger.writeLine("java-tiny-claw agent harness provider=" + config.model()
                 + " tools=" + registry.definitions().size());
     }
 
@@ -83,7 +82,7 @@ public final class AgentApplication {
 
     private static void runPrompt(RunOptions options) {
         SiliconFlowConfig config = SiliconFlowConfig.loadDefault();
-        RunLogger runLogger = options.debug() ? new ConsoleRunLogger(System.out) : NoopRunLogger.INSTANCE;
+        RunLogger runLogger = ConsoleRunLogger.standardOutput(options.debug());
         Path workDir = Path.of(".");
         ToolRegistry registry = new ToolRegistry();
         registerTool(registry, new ReadFileTool(workDir), runLogger);
@@ -92,7 +91,7 @@ public final class AgentApplication {
         registerTool(registry, new BashTool(workDir), runLogger);
         InMemoryTraceRecorder traceRecorder = new InMemoryTraceRecorder();
         SiliconFlowModelProvider provider = options.debug()
-                ? new SiliconFlowModelProvider(config, System.out)
+                ? new SiliconFlowModelProvider(config, runLogger::writeLine)
                 : new SiliconFlowModelProvider(config);
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
@@ -101,7 +100,7 @@ public final class AgentApplication {
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
 
-        printRunOutput(result, traceRecorder.events(), options.debug(), System.out);
+        emitRunOutput(runLogger, result, traceRecorder.events(), options.debug());
     }
 
     private static void registerTool(ToolRegistry registry, Tool tool, RunLogger runLogger) {
@@ -109,36 +108,36 @@ public final class AgentApplication {
         runLogger.registryMounted(tool.name());
     }
 
-    static void printRunOutput(RunResult result, List<TraceEvent> events, boolean debug, PrintStream output) {
+    static void emitRunOutput(RunLogger logger, RunResult result, List<TraceEvent> events, boolean debug) {
         if (!debug) {
-            printTrace(events, output);
+            emitTrace(logger, events);
         }
-        printResult(result, output);
+        emitResult(logger, result);
         if (!debug) {
-            printObservations(result, output);
+            emitObservations(logger, result);
         }
     }
 
-    private static void printTrace(List<TraceEvent> events, PrintStream output) {
-        output.println("TRACE");
+    private static void emitTrace(RunLogger logger, List<TraceEvent> events) {
+        logger.writeLine("TRACE");
         for (TraceEvent event : events) {
-            output.println(event.type()
+            logger.writeLine(event.type()
                     + " step=" + event.step()
                     + " durationMs=" + event.durationMillis()
                     + " detail=" + event.detail());
         }
     }
 
-    private static void printResult(RunResult result, PrintStream output) {
-        output.println("RESULT status=" + result.state().status()
+    private static void emitResult(RunLogger logger, RunResult result) {
+        logger.writeLine("RESULT status=" + result.state().status()
                 + " answer=" + result.state().finalAnswer()
                 + " failure=" + result.state().failureReason());
     }
 
-    private static void printObservations(RunResult result, PrintStream output) {
-        output.println("OBSERVATIONS");
+    private static void emitObservations(RunLogger logger, RunResult result) {
+        logger.writeLine("OBSERVATIONS");
         for (String observation : result.state().observations()) {
-            output.println(observation);
+            logger.writeLine(observation);
         }
     }
 

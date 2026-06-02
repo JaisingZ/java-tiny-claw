@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jaising.agent.domain.AgentState;
 import com.jaising.agent.domain.Task;
+import com.jaising.agent.runtime.ConsoleRunLogger;
 import com.jaising.agent.runtime.RunResult;
 import com.jaising.agent.trace.TraceEvent;
 import com.jaising.agent.trace.TraceEventType;
@@ -23,9 +24,10 @@ class AgentApplicationTest {
         List<TraceEvent> events = List.of(new TraceEvent(TraceEventType.FINISHED,
                 "task-cli", 1, "answer=done", 0));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleRunLogger logger = new ConsoleRunLogger(
+                new PrintStream(output, true, StandardCharsets.UTF_8), false);
 
-        AgentApplication.printRunOutput(result, events, true,
-                new PrintStream(output, true, StandardCharsets.UTF_8));
+        AgentApplication.emitRunOutput(logger, result, events, true);
 
         assertThat(output.toString(StandardCharsets.UTF_8))
                 .contains("RESULT status=SUCCESS answer=done failure=null")
@@ -42,9 +44,10 @@ class AgentApplicationTest {
         List<TraceEvent> events = List.of(new TraceEvent(TraceEventType.FINISHED,
                 "task-cli", 1, "answer=done", 0));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleRunLogger logger = new ConsoleRunLogger(
+                new PrintStream(output, true, StandardCharsets.UTF_8), false);
 
-        AgentApplication.printRunOutput(result, events, false,
-                new PrintStream(output, true, StandardCharsets.UTF_8));
+        AgentApplication.emitRunOutput(logger, result, events, false);
 
         assertThat(output.toString(StandardCharsets.UTF_8))
                 .contains("TRACE")

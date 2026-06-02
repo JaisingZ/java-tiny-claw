@@ -21,6 +21,14 @@ public final class NoopRunLogger implements RunLogger {
     }
 
     @Override
+    public void writeLine(String line) {
+    }
+
+    @Override
+    public void writeBlankLine() {
+    }
+
+    @Override
     public void registryMounted(String toolName) {
     }
 

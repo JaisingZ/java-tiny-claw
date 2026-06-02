@@ -35,7 +35,7 @@ class WriteFileToolTest {
         WriteFileTool tool = new WriteFileTool(workDir);
         String source = "public class Hello {\n"
                 + "    public static void main(String[] args) {\n"
-                + "        System.out.println(\"Hello，Java！\");\n"
+                + "        System.err.println(\"Hello，Java！\");\n"
                 + "    }\n"
                 + "}\n";
 

@@ -485,6 +485,14 @@ class AgentEngineTest {
 
     private static class RunLoggerAdapter implements RunLogger {
         @Override
+        public void writeLine(String line) {
+        }
+
+        @Override
+        public void writeBlankLine() {
+        }
+
+        @Override
         public void registryMounted(String toolName) {
         }
 

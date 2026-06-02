@@ -14,6 +14,8 @@ import com.jaising.agent.provider.ModelProvider;
 import com.jaising.agent.provider.SiliconFlowConfig;
 import com.jaising.agent.provider.SiliconFlowModelProvider;
 import com.jaising.agent.runtime.AgentEngine;
+import com.jaising.agent.runtime.ConsoleRunLogger;
+import com.jaising.agent.runtime.RunLogger;
 import com.jaising.agent.runtime.RunResult;
 import com.jaising.agent.state.InMemoryStateStore;
 import com.jaising.agent.tool.BashTool;
@@ -52,30 +54,31 @@ final class MainLoopStartupCheck {
      */
     static void run(boolean live) throws Exception {
         resetDirectory(WORK_ROOT);
+        RunLogger logger = ConsoleRunLogger.standardOutput(false);
 
-        System.out.println("=== Main Loop Startup Check ===");
-        System.out.println("workDir=" + WORK_ROOT);
-        System.out.println("live=" + live);
+        logger.writeLine("=== Main Loop Startup Check ===");
+        logger.writeLine("workDir=" + WORK_ROOT);
+        logger.writeLine("live=" + live);
 
-        runSingleStageFinish();
-        runTwoStageThinkingAction();
-        runRealToolsWriteBash();
-        runFailureModes();
+        runSingleStageFinish(logger);
+        runTwoStageThinkingAction(logger);
+        runRealToolsWriteBash(logger);
+        runFailureModes(logger);
         if (live) {
-            runLiveSiliconFlow();
+            runLiveSiliconFlow(logger);
         }
 
-        System.out.println("=== Main Loop Startup Check: PASSED ===");
+        logger.writeLine("=== Main Loop Startup Check: PASSED ===");
     }
 
-    private static void runSingleStageFinish() {
+    private static void runSingleStageFinish(RunLogger logger) {
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         AgentEngine engine = new AgentEngine(new FinishOnlyProvider(), new ToolRegistry(),
                 new InMemoryStateStore(), trace, 2);
 
         RunResult result = engine.run(new Task("startup-single-stage", "finish directly"));
 
-        printCase("single-stage-finish", trace.events(), result);
+        emitCase(logger, "single-stage-finish", trace.events(), result);
 
         requireStatus(result, AgentStatus.SUCCESS);
         require("single-stage-ready".equals(result.state().finalAnswer()), "single-stage final answer mismatch");
@@ -84,7 +87,7 @@ final class MainLoopStartupCheck {
         requireTraceContains(trace.events(), TraceEventType.MODEL_RESPONSE, "FinishDecision answer=single-stage-ready");
     }
 
-    private static void runTwoStageThinkingAction() {
+    private static void runTwoStageThinkingAction(RunLogger logger) {
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         ToolRegistry registry = new ToolRegistry().register(new EchoTool());
         ThinkingThenActionProvider provider = new ThinkingThenActionProvider();
@@ -92,7 +95,7 @@ final class MainLoopStartupCheck {
 
         RunResult result = engine.run(new Task("startup-thinking-action", "think then echo"));
 
-        printCase("two-stage-thinking-action", trace.events(), result);
+        emitCase(logger, "two-stage-thinking-action", trace.events(), result);
 
         requireStatus(result, AgentStatus.SUCCESS);
         require(result.state().observations().contains("hello-startup"), "thinking action observation missing");
@@ -109,7 +112,7 @@ final class MainLoopStartupCheck {
         requireTraceContains(trace.events(), TraceEventType.MODEL_RESPONSE, "ToolDecision tool=echo");
     }
 
-    private static void runRealToolsWriteBash() throws IOException {
+    private static void runRealToolsWriteBash(RunLogger logger) throws IOException {
         Path workDir = WORK_ROOT.resolve("real-tools-write-bash");
         resetDirectory(workDir);
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
@@ -121,7 +124,7 @@ final class MainLoopStartupCheck {
 
         RunResult result = engine.run(new Task("startup-real-tools", "write compile run"));
 
-        printCase("real-tools-write-bash", trace.events(), result);
+        emitCase(logger, "real-tools-write-bash", trace.events(), result);
 
         requireStatus(result, AgentStatus.SUCCESS);
         require("java sample executed".equals(result.state().finalAnswer()), "real tools final answer mismatch");
@@ -133,25 +136,25 @@ final class MainLoopStartupCheck {
         requireTraceContains(trace.events(), TraceEventType.TOOL_RESULT, "success=true");
     }
 
-    private static void runFailureModes() {
-        runFailure("failure-missing-tool", new ToolOnlyProvider("missing"),
+    private static void runFailureModes(RunLogger logger) {
+        runFailure(logger, "failure-missing-tool", new ToolOnlyProvider("missing"),
                 new ToolRegistry(), "Unknown tool: missing", 4);
-        runFailure("failure-tool-error", new ToolOnlyProvider("fail_tool"),
+        runFailure(logger, "failure-tool-error", new ToolOnlyProvider("fail_tool"),
                 new ToolRegistry().register(new FailingTool()), "startup tool failed", 4);
-        runFailure("failure-provider-error", new ThrowingProvider(),
+        runFailure(logger, "failure-provider-error", new ThrowingProvider(),
                 new ToolRegistry(), "provider_error: startup provider failed", 4);
-        runFailure("failure-max-steps", new ToolOnlyProvider("echo"),
+        runFailure(logger, "failure-max-steps", new ToolOnlyProvider("echo"),
                 new ToolRegistry().register(new EchoTool()), "max_steps_exceeded", 1);
     }
 
-    private static void runFailure(String caseName, ModelProvider provider, ToolRegistry registry,
+    private static void runFailure(RunLogger logger, String caseName, ModelProvider provider, ToolRegistry registry,
             String failureReason, int maxSteps) {
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         AgentEngine engine = new AgentEngine(provider, registry, new InMemoryStateStore(), trace, maxSteps);
 
         RunResult result = engine.run(new Task(caseName, caseName));
 
-        printCase(caseName, trace.events(), result);
+        emitCase(logger, caseName, trace.events(), result);
 
         requireStatus(result, AgentStatus.FAILED);
         require(failureReason.equals(result.state().failureReason()),
@@ -159,13 +162,13 @@ final class MainLoopStartupCheck {
         requireTraceContains(trace.events(), TraceEventType.FAILED, "reason=" + failureReason);
     }
 
-    private static void runLiveSiliconFlow() {
+    private static void runLiveSiliconFlow(RunLogger logger) {
         SiliconFlowConfig config = SiliconFlowConfig.loadDefault();
         require(hasText(config.apiKey()), "siliconflow.apiKey is empty");
 
         InMemoryTraceRecorder trace = new InMemoryTraceRecorder();
         AgentEngine engine = new AgentEngine(
-                new SiliconFlowModelProvider(config, System.out),
+                new SiliconFlowModelProvider(config, logger::writeLine),
                 new ToolRegistry(),
                 new InMemoryStateStore(),
                 trace,
@@ -175,23 +178,23 @@ final class MainLoopStartupCheck {
         RunResult result = engine.run(new Task("startup-live-siliconflow",
                 "请直接用中文回答：Main Loop live 启动测试完成。不要调用工具。"));
 
-        printCase("live-siliconflow", trace.events(), result);
+        emitCase(logger, "live-siliconflow", trace.events(), result);
 
         requireStatus(result, AgentStatus.SUCCESS);
         requireTraceContains(trace.events(), TraceEventType.THINKING_RESPONSE, "ThinkingDecision thought=");
         requireTraceContains(trace.events(), TraceEventType.MODEL_RESPONSE, "FinishDecision answer=");
     }
 
-    private static void printCase(String caseName, List<TraceEvent> events, RunResult result) {
-        System.out.println("CASE " + caseName);
-        System.out.println("TRACE");
+    private static void emitCase(RunLogger logger, String caseName, List<TraceEvent> events, RunResult result) {
+        logger.writeLine("CASE " + caseName);
+        logger.writeLine("TRACE");
         for (TraceEvent event : events) {
-            System.out.println(event.type()
+            logger.writeLine(event.type()
                     + " step=" + event.step()
                     + " durationMs=" + event.durationMillis()
                     + " detail=" + event.detail());
         }
-        System.out.println("RESULT status=" + result.state().status()
+        logger.writeLine("RESULT status=" + result.state().status()
                 + " answer=" + result.state().finalAnswer()
                 + " failure=" + result.state().failureReason());
     }
@@ -316,7 +319,7 @@ final class MainLoopStartupCheck {
         private static String javaSource() {
             return "public class HelloFromStartup {\n"
                     + "    public static void main(String[] args) {\n"
-                    + "        System.out.println(\"hello-from-startup\");\n"
+                    + "        System.err.println(\"hello-from-startup\");\n"
                     + "    }\n"
                     + "}\n";
         }

@@ -112,7 +112,8 @@ class SiliconFlowModelProviderTest {
                 "Set-Content",
                 "Out-File",
                 "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }",
-                "每轮最多调用一个工具",
+                "必须输出最终回答，或在需要时调用一个或多个独立工具",
+                "如果多个操作互相独立",
                 "Observation 已经满足用户目标",
                 "不要重复调用相同工具");
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",

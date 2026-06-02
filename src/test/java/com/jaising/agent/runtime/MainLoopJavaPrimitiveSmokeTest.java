@@ -17,7 +17,6 @@ import com.jaising.agent.tool.BashTool;
 import com.jaising.agent.tool.ToolRegistry;
 import com.jaising.agent.tool.WriteFileTool;
 import com.jaising.agent.trace.InMemoryTraceRecorder;
-import com.jaising.agent.trace.TraceEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -51,30 +50,12 @@ class MainLoopJavaPrimitiveSmokeTest {
 
         RunResult result = engine.run(new Task("task-java-smoke", "create and run minimal java file"));
 
-        printTrace(trace.events(), result);
-
         assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
         assertThat(result.state().finalAnswer()).isEqualTo("java sample executed");
         assertThat(result.state().observations()).hasSize(2);
         assertThat(result.state().observations().get(1)).contains("hello-from-main-loop");
         assertThat(Files.exists(workDir.resolve("HelloFromAgent.java"))).isTrue();
         assertThat(Files.exists(workDir.resolve("HelloFromAgent.class"))).isTrue();
-    }
-
-    private void printTrace(List<TraceEvent> events, RunResult result) {
-        System.out.println("=== Main Loop Java Primitive Smoke Trace ===");
-        for (TraceEvent event : events) {
-            System.out.println(event.type()
-                    + " step=" + event.step()
-                    + " durationMs=" + event.durationMillis()
-                    + " detail=" + event.detail());
-        }
-        System.out.println("=== Final Observations ===");
-        for (String observation : result.state().observations()) {
-            System.out.println(observation);
-        }
-        System.out.println("=== Final State ===");
-        System.out.println(result.state().status() + " answer=" + result.state().finalAnswer());
     }
 
     /**
@@ -102,7 +83,7 @@ class MainLoopJavaPrimitiveSmokeTest {
         private static String javaSource() {
             return "public class HelloFromAgent {\n"
                     + "    public static void main(String[] args) {\n"
-                    + "        System.out.println(\"hello-from-main-loop\");\n"
+                    + "        System.err.println(\"hello-from-main-loop\");\n"
                     + "    }\n"
                     + "}\n";
         }

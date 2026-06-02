@@ -56,9 +56,6 @@ class SiliconFlowModelProviderLiveTest {
         RunResult result = engine.run(new Task("live-thinking-trace",
                 "请直接用中文回答：合肥天气测试完成。不要调用工具。"));
 
-        printProviderExchange(providerExchange.toString());
-        printRuntimeTrace(result, traceRecorder.events());
-
         assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
         assertThat(thinkingResponse(traceRecorder.events()).detail()).isNotBlank();
         assertThat(providerExchange.toString())
@@ -136,7 +133,7 @@ class SiliconFlowModelProviderLiveTest {
         });
 
         AgentEngine engine = new AgentEngine(
-                new SiliconFlowModelProvider(liveConfig(), System.out),
+                new SiliconFlowModelProvider(liveConfig()),
                 registry,
                 new InMemoryStateStore(),
                 traceRecorder,
@@ -146,8 +143,6 @@ class SiliconFlowModelProviderLiveTest {
         RunResult result = engine.run(new Task("live-parallel-exec",
                 "请同时调用两个 read_file 工具分别读取 a.txt 和 b.txt 的内容（它们是独立的）。不要使用任何脚本或其它工具。在你拿到这两个文件的内容后，直接结束任务并告诉我这两个文件的内容，例如 'a.txt 的内容是...，b.txt 的内容是...'。"));
 
-        printRuntimeTrace(result, traceRecorder.events());
-
         assertThat(result.state().status()).isEqualTo(AgentStatus.SUCCESS);
         List<TraceEvent> toolCalls = traceRecorder.events().stream()
                 .filter(e -> e.type() == TraceEventType.TOOL_CALL)
@@ -156,11 +151,8 @@ class SiliconFlowModelProviderLiveTest {
         if (toolCalls.size() >= 2) {
             String thread1 = extractThread(toolCalls.get(0).detail());
             String thread2 = extractThread(toolCalls.get(1).detail());
-            System.out.println("Thread 1: " + thread1);
-            System.out.println("Thread 2: " + thread2);
-            // 验证是否在不同线程中执行（线程名包含 pool- 且不同）
-            // assertThat(thread1).contains("pool-");
-            // assertThat(thread2).contains("pool-");
+            assertThat(thread1).isNotBlank();
+            assertThat(thread2).isNotBlank();
         }
     }
 
@@ -190,23 +182,6 @@ class SiliconFlowModelProviderLiveTest {
         parameters.put("required", List.of("path"));
 
         return new ToolDefinition("read_file", "Read a file", parameters);
-    }
-
-    private void printProviderExchange(String providerExchange) {
-        System.out.println("=== Provider Exchange ===");
-        System.out.print(providerExchange);
-    }
-
-    private void printRuntimeTrace(RunResult result, List<TraceEvent> events) {
-        System.out.println("=== Runtime Trace ===");
-        System.out.println("status=" + result.state().status());
-        System.out.println("finalAnswer=" + result.state().finalAnswer());
-        System.out.println("trace=");
-        for (TraceEvent event : events) {
-            System.out.println("  " + event.type() + " step=" + event.step()
-                    + " durationMillis=" + event.durationMillis()
-                    + " detail=" + event.detail());
-        }
     }
 
     private TraceEvent thinkingResponse(List<TraceEvent> events) {

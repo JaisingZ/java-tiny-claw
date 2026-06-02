@@ -16,6 +16,16 @@ import java.util.List;
 public interface RunLogger {
 
     /**
+     * 输出一行宿主可见文本。
+     */
+    void writeLine(String line);
+
+    /**
+     * 输出一个空行。
+     */
+    void writeBlankLine();
+
+    /**
      * 记录工具挂载。
      */
     void registryMounted(String toolName);
