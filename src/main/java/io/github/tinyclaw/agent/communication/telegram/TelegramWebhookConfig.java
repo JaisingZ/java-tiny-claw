@@ -1,6 +1,12 @@
 package io.github.tinyclaw.agent.communication.telegram;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 
 /**
  * Telegram Webhook 配置。
@@ -42,14 +48,58 @@ public final class TelegramWebhookConfig {
         return from(System.getenv());
     }
 
+    public static TelegramWebhookConfig load(Path path) {
+        Properties properties = new Properties();
+        try (InputStream inputStream = Files.newInputStream(path)) {
+            properties.load(inputStream);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load agent config: " + path, ex);
+        }
+        Map<String, String> values = new HashMap<String, String>();
+        for (String name : properties.stringPropertyNames()) {
+            values.put(name, properties.getProperty(name));
+        }
+        return from(values);
+    }
+
+    public static TelegramWebhookConfig loadDefault() {
+        String configPath = System.getProperty("agent.config");
+        if (configPath != null && !configPath.trim().isEmpty()) {
+            return load(Path.of(configPath));
+        }
+        Path localConfig = Path.of("agent.properties");
+        if (Files.exists(localConfig)) {
+            return load(localConfig);
+        }
+
+        Properties properties = new Properties();
+        try (InputStream inputStream = TelegramWebhookConfig.class.getClassLoader()
+                .getResourceAsStream("agent.properties")) {
+            if (inputStream == null) {
+                throw new IllegalStateException("agent.properties not found");
+            }
+            properties.load(inputStream);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load classpath agent.properties", ex);
+        }
+        Map<String, String> values = new HashMap<String, String>();
+        for (String name : properties.stringPropertyNames()) {
+            values.put(name, properties.getProperty(name));
+        }
+        return from(values);
+    }
+
     public static TelegramWebhookConfig from(Map<String, String> env) {
         return new TelegramWebhookConfig(
-                requiredEnv(env, "TELEGRAM_BOT_TOKEN"),
-                defaultIfBlank(env.get("TELEGRAM_WEBHOOK_URL"), ""),
-                defaultIfBlank(env.get("TELEGRAM_WEBHOOK_HOST"), "0.0.0.0"),
-                parsePositiveInt(env.get("TELEGRAM_WEBHOOK_PORT"), 8080, "TELEGRAM_WEBHOOK_PORT"),
-                defaultIfBlank(env.get("TELEGRAM_WEBHOOK_PATH"), "/telegram/webhook"),
-                nullToBlank(env.get("TELEGRAM_WEBHOOK_SECRET")),
+                requiredEnv(env, "TELEGRAM_BOT_TOKEN", "telegram.bot.token"),
+                optional(env, "TELEGRAM_WEBHOOK_URL", "telegram.webhook.url", ""),
+                optional(env, "TELEGRAM_WEBHOOK_HOST", "telegram.webhook.host", "0.0.0.0"),
+                parsePositiveInt(
+                        optional(env, "TELEGRAM_WEBHOOK_PORT", "telegram.webhook.port", ""),
+                        8080,
+                        "TELEGRAM_WEBHOOK_PORT"),
+                optional(env, "TELEGRAM_WEBHOOK_PATH", "telegram.webhook.path", "/telegram/webhook"),
+                optional(env, "TELEGRAM_WEBHOOK_SECRET", "telegram.webhook.secret", ""),
                 false,
                 40);
     }
@@ -86,16 +136,28 @@ public final class TelegramWebhookConfig {
         return maxConnections;
     }
 
-    private static String requiredEnv(Map<String, String> env, String key) {
-        String value = env.get(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(key + " is required");
+    private static String requiredEnv(Map<String, String> env, String primaryKey, String fallbackKey) {
+        String value = env.get(primaryKey);
+        if (value != null && !value.isBlank()) {
+            return value;
         }
-        return value;
+        value = env.get(fallbackKey);
+        if (value != null && !value.isBlank()) {
+            return value;
+        }
+        throw new IllegalStateException(primaryKey + " or " + fallbackKey + " is required");
     }
 
-    private static String nullToBlank(String value) {
-        return value == null ? "" : value;
+    private static String optional(Map<String, String> env, String primaryKey, String fallbackKey, String defaultValue) {
+        String value = env.get(primaryKey);
+        if (value != null && !value.isBlank()) {
+            return value;
+        }
+        value = env.get(fallbackKey);
+        if (value != null && !value.isBlank()) {
+            return value;
+        }
+        return defaultValue;
     }
 
     private static String defaultIfBlank(String value, String defaultValue) {
