@@ -3,10 +3,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.jaising</groupId>
-    <artifactId>java-tiny-claw</artifactId>
+    <groupId>io.github.tinyclaw</groupId>
+    <artifactId>tiny-agent-harness</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>java-tiny-claw</name>
+    <name>Tiny Agent Harness</name>
     <description>Java Agent Harness for controlled runtime execution</description>
 
     <properties>
@@ -92,6 +92,14 @@
                 <version>3.5.2</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>io.github.tinyclaw.agent.app.AgentApplication</mainClass>
                 </configuration>
             </plugin>
         </plugins>

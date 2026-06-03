@@ -6,7 +6,7 @@ Provider 是模型协议适配层，负责隔离不同大模型厂商的 API 差
 
 当前项目的核心原则是：`Runtime` 只维护 Agent 主循环，`Provider` 只负责把模型输入输出翻译成项目内部协议。任何 OpenAI、Claude、DeepSeek 或其它模型协议差异，都不应泄漏到 `AgentEngine`。
 
-当前 tiny-claw 精简版将历史接口参数从 `AgentState` 迁移到 `AgentContext`，不再做持久化状态或 trace 组装。
+当前 Tiny Agent Harness 精简版将历史接口参数从 `AgentState` 迁移到 `AgentContext`，不再做持久化状态或 trace 组装。
 
 ## 边界
 
@@ -25,14 +25,14 @@ Provider 不负责：
 - 维护本轮运行上下文（仅内存）。
 - 输出运行日志（由 `RunLogger` 负责）
 
-这些职责分别属于 `Runtime`、`Tool Registry`、`Middleware`，以及 `RunLogger`；历史中的 `StateStore` 和 `TraceRecorder` 在当前 tiny-claw 版本不实现。
+这些职责分别属于 `Runtime`、`Tool Registry`、`Middleware`，以及 `RunLogger`；历史中的 `StateStore` 和 `TraceRecorder` 在当前 Tiny Agent Harness 版本不实现。
 
 ## 当前接口基线
 
 Java 版 Provider 以当前接口为准：
 
 ```java
-Decision decide(AgentContext context, DecisionPhase phase);
+Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools);
 ```
 
 Provider 只能返回项目内部的 `Decision` 类型：
@@ -45,7 +45,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 ## 协议适配策略
 
-当前默认真实 Provider 实现 LM Studio OpenAI-compatible 协议，配置由 `properties` 文件读取，并由 `app` 层装配注入：
+当前示例 Provider 实现 OpenAI-compatible Chat Completions 协议，配置由 `properties` 文件读取，并由 `app` 层装配注入。LM Studio 是本地开发示例，不是架构上的固定执行路径。
 
 - `baseUrl`
 - `model`
@@ -57,12 +57,12 @@ Provider 只能返回项目内部的 `Decision` 类型：
 - 工具名、参数和调用 ID 收敛为内部 `ToolCall`。
 - 厂商错误统一转换为 Provider 异常，由 `Runtime` 按 `provider_error` 失败规则处理。
 
-当前实现：
+当前实现示例：
 
-- `LmStudioConfig` 负责读取 `agent.properties` 或 `-Dagent.config=...` 指定的配置文件。
-- `LmStudioModelProvider` 使用 Java 21 `HttpClient` 调用 `/chat/completions`。
+- `LmStudioConfig` 负责读取默认配置文件或 `-Dagent.config=...` 指定的配置文件。
+- `LmStudioModelProvider` 使用 Java 21 `HttpClient` 调用 OpenAI-compatible `/chat/completions`。
 - 请求固定为非流式 `stream=false`，流式响应后续单独设计。
-- 当前 `app` 层只默认装配 LM Studio，不支持运行时切换不同 Provider。
+- `app` 层负责选择并装配具体 Provider；Provider 切换策略后续单独设计。
 
 ## 工具调用策略
 

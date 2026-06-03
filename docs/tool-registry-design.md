@@ -28,7 +28,7 @@ Tool Registry 不负责：
 
 这些职责分别属于 `Middleware`、`Runtime`、`Provider`。
 
-历史上会有 `StateStore` 与 `Tracer` 的完整分层；当前 tiny-claw 精简实现里不包含这两层。
+历史上会有 `StateStore` 与 `Tracer` 的完整分层；当前 Tiny Agent Harness 精简实现里不包含这两层。
 
 ## 当前接口基线
 
@@ -164,7 +164,7 @@ ToolResult.failure("tool_error: <message>")
 职责：
 
 - 在工作区内执行命令。
-- Windows 使用 PowerShell，非 Windows 使用 Bash。
+- 按运行平台选择可用 shell。
 - 返回合并后的 stdout 和 stderr。
 
 约束：

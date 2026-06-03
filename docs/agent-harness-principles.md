@@ -1,6 +1,6 @@
 # Agent Harness 设计原则
 
-本文档定义 `java-tiny-claw` 的项目级架构基线。后续所有设计与实现都以本文档为准；若实现与本文档冲突，先改文档，再改代码。
+本文档定义 `Tiny Agent Harness` 的项目级架构基线。后续所有设计与实现都以本文档为准；若实现与本文档冲突，先改文档，再改代码。
 
 ## 1. 目标
 
@@ -33,11 +33,11 @@
 
 ### 3.3 上下文模型（当前实现）
 
-当前 tiny-claw 精简版不做任务持久化/恢复。
+当前 Tiny Agent Harness 精简版不做任务持久化/恢复。
 
 - 运行时只维护内存上下文 `AgentContext`。
 - 每次运行由 CLI 输入/内存上下文重建，步进信息不跨 JVM 持久化。
-- 历史上 `com.jaising.agent.state`、`StateStore`、`checkpoint` 可用于外部恢复，这些能力**不在当前实现中**。
+- 历史上 `io.github.tinyclaw.agent.state`、`StateStore`、`checkpoint` 可用于外部恢复，这些能力**不在当前实现中**。
 
 ### 3.4 安全前置
 
@@ -103,12 +103,12 @@ Middleware 负责治理与安全约束。
 ### 4.5 StateStore（历史目标）
 
 - 历史目标：任务计划、当前步骤、历史摘要、错误信息可持久化，并可恢复。
-- 当前 tiny-claw：**不实现** `StateStore`（对应的历史分层 `com.jaising.agent.state` 已停用）。
+- 当前 Tiny Agent Harness：**不实现** `StateStore`（对应的历史分层 `io.github.tinyclaw.agent.state` 已停用）。
 
 ### 4.6 Tracer（历史目标）
 
 - 历史目标：记录结构化 trace、决策链、模型输入输出。
-- 当前 tiny-claw：**不实现** `Tracer`（对应的历史分层 `com.jaising.agent.trace` 已停用）；观测由 `RunLogger` + `RunResult` 覆盖。
+- 当前 Tiny Agent Harness：**不实现** `Tracer`（对应的历史分层 `io.github.tinyclaw.agent.trace` 已停用）；观测由 `RunLogger` + `RunResult` 覆盖。
 
 ## 5. 默认实现策略
 
@@ -170,7 +170,7 @@ Middleware 负责治理与安全约束。
 ## 10. 代码结构基线
 
 ```text
-src/main/java/com/jaising/agent
+src/main/java/io/github/tinyclaw/agent
 ├── app          启动入口与装配
 ├── runtime      主循环、AgentContext、RunLogger、RunResult
 ├── provider     模型适配
@@ -182,7 +182,7 @@ src/main/java/com/jaising/agent
 对应测试结构：
 
 ```text
-src/test/java/com/jaising/agent
+src/test/java/io/github/tinyclaw/agent
 ├── runtime
 ├── provider
 ├── tool

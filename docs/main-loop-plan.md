@@ -4,7 +4,7 @@
 
 把 Agent 的最小闭环收敛为一个明确、可测试、可观测的主循环。
 
-当前 tiny-claw 的实现是“精简版”：主循环只做四件事：
+当前 Tiny Agent Harness 的实现是“精简版”：主循环只做四件事：
 
 1. 初始化/更新运行时上下文 `AgentContext`
 2. 请求模型决策
@@ -57,8 +57,8 @@ if limit reached:
 
 ## 当前实现对应
 
-- 主循环：`src/main/java/com/jaising/agent/runtime/AgentEngine.java`
-- 成功路径测试：`src/test/java/com/jaising/agent/runtime/AgentEngineTest.java`
+- 主循环：`src/main/java/io/github/tinyclaw/agent/runtime/AgentEngine.java`
+- 成功路径测试：`src/test/java/io/github/tinyclaw/agent/runtime/AgentEngineTest.java`
 - 架构基线：`docs/agent-harness-principles.md`
 
 ## 验收标准

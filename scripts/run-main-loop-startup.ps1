@@ -13,7 +13,7 @@ if (Test-Path $javaHome) {
     $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 }
 
-Write-Host '=== Build java-tiny-claw ==='
+Write-Host '=== Build Tiny Agent Harness ==='
 mvn -q -DskipTests package
 
 Write-Host '=== Build runtime classpath ==='
@@ -29,4 +29,4 @@ if ($Live) {
 }
 
 Write-Host '=== Run Main Loop startup check ==='
-java -cp $classpath com.jaising.agent.app.AgentApplication startup-check @runnerArgs
+java -cp $classpath io.github.tinyclaw.agent.app.AgentApplication startup-check @runnerArgs

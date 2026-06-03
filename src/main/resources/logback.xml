@@ -19,5 +19,5 @@
     </root>
 
     <!-- 可根据需要调整特定包的日志级别 -->
-    <logger name="com.jaising.agent.provider" level="DEBUG" />
+    <logger name="io.github.tinyclaw.agent.provider" level="DEBUG" />
 </configuration>
