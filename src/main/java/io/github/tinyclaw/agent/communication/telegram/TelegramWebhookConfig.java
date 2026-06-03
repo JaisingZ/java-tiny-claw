@@ -21,6 +21,7 @@ public final class TelegramWebhookConfig {
     private final String secretToken;
     private final boolean dropPendingUpdates;
     private final int maxConnections;
+    private final String tunnel;
 
     public TelegramWebhookConfig(
             String token,
@@ -31,6 +32,20 @@ public final class TelegramWebhookConfig {
             String secretToken,
             boolean dropPendingUpdates,
             int maxConnections) {
+        this(token, publicWebhookUrl, listenHost, listenPort, webhookPath, secretToken, dropPendingUpdates,
+                maxConnections, "");
+    }
+
+    public TelegramWebhookConfig(
+            String token,
+            String publicWebhookUrl,
+            String listenHost,
+            int listenPort,
+            String webhookPath,
+            String secretToken,
+            boolean dropPendingUpdates,
+            int maxConnections,
+            String tunnel) {
         if (token == null || token.isBlank()) {
             throw new IllegalStateException("TELEGRAM_BOT_TOKEN is required");
         }
@@ -42,6 +57,7 @@ public final class TelegramWebhookConfig {
         this.secretToken = secretToken == null ? "" : secretToken;
         this.dropPendingUpdates = dropPendingUpdates;
         this.maxConnections = maxConnections;
+        this.tunnel = tunnel == null ? "" : tunnel;
     }
 
     public static TelegramWebhookConfig fromEnv() {
@@ -100,8 +116,11 @@ public final class TelegramWebhookConfig {
                         "TELEGRAM_WEBHOOK_PORT"),
                 optional(env, "TELEGRAM_WEBHOOK_PATH", "telegram.webhook.path", "/telegram/webhook"),
                 optional(env, "TELEGRAM_WEBHOOK_SECRET", "telegram.webhook.secret", ""),
-                false,
-                40);
+                parseBoolean(optional(env, "TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES",
+                        "telegram.webhook.dropPendingUpdates", "false"), false),
+                parsePositiveInt(optional(env, "TELEGRAM_WEBHOOK_MAX_CONNECTIONS",
+                        "telegram.webhook.maxConnections", ""), 40, "TELEGRAM_WEBHOOK_MAX_CONNECTIONS"),
+                optional(env, "TELEGRAM_WEBHOOK_TUNNEL", "telegram.webhook.tunnel", ""));
     }
 
     public String token() {
@@ -134,6 +153,15 @@ public final class TelegramWebhookConfig {
 
     public int maxConnections() {
         return maxConnections;
+    }
+
+    public String tunnel() {
+        return tunnel;
+    }
+
+    public TelegramWebhookConfig withPublicWebhookUrl(String publicWebhookUrl) {
+        return new TelegramWebhookConfig(token, publicWebhookUrl, listenHost, listenPort, webhookPath, secretToken,
+                dropPendingUpdates, maxConnections, tunnel);
     }
 
     private static String requiredEnv(Map<String, String> env, String primaryKey, String fallbackKey) {
@@ -177,5 +205,12 @@ public final class TelegramWebhookConfig {
         } catch (NumberFormatException ex) {
             throw new IllegalStateException("Invalid value for " + key + ": " + value, ex);
         }
+    }
+
+    private static boolean parseBoolean(String value, boolean defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
     }
 }

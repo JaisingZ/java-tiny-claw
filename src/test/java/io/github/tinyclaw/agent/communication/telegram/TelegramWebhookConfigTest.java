@@ -57,7 +57,10 @@ class TelegramWebhookConfigTest {
                 + "telegram.webhook.secret=secret-1\n"
                 + "telegram.webhook.host=127.0.0.1\n"
                 + "telegram.webhook.port=9090\n"
-                + "telegram.webhook.path=/hook\n");
+                + "telegram.webhook.path=/hook\n"
+                + "telegram.webhook.tunnel=trycloudflare\n"
+                + "telegram.webhook.dropPendingUpdates=true\n"
+                + "telegram.webhook.maxConnections=12\n");
 
         TelegramWebhookConfig config = TelegramWebhookConfig.load(configPath);
 
@@ -67,6 +70,9 @@ class TelegramWebhookConfigTest {
         assertThat(config.listenHost()).isEqualTo("127.0.0.1");
         assertThat(config.listenPort()).isEqualTo(9090);
         assertThat(config.webhookPath()).isEqualTo("/hook");
+        assertThat(config.tunnel()).isEqualTo("trycloudflare");
+        assertThat(config.dropPendingUpdates()).isTrue();
+        assertThat(config.maxConnections()).isEqualTo(12);
     }
 
     /**

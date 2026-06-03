@@ -32,15 +32,15 @@ public final class TelegramTransport implements ChatTransport {
     private HttpServer server;
     private ExecutorService executor;
 
-    public TelegramTransport(TelegramWebhookConfig config) {
-        this(config, chatId -> new TelegramSession(config.token(), chatId), new TelegramWebhookRegistrar(config));
-    }
-
     TelegramTransport(TelegramWebhookConfig config, Function<String, ChatSession> sessionFactory,
             TelegramWebhookRegistrar registrar) {
         this.config = Objects.requireNonNull(config, "config");
         this.sessionFactory = Objects.requireNonNull(sessionFactory, "sessionFactory");
         this.registrar = Objects.requireNonNull(registrar, "registrar");
+    }
+
+    public TelegramTransport(TelegramWebhookConfig config) {
+        this(config, chatId -> new TelegramSession(config.token(), chatId), new TelegramWebhookRegistrar(config));
     }
 
     @Override
@@ -50,14 +50,18 @@ public final class TelegramTransport implements ChatTransport {
             return;
         }
         try {
-            registrar.register();
             server = HttpServer.create(new InetSocketAddress(config.listenHost(), config.listenPort()), 0);
             server.createContext(config.webhookPath(), exchange -> handleWebhook(exchange, handler));
             executor = Executors.newCachedThreadPool();
             server.setExecutor(executor);
             server.start();
+            registrar.register();
         } catch (IOException ex) {
+            stop();
             throw new IllegalStateException("Telegram webhook server failed to start: " + ex.getMessage(), ex);
+        } catch (RuntimeException ex) {
+            stop();
+            throw ex;
         }
     }
 

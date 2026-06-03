@@ -35,14 +35,17 @@ public final class ChatAgentService implements ChatMessageHandler {
     }
 
     private void runAgent(ChatMessage message, ChatSession session) {
-        RunLogger runLogger = runLoggerFactory.apply(session);
-        AgentEngine engine = engineFactory.apply(runLogger);
+        AgentEngine engine = null;
         try {
+            RunLogger runLogger = runLoggerFactory.apply(session);
+            engine = engineFactory.apply(runLogger);
             engine.run(new Task("chat-" + message.messageId(), message.text()));
         } catch (RuntimeException ex) {
             session.sendError("Agent 调度失败：" + ex.getMessage());
         } finally {
-            engine.shutdown();
+            if (engine != null) {
+                engine.shutdown();
+            }
         }
     }
 }

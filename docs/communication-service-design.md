@@ -32,6 +32,8 @@
 - `TelegramTransport`：使用 JDK `HttpServer` 启动本地 webhook endpoint，接收 Telegram POST update。
 - `TelegramWebhookConfig`：读取 token、公网 webhook URL、本地监听地址、webhook path、secret token 等配置。
 - `TelegramWebhookRegistrar`：调用 Telegram Bot API `setWebhook`，设置 `allowed_updates=["message"]`，可选 `secret_token`。
+- `TryCloudflareTunnel`：本地测试时启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`，解析临时 `trycloudflare.com` HTTPS URL。
+- `TelegramAgentWebhookService`：库式宿主，组装 Telegram transport、trycloudflare 隧道、`ChatAgentService`、LM Studio Provider 和工具注册表。
 - `TelegramSession`：调用 Bot API `sendMessage` 回传文本。
 - `TelegramRunLogger`：把 `thinkingStarted`、`toolStarted`、`toolCompleted`、`finished`、`failed` 映射成 Telegram 可读消息。
 
@@ -47,6 +49,9 @@
 - `TELEGRAM_WEBHOOK_HOST`：本地监听地址，默认 `0.0.0.0`。
 - `TELEGRAM_WEBHOOK_PORT`：本地监听端口，默认 `8080`。
 - `TELEGRAM_WEBHOOK_PATH`：本地 webhook path，默认 `/telegram/webhook`。
+- `TELEGRAM_WEBHOOK_TUNNEL`：可选，本地真 webhook 测试可设为 `trycloudflare`。
+- `TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES`：可选，注册 webhook 时是否丢弃积压 update，默认 `false`。
+- `TELEGRAM_WEBHOOK_MAX_CONNECTIONS`：可选，传给 `setWebhook.max_connections`，默认 `40`。
 - `AGENT_WORKDIR`、`AGENT_MAX_STEPS`、`AGENT_ENABLE_THINKING`：由外部宿主创建 `AgentEngine` 时使用。
 
 Provider 配置沿用现有 `LmStudioConfig`、`SiliconFlowConfig` 等配置体系。
@@ -73,11 +78,28 @@ Telegram POST /telegram/webhook
 - 每条有效文本消息生成 独立 `Task`，任务 ID 为 `chat-<messageId>`。
 - 同工作区通过 `WorkspaceSerialExecutor` 串行执行；`AgentEngine` 内部只读工具并发策略保持不变。
 
+## 本地 trycloudflare 真 Webhook 流程
+
+本地验收不使用 `getUpdates` 轮询。推荐流程：
+
+1. 确认 `cloudflared --version` 可执行。
+2. 设置 `telegram.webhook.tunnel=trycloudflare`，并保持 `telegram.webhook.url` 为空。
+3. 启动 `TelegramAgentWebhookService`。
+4. 服务先启动本地 `HttpServer`。
+5. 服务启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`。
+6. 服务解析 `https://*.trycloudflare.com`，拼接 `<publicBaseUrl><webhookPath>`。
+7. 服务调用 `setWebhook` 注册真实 HTTPS webhook URL。
+8. Telegram 客户端发消息后，Telegram 通过 webhook POST 到 trycloudflare URL，再转发到本机。
+
+如果显式配置了 `telegram.webhook.url=https://...`，服务不启动 trycloudflare，直接使用该 URL 注册 webhook。
+
 ## 测试策略
 
 - `TelegramTransportTest`：覆盖合法文本、非文本忽略、secret token、malformed JSON、handler 异常仍 ACK。
 - `TelegramWebhookConfigTest`：覆盖环境变量读取、默认值和 token 必填。
 - `TelegramWebhookRegistrarTest`：覆盖 `setWebhook` 请求体、空公网 URL 跳过注册、HTTP 错误、`ok=false`。
+- `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
+- `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、`setWebhook` 的启动编排。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest` 保持通信调度、串行执行和日志映射覆盖。
 
 ## 非目标
@@ -86,4 +108,5 @@ Telegram POST /telegram/webhook
 - 不改变 CLI 行为。
 - 不在通信层维护长程会话记忆。
 - 不保留 Long Polling / `getUpdates` 路径。
+- 不把 `deleteWebhook` / `getUpdates` 作为正式 webhook 验收路径。
 - 不新增复杂任务队列、数据库或工作流引擎。

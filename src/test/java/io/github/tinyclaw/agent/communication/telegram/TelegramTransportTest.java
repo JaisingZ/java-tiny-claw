@@ -7,6 +7,7 @@ import io.github.tinyclaw.agent.communication.ChatMessageHandler;
 import io.github.tinyclaw.agent.communication.ChatSession;
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -121,6 +122,25 @@ class TelegramTransportTest {
         assertThat(session.errors()).containsExactly("消息处理失败：boom");
     }
 
+    /**
+     * 注册 webhook 前本地 HTTP server 必须已经可连接。
+     */
+    @Test
+    void startsLocalServerBeforeRegisteringWebhook() throws Exception {
+        int port = freePort();
+        ServerReadyRegistrar registrar = new ServerReadyRegistrar(port);
+        TelegramWebhookConfig config = new TelegramWebhookConfig(
+                "token-1", "https://example.com/telegram/webhook", "127.0.0.1", port,
+                "/telegram/webhook", "", false, 40);
+        TelegramTransport transport = new TelegramTransport(config, chatId -> new RecordingSession(), registrar);
+
+        transport.start((message, chatSession) -> {
+        });
+
+        transport.stop();
+        assertThat(registrar.serverWasConnectable()).isTrue();
+    }
+
     private static TelegramTransport transport(String secretToken, ChatSession session) throws IOException {
         int port = freePort();
         TelegramWebhookConfig config = new TelegramWebhookConfig(
@@ -180,6 +200,30 @@ class TelegramTransportTest {
 
         @Override
         public void register() {
+        }
+    }
+
+    private static final class ServerReadyRegistrar extends TelegramWebhookRegistrar {
+        private final int port;
+        private boolean serverWasConnectable;
+
+        private ServerReadyRegistrar(int port) {
+            super(new TelegramWebhookConfig("token-1", "https://example.com/telegram/webhook", "127.0.0.1", port,
+                    "/telegram/webhook", "", false, 40));
+            this.port = port;
+        }
+
+        @Override
+        public void register() {
+            try (Socket socket = new Socket("127.0.0.1", port)) {
+                serverWasConnectable = true;
+            } catch (IOException ex) {
+                serverWasConnectable = false;
+            }
+        }
+
+        private boolean serverWasConnectable() {
+            return serverWasConnectable;
         }
     }
 }

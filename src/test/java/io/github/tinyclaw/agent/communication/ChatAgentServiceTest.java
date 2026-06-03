@@ -65,6 +65,27 @@ class ChatAgentServiceTest {
         assertThat(session.errors()).containsExactly("消息内容为空，无法启动 Agent。");
     }
 
+    /**
+     * 创建 AgentEngine 失败也应回传错误，而不是泄漏在线程中。
+     */
+    @Test
+    void sendsErrorWhenEngineFactoryFails() throws Exception {
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        ChatAgentService service = new ChatAgentService(
+                logger -> {
+                    throw new IllegalStateException("provider missing");
+                },
+                TelegramStyleRunLogger::new,
+                executor);
+
+        service.handle(new ChatMessage("m3", "chat-a", "user-a", "hello"), session);
+
+        assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
+        executor.close();
+        assertThat(session.errors()).containsExactly("Agent 调度失败：provider missing");
+    }
+
     private static final class EchoFinishProvider implements ModelProvider {
         private final AtomicReference<String> taskId;
         private final AtomicReference<String> goal;

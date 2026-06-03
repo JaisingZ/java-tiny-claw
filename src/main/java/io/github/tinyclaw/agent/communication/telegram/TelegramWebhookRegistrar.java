@@ -100,7 +100,7 @@ public class TelegramWebhookRegistrar {
     }
 
     private static TelegramWebhookHttpClient defaultHttpClient() {
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = TelegramHttpClients.create();
         return (url, body) -> {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
