@@ -25,9 +25,7 @@ import java.util.UUID;
 public final class AgentApplication {
 
     private static final String RUN_COMMAND = "run";
-    private static final String STARTUP_CHECK_COMMAND = "startup-check";
     private static final String TELEGRAM_COMMAND = "telegram";
-    private static final String LIVE_FLAG = "--live";
     private static final String PROMPT_OPTION = "--prompt";
     private static final String THINKING_OPTION = "--thinking";
     private static final String MAX_STEPS_OPTION = "--max-steps";
@@ -51,10 +49,6 @@ public final class AgentApplication {
                 return;
             }
             runtime.startHarness();
-            return;
-        }
-        if (STARTUP_CHECK_COMMAND.equals(args[0])) {
-            runtime.runStartupCheck(args);
             return;
         }
         if (RUN_COMMAND.equals(args[0])) {
@@ -97,16 +91,6 @@ public final class AgentApplication {
         RunLogger logger = ConsoleRunLogger.standardOutput(false);
         logger.writeLine("Tiny Agent Harness provider=" + config.model()
                 + " tools=" + registry.definitions().size());
-    }
-
-    private static boolean hasLiveFlag(String[] args) {
-        for (int i = 1; i < args.length; i++) {
-            if (LIVE_FLAG.equalsIgnoreCase(args[i])) {
-                return true;
-            }
-            throw new IllegalArgumentException("Unknown startup-check option: " + args[i]);
-        }
-        return false;
     }
 
     private static void runPrompt(RunOptions options) {
@@ -165,8 +149,6 @@ public final class AgentApplication {
 
         void startHarness();
 
-        void runStartupCheck(String[] args) throws Exception;
-
         void runPrompt(String[] args);
 
         ManagedService createTelegramService();
@@ -193,11 +175,6 @@ public final class AgentApplication {
         @Override
         public void startHarness() {
             AgentApplication.startHarness();
-        }
-
-        @Override
-        public void runStartupCheck(String[] args) throws Exception {
-            MainLoopStartupCheck.run(hasLiveFlag(args));
         }
 
         @Override

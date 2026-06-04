@@ -1,6 +1,7 @@
 package io.github.tinyclaw.agent.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.tinyclaw.agent.runtime.ConsoleRunLogger;
 import io.github.tinyclaw.agent.runtime.RunResult;
@@ -47,7 +48,6 @@ class AgentApplicationTest {
         assertThat(runtime.telegramStarts).isEqualTo(1);
         assertThat(runtime.awaitCalls).isEqualTo(1);
         assertThat(runtime.runCalls).isZero();
-        assertThat(runtime.startupChecks).isZero();
     }
 
     @Test
@@ -59,16 +59,16 @@ class AgentApplicationTest {
         assertThat(runtime.runCalls).isEqualTo(1);
         assertThat(runtime.telegramStarts).isZero();
         assertThat(runtime.harnessStarts).isZero();
-        assertThat(runtime.startupChecks).isZero();
     }
 
     @Test
-    void startupCheckCommandDoesNotStartTelegramService() throws Exception {
+    void startupCheckCommandIsUnknown() {
         FakeRuntime runtime = new FakeRuntime(true);
 
-        AgentApplication.execute(new String[] { "startup-check" }, runtime);
+        assertThatThrownBy(() -> AgentApplication.execute(new String[] { "startup-check" }, runtime))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Unknown command: startup-check");
 
-        assertThat(runtime.startupChecks).isEqualTo(1);
         assertThat(runtime.telegramStarts).isZero();
         assertThat(runtime.harnessStarts).isZero();
         assertThat(runtime.runCalls).isZero();
@@ -116,7 +116,6 @@ class AgentApplicationTest {
         private int awaitCalls;
         private int shutdownHooks;
         private int runCalls;
-        private int startupChecks;
 
         private FakeRuntime(boolean telegramEnabled) {
             this.telegramEnabled = telegramEnabled;
@@ -130,11 +129,6 @@ class AgentApplicationTest {
         @Override
         public void startHarness() {
             harnessStarts++;
-        }
-
-        @Override
-        public void runStartupCheck(String[] args) {
-            startupChecks++;
         }
 
         @Override

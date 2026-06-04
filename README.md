@@ -11,13 +11,12 @@
 - 运行时上下文：`AgentContext` 仅在内存中保存当前步进上下文。
 - RunLogger：输出可读运行日志；`--debug` 时包含更详细事件与 Provider 请求/响应摘要。
 - RunResult：保留最终决策结果与可读观测。
-- 启动自检：通过 `AgentApplication startup-check` 验证 Main Loop 核心能力。
 
 ## 项目结构
 
 ```text
 src/main/java/io/github/tinyclaw/agent
-  app/          命令行入口和启动自检
+  app/          命令行入口和应用装配
   runtime/      AgentEngine、RunLogger、RunResult
   provider/     ModelProvider 和 OpenAI-compatible Provider 实现
   tool/         工具接口、注册表和内置工具
@@ -46,7 +45,7 @@ lmstudio.baseUrl=http://localhost:1234/v1
 lmstudio.model=your-local-model
 ```
 
-也可以通过系统属性指定配置文件：
+日常运行默认读取项目根目录下的 `agent.properties`。`-Dagent.config=...` 只作为临时覆盖能力，例如需要指定其它配置文件时使用：
 
 ```sh
 mvn exec:java -Dagent.config=/path/to/agent.properties -Dexec.args="run --prompt \"请直接回答：OK。不要调用工具。\""
@@ -64,45 +63,9 @@ mvn test
 mvn -q -DskipTests compile
 ```
 
-## 启动自检
+## Provider live 测试
 
-默认离线自检，不依赖真实模型：
-
-```sh
-mvn exec:java -Dexec.args="startup-check"
-```
-
-追加真实 Provider 链路验证：
-
-```sh
-mvn exec:java -Dexec.args="startup-check --live"
-```
-
-`--live` 会额外使用当前 `agent.properties` 中的 OpenAI 兼容 Provider 配置，跑一轮真实 Provider 链路。典型输出形态：
-
-```text
-=== Main Loop Startup Check ===
-live=true
-CASE single-stage-finish
-RESULT status=SUCCESS answer=single-stage-ready failure=null
-CASE two-stage-thinking-action
-RESULT status=SUCCESS answer=thinking-action-ready failure=null
-CASE real-tools-write-bash
-RESULT status=SUCCESS answer=java sample executed failure=null
-CASE failure-missing-tool
-RESULT status=FAILED answer=null failure=Unknown tool: missing
-CASE failure-tool-error
-RESULT status=FAILED answer=null failure=startup tool failed
-CASE failure-provider-error
-RESULT status=FAILED answer=null failure=provider_error: startup provider failed
-CASE failure-max-steps
-RESULT status=FAILED answer=null failure=max_steps_exceeded
-CASE live-provider
-RESULT status=SUCCESS answer=Main Loop live 启动测试完成。 failure=null
-=== Main Loop Startup Check: PASSED ===
-```
-
-也可以只跑 Provider 的 live 测试：
+验证当前 OpenAI 兼容 Provider 配置：
 
 ```sh
 mvn "-Dlmstudio.live=true" "-Dtest=LmStudioModelProviderLiveTest" test
@@ -120,6 +83,33 @@ mvn exec:java
 
 ```sh
 mvn exec:java -Dexec.args="run --prompt \"请直接回答：OK。不要调用工具。\""
+```
+
+启动 Telegram Webhook：
+
+```sh
+mvn exec:java -Dexec.args="telegram"
+```
+
+如果 `agent.properties` 中配置了 `telegram.webhook.enabled=true`，也可以无参数启动：
+
+```sh
+mvn exec:java
+```
+
+本地真 Webhook 测试可使用 trycloudflare：
+
+```properties
+agent.workdir=.
+agent.maxSteps=8
+agent.enableThinking=false
+
+telegram.webhook.enabled=true
+telegram.webhook.tunnel=trycloudflare
+telegram.webhook.url=
+telegram.webhook.registrationDelaySeconds=60
+telegram.webhook.registrationMaxAttempts=3
+telegram.webhook.registrationRetryIntervalSeconds=20
 ```
 
 开启可读调试日志：

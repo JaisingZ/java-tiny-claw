@@ -21,7 +21,6 @@
   - `telegram.webhook.enabled=true`：启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务。
 - `telegram` 子命令：无视配置，直接启动 `TelegramAgentWebhookService`。
 - `run`：只走命令行运行，不启动 Telegram Webhook。
-- `startup-check`：只跑启动检查，不启动 Telegram Webhook。
 
 ## 核心抽象
 
@@ -53,17 +52,22 @@
 
 通信模块仍作为库能力提供；CLI 只在应用宿主层暴露启动方式。外部宿主可按需读取：
 
-- `telegram.webhook.enabled` / `TELEGRAM_WEBHOOK_ENABLED`：可选，默认 `false`，控制无参数启动是否进入 Telegram Webhook 服务。
-- `TELEGRAM_BOT_TOKEN`：Telegram Bot Token，必填。
-- `TELEGRAM_WEBHOOK_URL`：HTTPS 公网 webhook URL；为空时只启动本地 server，不调用 `setWebhook`。
-- `TELEGRAM_WEBHOOK_SECRET`：可选 secret token，用于校验 `X-Telegram-Bot-Api-Secret-Token`。
-- `TELEGRAM_WEBHOOK_HOST`：本地监听地址，默认 `0.0.0.0`。
-- `TELEGRAM_WEBHOOK_PORT`：本地监听端口，默认 `8080`。
-- `TELEGRAM_WEBHOOK_PATH`：本地 webhook path，默认 `/telegram/webhook`。
-- `TELEGRAM_WEBHOOK_TUNNEL`：可选，本地真 webhook 测试可设为 `trycloudflare`。
-- `TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES`：可选，注册 webhook 时是否丢弃积压 update，默认 `false`。
-- `TELEGRAM_WEBHOOK_MAX_CONNECTIONS`：可选，传给 `setWebhook.max_connections`，默认 `40`。
-- `AGENT_WORKDIR`、`AGENT_MAX_STEPS`、`AGENT_ENABLE_THINKING`：由外部宿主创建 `AgentEngine` 时使用。
+- `telegram.webhook.enabled`：可选，默认 `false`，控制无参数启动是否进入 Telegram Webhook 服务。
+- `telegram.bot.token`：Telegram Bot Token，必填。
+- `telegram.webhook.url`：HTTPS 公网 webhook URL；为空时只启动本地 server，不调用 `setWebhook`。
+- `telegram.webhook.secret`：可选 secret token，用于校验 `X-Telegram-Bot-Api-Secret-Token`。
+- `telegram.webhook.host`：本地监听地址，默认 `0.0.0.0`。
+- `telegram.webhook.port`：本地监听端口，默认 `8080`。
+- `telegram.webhook.path`：本地 webhook path，默认 `/telegram/webhook`。
+- `telegram.webhook.tunnel`：可选，本地真 webhook 测试可设为 `trycloudflare`。
+- `telegram.webhook.dropPendingUpdates`：可选，注册 webhook 时是否丢弃积压 update，默认 `false`。
+- `telegram.webhook.maxConnections`：可选，传给 `setWebhook.max_connections`，默认 `40`。
+- `telegram.webhook.registrationDelaySeconds`：可选，注册 webhook 前延迟秒数，默认 `60`。
+- `telegram.webhook.registrationMaxAttempts`：可选，`setWebhook` 最大重试次数（含首次），默认 `3`。
+- `telegram.webhook.registrationRetryIntervalSeconds`：可选，重试间隔秒数，默认 `20`。
+- `agent.workdir`：`TelegramAgentWebhookService` 的工作目录，默认 `.`。
+- `agent.maxSteps`：`AgentEngine` 最大步数，默认 `8`。
+- `agent.enableThinking`：是否开启 Thinking，默认 `false`。
 
 Provider 配置沿用现有 `LmStudioConfig`、`SiliconFlowConfig` 等配置体系。
 
@@ -99,8 +103,10 @@ Telegram POST /telegram/webhook
 4. 服务先启动本地 `HttpServer`。
 5. 服务启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`。
 6. 服务解析 `https://*.trycloudflare.com`，拼接 `<publicBaseUrl><webhookPath>`。
-7. 服务调用 `setWebhook` 注册真实 HTTPS webhook URL。
-8. Telegram 客户端发消息后，Telegram 通过 webhook POST 到 trycloudflare URL，再转发到本机。
+7. 服务可按配置等待 `telegram.webhook.registrationDelaySeconds`，然后调用 `setWebhook`；
+   失败时按 `telegram.webhook.registrationMaxAttempts` 重试，重试间隔为 `telegram.webhook.registrationRetryIntervalSeconds`。
+9. 服务调用 `setWebhook` 注册真实 HTTPS webhook URL。
+10. Telegram 客户端发消息后，Telegram 通过 webhook POST 到 trycloudflare URL，再转发到本机。
 
 如果显式配置了 `telegram.webhook.url=https://...`，服务不启动 trycloudflare，直接使用该 URL 注册 webhook。
 
@@ -112,13 +118,13 @@ Telegram POST /telegram/webhook
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
 - `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、`setWebhook` 的启动编排。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、串行执行和日志映射覆盖。
-- `AgentApplicationTest`：覆盖无参数启动策略、`telegram` 子命令与 `run`/`startup-check` 互斥行为。
-- `TelegramStartupConfigTest`：覆盖 `telegram.webhook.enabled` 默认值、属性与环境变量读取及优先级。
+- `AgentApplicationTest`：覆盖无参数启动策略、`telegram` 子命令、`run` 命令与未知命令行为。
+- `TelegramStartupConfigTest`：覆盖 `telegram.webhook.enabled` 默认值与属性读取。
 
 ## 非目标
 
 - 不新增 Telegram 启动之外的 CLI 子命令。
-- 不让 `run` 与 `startup-check` 触发 Telegram Webhook 启动。
+- 不让 `run` 触发 Telegram Webhook 启动。
 - 不在通信层维护长程会话记忆。
 - 不保留 Long Polling / `getUpdates` 路径。
 - 不把 `deleteWebhook` / `getUpdates` 作为正式 webhook 验收路径。
