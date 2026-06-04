@@ -13,7 +13,6 @@ import java.util.Properties;
  */
 final class TelegramStartupConfig {
 
-    private static final String ENV_ENABLED = "TELEGRAM_WEBHOOK_ENABLED";
     private static final String PROPERTY_ENABLED = "telegram.webhook.enabled";
 
     private final boolean enabled;
@@ -23,7 +22,7 @@ final class TelegramStartupConfig {
     }
 
     static TelegramStartupConfig from(Map<String, String> values) {
-        String value = optional(values, ENV_ENABLED, PROPERTY_ENABLED, "false");
+        String value = optional(values, PROPERTY_ENABLED, "false");
         return new TelegramStartupConfig(parseBoolean(value, PROPERTY_ENABLED));
     }
 
@@ -33,7 +32,6 @@ final class TelegramStartupConfig {
 
     static TelegramStartupConfig loadDefault() {
         Map<String, String> values = loadDefaultProperties();
-        values.putAll(System.getenv());
         return from(values);
     }
 
@@ -82,13 +80,8 @@ final class TelegramStartupConfig {
         return values;
     }
 
-    private static String optional(Map<String, String> values, String primaryKey, String fallbackKey,
-            String defaultValue) {
+    private static String optional(Map<String, String> values, String primaryKey, String defaultValue) {
         String value = values.get(primaryKey);
-        if (hasText(value)) {
-            return value.trim();
-        }
-        value = values.get(fallbackKey);
         if (hasText(value)) {
             return value.trim();
         }

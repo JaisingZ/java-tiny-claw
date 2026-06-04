@@ -34,6 +34,9 @@ class TelegramWebhookConfigTest {
         assertThat(config.secretToken()).isEqualTo("");
         assertThat(config.dropPendingUpdates()).isFalse();
         assertThat(config.maxConnections()).isEqualTo(40);
+        assertThat(config.registrationDelaySeconds()).isEqualTo(0);
+        assertThat(config.registrationMaxAttempts()).isEqualTo(1);
+        assertThat(config.registrationRetryIntervalSeconds()).isEqualTo(0);
     }
 
     /**
@@ -60,7 +63,10 @@ class TelegramWebhookConfigTest {
                 + "telegram.webhook.path=/hook\n"
                 + "telegram.webhook.tunnel=trycloudflare\n"
                 + "telegram.webhook.dropPendingUpdates=true\n"
-                + "telegram.webhook.maxConnections=12\n");
+                + "telegram.webhook.maxConnections=12\n"
+                + "telegram.webhook.registrationDelaySeconds=60\n"
+                + "telegram.webhook.registrationMaxAttempts=3\n"
+                + "telegram.webhook.registrationRetryIntervalSeconds=20\n");
 
         TelegramWebhookConfig config = TelegramWebhookConfig.load(configPath);
 
@@ -73,6 +79,9 @@ class TelegramWebhookConfigTest {
         assertThat(config.tunnel()).isEqualTo("trycloudflare");
         assertThat(config.dropPendingUpdates()).isTrue();
         assertThat(config.maxConnections()).isEqualTo(12);
+        assertThat(config.registrationDelaySeconds()).isEqualTo(60);
+        assertThat(config.registrationMaxAttempts()).isEqualTo(3);
+        assertThat(config.registrationRetryIntervalSeconds()).isEqualTo(20);
     }
 
     /**

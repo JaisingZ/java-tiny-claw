@@ -22,6 +22,9 @@ public final class TelegramWebhookConfig {
     private final boolean dropPendingUpdates;
     private final int maxConnections;
     private final String tunnel;
+    private final int registrationDelaySeconds;
+    private final int registrationMaxAttempts;
+    private final int registrationRetryIntervalSeconds;
 
     public TelegramWebhookConfig(
             String token,
@@ -33,7 +36,7 @@ public final class TelegramWebhookConfig {
             boolean dropPendingUpdates,
             int maxConnections) {
         this(token, publicWebhookUrl, listenHost, listenPort, webhookPath, secretToken, dropPendingUpdates,
-                maxConnections, "");
+                maxConnections, "", 0, 1, 0);
     }
 
     public TelegramWebhookConfig(
@@ -46,6 +49,23 @@ public final class TelegramWebhookConfig {
             boolean dropPendingUpdates,
             int maxConnections,
             String tunnel) {
+        this(token, publicWebhookUrl, listenHost, listenPort, webhookPath, secretToken, dropPendingUpdates,
+                maxConnections, tunnel, 0, 1, 0);
+    }
+
+    public TelegramWebhookConfig(
+            String token,
+            String publicWebhookUrl,
+            String listenHost,
+            int listenPort,
+            String webhookPath,
+            String secretToken,
+            boolean dropPendingUpdates,
+            int maxConnections,
+            String tunnel,
+            int registrationDelaySeconds,
+            int registrationMaxAttempts,
+            int registrationRetryIntervalSeconds) {
         if (token == null || token.isBlank()) {
             throw new IllegalStateException("TELEGRAM_BOT_TOKEN is required");
         }
@@ -58,6 +78,11 @@ public final class TelegramWebhookConfig {
         this.dropPendingUpdates = dropPendingUpdates;
         this.maxConnections = maxConnections;
         this.tunnel = tunnel == null ? "" : tunnel;
+        this.registrationDelaySeconds = parseNonNegativeInt(registrationDelaySeconds,
+                "telegram.webhook.registrationDelaySeconds");
+        this.registrationMaxAttempts = parsePositiveInt(registrationMaxAttempts, "telegram.webhook.registrationMaxAttempts");
+        this.registrationRetryIntervalSeconds = parseNonNegativeInt(registrationRetryIntervalSeconds,
+                "telegram.webhook.registrationRetryIntervalSeconds");
     }
 
     public static TelegramWebhookConfig fromEnv() {
@@ -120,7 +145,16 @@ public final class TelegramWebhookConfig {
                         "telegram.webhook.dropPendingUpdates", "false"), false),
                 parsePositiveInt(optional(env, "TELEGRAM_WEBHOOK_MAX_CONNECTIONS",
                         "telegram.webhook.maxConnections", ""), 40, "TELEGRAM_WEBHOOK_MAX_CONNECTIONS"),
-                optional(env, "TELEGRAM_WEBHOOK_TUNNEL", "telegram.webhook.tunnel", ""));
+                optional(env, "TELEGRAM_WEBHOOK_TUNNEL", "telegram.webhook.tunnel", ""),
+                parseNonNegativeInt(optional(env, "TELEGRAM_WEBHOOK_REGISTRATION_DELAY_SECONDS",
+                        "telegram.webhook.registrationDelaySeconds", "0"),
+                        0, "TELEGRAM_WEBHOOK_REGISTRATION_DELAY_SECONDS"),
+                parsePositiveInt(optional(env, "TELEGRAM_WEBHOOK_REGISTRATION_MAX_ATTEMPTS",
+                        "telegram.webhook.registrationMaxAttempts", "1"),
+                        1, "TELEGRAM_WEBHOOK_REGISTRATION_MAX_ATTEMPTS"),
+                parseNonNegativeInt(optional(env, "TELEGRAM_WEBHOOK_REGISTRATION_RETRY_INTERVAL_SECONDS",
+                        "telegram.webhook.registrationRetryIntervalSeconds", "0"),
+                        0, "TELEGRAM_WEBHOOK_REGISTRATION_RETRY_INTERVAL_SECONDS"));
     }
 
     public String token() {
@@ -159,9 +193,22 @@ public final class TelegramWebhookConfig {
         return tunnel;
     }
 
+    public int registrationDelaySeconds() {
+        return registrationDelaySeconds;
+    }
+
+    public int registrationMaxAttempts() {
+        return registrationMaxAttempts;
+    }
+
+    public int registrationRetryIntervalSeconds() {
+        return registrationRetryIntervalSeconds;
+    }
+
     public TelegramWebhookConfig withPublicWebhookUrl(String publicWebhookUrl) {
         return new TelegramWebhookConfig(token, publicWebhookUrl, listenHost, listenPort, webhookPath, secretToken,
-                dropPendingUpdates, maxConnections, tunnel);
+                dropPendingUpdates, maxConnections, tunnel, registrationDelaySeconds, registrationMaxAttempts,
+                registrationRetryIntervalSeconds);
     }
 
     private static String requiredEnv(Map<String, String> env, String primaryKey, String fallbackKey) {
@@ -200,6 +247,35 @@ public final class TelegramWebhookConfig {
             int parsed = Integer.parseInt(value);
             if (parsed <= 0) {
                 throw new IllegalStateException(key + " must be positive: " + parsed);
+            }
+            return parsed;
+        } catch (NumberFormatException ex) {
+            throw new IllegalStateException("Invalid value for " + key + ": " + value, ex);
+        }
+    }
+
+    private static int parsePositiveInt(int value, String key) {
+        if (value <= 0) {
+            throw new IllegalStateException(key + " must be positive: " + value);
+        }
+        return value;
+    }
+
+    private static int parseNonNegativeInt(int value, String key) {
+        if (value < 0) {
+            throw new IllegalStateException(key + " must be non-negative: " + value);
+        }
+        return value;
+    }
+
+    private static int parseNonNegativeInt(String value, int defaultValue, String key) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < 0) {
+                throw new IllegalStateException(key + " must be non-negative: " + parsed);
             }
             return parsed;
         } catch (NumberFormatException ex) {

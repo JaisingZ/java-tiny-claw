@@ -62,9 +62,9 @@
 - `telegram.webhook.tunnel`：可选，本地真 webhook 测试可设为 `trycloudflare`。
 - `telegram.webhook.dropPendingUpdates`：可选，注册 webhook 时是否丢弃积压 update，默认 `false`。
 - `telegram.webhook.maxConnections`：可选，传给 `setWebhook.max_connections`，默认 `40`。
-- `telegram.webhook.registrationDelaySeconds`：可选，注册 webhook 前延迟秒数，默认 `60`。
-- `telegram.webhook.registrationMaxAttempts`：可选，`setWebhook` 最大重试次数（含首次），默认 `3`。
-- `telegram.webhook.registrationRetryIntervalSeconds`：可选，重试间隔秒数，默认 `20`。
+- `telegram.webhook.registrationDelaySeconds`：可选，注册 webhook 前延迟秒数，默认 `0`。
+- `telegram.webhook.registrationMaxAttempts`：可选，`setWebhook` 最大重试次数（含首次），默认 `1`。
+- `telegram.webhook.registrationRetryIntervalSeconds`：可选，重试间隔秒数，默认 `0`。
 - `agent.workdir`：`TelegramAgentWebhookService` 的工作目录，默认 `.`。
 - `agent.maxSteps`：`AgentEngine` 最大步数，默认 `8`。
 - `agent.enableThinking`：是否开启 Thinking，默认 `false`。

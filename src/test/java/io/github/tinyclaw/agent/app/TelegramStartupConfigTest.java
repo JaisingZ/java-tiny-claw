@@ -33,20 +33,9 @@ class TelegramStartupConfigTest {
     }
 
     @Test
-    void readsEnabledFromEnvironmentName() {
+    void ignoresEnvironmentStyleNameInApplicationStartupConfig() {
         Map<String, String> values = new HashMap<String, String>();
         values.put("TELEGRAM_WEBHOOK_ENABLED", "true");
-
-        TelegramStartupConfig config = TelegramStartupConfig.from(values);
-
-        assertThat(config.enabled()).isTrue();
-    }
-
-    @Test
-    void environmentValueHasPrecedenceOverProperty() {
-        Map<String, String> values = new HashMap<String, String>();
-        values.put("TELEGRAM_WEBHOOK_ENABLED", "false");
-        values.put("telegram.webhook.enabled", "true");
 
         TelegramStartupConfig config = TelegramStartupConfig.from(values);
 

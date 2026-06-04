@@ -1,0 +1,129 @@
+package io.github.tinyclaw.agent.communication.telegram;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+
+/**
+ * Telegram Webhook 宿主的应用配置。
+ */
+public final class TelegramAgentConfig {
+
+    private static final int DEFAULT_MAX_STEPS = 8;
+    private static final boolean DEFAULT_ENABLE_THINKING = false;
+
+    private final Path workDir;
+    private final int maxSteps;
+    private final boolean enableThinking;
+
+    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking) {
+        this.workDir = workDir;
+        this.maxSteps = maxSteps;
+        this.enableThinking = enableThinking;
+    }
+
+    public static TelegramAgentConfig from(Map<String, String> values) {
+        return new TelegramAgentConfig(
+                Path.of(optional(values, "agent.workdir", ".")),
+                parsePositiveInt(optional(values, "agent.maxSteps", String.valueOf(DEFAULT_MAX_STEPS)),
+                        "agent.maxSteps"),
+                parseBoolean(optional(values, "agent.enableThinking", String.valueOf(DEFAULT_ENABLE_THINKING)),
+                        "agent.enableThinking"));
+    }
+
+    static TelegramAgentConfig load(Path path) {
+        return from(loadProperties(path));
+    }
+
+    static TelegramAgentConfig loadDefault() {
+        String configPath = System.getProperty("agent.config");
+        if (hasText(configPath)) {
+            return load(Path.of(configPath));
+        }
+
+        Path localConfig = Path.of("agent.properties");
+        if (Files.exists(localConfig)) {
+            return load(localConfig);
+        }
+
+        Properties properties = new Properties();
+        try (InputStream inputStream = TelegramAgentConfig.class.getClassLoader()
+                .getResourceAsStream("agent.properties")) {
+            if (inputStream == null) {
+                return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING);
+            }
+            properties.load(inputStream);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load classpath agent.properties", ex);
+        }
+        return from(toMap(properties));
+    }
+
+    public Path workDir() {
+        return workDir;
+    }
+
+    public int maxSteps() {
+        return maxSteps;
+    }
+
+    public boolean enableThinking() {
+        return enableThinking;
+    }
+
+    private static Map<String, String> loadProperties(Path path) {
+        Properties properties = new Properties();
+        try (InputStream inputStream = Files.newInputStream(path)) {
+            properties.load(inputStream);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to load agent config: " + path, ex);
+        }
+        return toMap(properties);
+    }
+
+    private static Map<String, String> toMap(Properties properties) {
+        Map<String, String> values = new HashMap<String, String>();
+        for (String name : properties.stringPropertyNames()) {
+            values.put(name, properties.getProperty(name));
+        }
+        return values;
+    }
+
+    private static String optional(Map<String, String> values, String key, String defaultValue) {
+        String value = values.get(key);
+        if (hasText(value)) {
+            return value.trim();
+        }
+        return defaultValue;
+    }
+
+    private static int parsePositiveInt(String value, String key) {
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed <= 0) {
+                throw new IllegalStateException(key + " must be positive: " + parsed);
+            }
+            return parsed;
+        } catch (NumberFormatException ex) {
+            throw new IllegalStateException("Invalid value for " + key + ": " + value, ex);
+        }
+    }
+
+    private static boolean parseBoolean(String value, String key) {
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        throw new IllegalStateException("Invalid boolean for " + key + ": " + value);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+}

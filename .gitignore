@@ -29,5 +29,6 @@ replay_pid*
 target/
 
 # Local secrets
+agent.properties
 src/main/resources/agent.properties
 src/test/resources/agent.properties

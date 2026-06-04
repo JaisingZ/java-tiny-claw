@@ -12,15 +12,12 @@ import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.WriteFileTool;
 import java.nio.file.Path;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 
 /**
  * Telegram webhook 模式的库式 Agent 宿主。
  */
 public final class TelegramAgentWebhookService implements AutoCloseable {
-
-    private static final int DEFAULT_MAX_STEPS = 8;
 
     private final TelegramWebhookConfig telegramConfig;
     private final LmStudioConfig lmStudioConfig;
@@ -52,13 +49,13 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     }
 
     public static TelegramAgentWebhookService loadDefault() {
-        Map<String, String> env = System.getenv();
+        TelegramAgentConfig agentConfig = TelegramAgentConfig.loadDefault();
         return new TelegramAgentWebhookService(
                 TelegramWebhookConfig.loadDefault(),
                 LmStudioConfig.loadDefault(),
-                Path.of(defaultIfBlank(env.get("AGENT_WORKDIR"), ".")),
-                parsePositiveInt(env.get("AGENT_MAX_STEPS"), DEFAULT_MAX_STEPS),
-                Boolean.parseBoolean(defaultIfBlank(env.get("AGENT_ENABLE_THINKING"), "false")));
+                agentConfig.workDir(),
+                agentConfig.maxSteps(),
+                agentConfig.enableThinking());
     }
 
     public void start() {
@@ -110,11 +107,31 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
             transport = new TelegramTransport(localConfig);
             transport.start(service);
             tunnel = tunnelFactory.start(transport.listenPort());
+            if (telegramConfig.registrationDelaySeconds() > 0) {
+                sleepSeconds(telegramConfig.registrationDelaySeconds(), "registration delay");
+            }
             String publicWebhookUrl = joinUrl(tunnel.publicBaseUrl(), telegramConfig.webhookPath());
-            registrarFactory.create(telegramConfig.withPublicWebhookUrl(publicWebhookUrl)).register();
+            registerWithRetries(telegramConfig.withPublicWebhookUrl(publicWebhookUrl));
         } catch (RuntimeException ex) {
             stop();
             throw ex;
+        }
+    }
+
+    private void registerWithRetries(TelegramWebhookConfig config) {
+        int maxAttempts = config.registrationMaxAttempts();
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                registrarFactory.create(config).register();
+                return;
+            } catch (IllegalStateException ex) {
+                if (attempt >= maxAttempts) {
+                    throw ex;
+                }
+                if (config.registrationRetryIntervalSeconds() > 0) {
+                    sleepSeconds(config.registrationRetryIntervalSeconds(), "setWebhook retry");
+                }
+            }
         }
     }
 
@@ -144,19 +161,16 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         return value != null && !value.trim().isEmpty();
     }
 
-    private static String defaultIfBlank(String value, String defaultValue) {
-        return hasText(value) ? value.trim() : defaultValue;
-    }
-
-    private static int parsePositiveInt(String value, int defaultValue) {
-        if (!hasText(value)) {
-            return defaultValue;
+    private static void sleepSeconds(int seconds, String context) {
+        if (seconds <= 0) {
+            return;
         }
-        int parsed = Integer.parseInt(value);
-        if (parsed <= 0) {
-            throw new IllegalStateException("AGENT_MAX_STEPS must be positive: " + parsed);
+        try {
+            Thread.sleep(seconds * 1000L);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for " + context, ex);
         }
-        return parsed;
     }
 
     interface PublicTunnel extends AutoCloseable {
