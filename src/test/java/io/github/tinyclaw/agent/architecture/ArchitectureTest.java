@@ -22,11 +22,14 @@ class ArchitectureTest {
                     .layer("Provider").definedBy("io.github.tinyclaw.agent.provider..")
                     .layer("Tool").definedBy("io.github.tinyclaw.agent.tool..")
                     .layer("Runtime").definedBy("io.github.tinyclaw.agent.runtime..")
+                    .layer("Communication").definedBy("io.github.tinyclaw.agent.communication..")
                     .layer("App").definedBy("io.github.tinyclaw.agent.app..")
                     .whereLayer("Runtime").mayOnlyAccessLayers(
                             "Domain", "Provider", "Tool")
+                    .whereLayer("Communication").mayOnlyAccessLayers(
+                            "Domain", "Provider", "Tool", "Runtime")
                     .whereLayer("Provider").mayOnlyAccessLayers("Domain")
                     .whereLayer("Tool").mayOnlyAccessLayers("Domain")
                     .whereLayer("App").mayOnlyAccessLayers(
-                            "Domain", "Provider", "Tool", "Runtime");
+                            "Domain", "Provider", "Tool", "Runtime", "Communication");
 }

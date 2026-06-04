@@ -1,5 +1,6 @@
 package io.github.tinyclaw.agent.app;
 
+import io.github.tinyclaw.agent.communication.telegram.TelegramAgentWebhookService;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
@@ -14,6 +15,7 @@ import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.WriteFileTool;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
 import java.util.UUID;
 
 /**
@@ -24,6 +26,7 @@ public final class AgentApplication {
 
     private static final String RUN_COMMAND = "run";
     private static final String STARTUP_CHECK_COMMAND = "startup-check";
+    private static final String TELEGRAM_COMMAND = "telegram";
     private static final String LIVE_FLAG = "--live";
     private static final String PROMPT_OPTION = "--prompt";
     private static final String THINKING_OPTION = "--thinking";
@@ -38,19 +41,49 @@ public final class AgentApplication {
      * 程序入口。
      */
     public static void main(String[] args) throws Exception {
+        execute(args, new DefaultApplicationRuntime());
+    }
+
+    static void execute(String[] args, ApplicationRuntime runtime) throws Exception {
         if (args.length == 0) {
-            startHarness();
+            if (runtime.telegramWebhookEnabled()) {
+                startTelegram(runtime);
+                return;
+            }
+            runtime.startHarness();
             return;
         }
         if (STARTUP_CHECK_COMMAND.equals(args[0])) {
-            MainLoopStartupCheck.run(hasLiveFlag(args));
+            runtime.runStartupCheck(args);
             return;
         }
         if (RUN_COMMAND.equals(args[0])) {
-            runPrompt(RunOptions.parse(args));
+            runtime.runPrompt(args);
+            return;
+        }
+        if (TELEGRAM_COMMAND.equals(args[0])) {
+            ensureNoExtraArgs(args);
+            startTelegram(runtime);
             return;
         }
         throw new IllegalArgumentException("Unknown command: " + args[0]);
+    }
+
+    private static void startTelegram(ApplicationRuntime runtime) throws Exception {
+        ManagedService service = runtime.createTelegramService();
+        runtime.addShutdownHook(service::stop);
+        try {
+            service.start();
+            runtime.awaitStop();
+        } finally {
+            service.stop();
+        }
+    }
+
+    private static void ensureNoExtraArgs(String[] args) {
+        if (args.length > 1) {
+            throw new IllegalArgumentException("Unknown telegram option: " + args[1]);
+        }
     }
 
     private static void startHarness() {
@@ -124,6 +157,79 @@ public final class AgentApplication {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    interface ApplicationRuntime {
+
+        boolean telegramWebhookEnabled();
+
+        void startHarness();
+
+        void runStartupCheck(String[] args) throws Exception;
+
+        void runPrompt(String[] args);
+
+        ManagedService createTelegramService();
+
+        void addShutdownHook(Runnable hook);
+
+        void awaitStop() throws InterruptedException;
+    }
+
+    interface ManagedService {
+
+        void start();
+
+        void stop();
+    }
+
+    private static final class DefaultApplicationRuntime implements ApplicationRuntime {
+
+        @Override
+        public boolean telegramWebhookEnabled() {
+            return TelegramStartupConfig.loadDefault().enabled();
+        }
+
+        @Override
+        public void startHarness() {
+            AgentApplication.startHarness();
+        }
+
+        @Override
+        public void runStartupCheck(String[] args) throws Exception {
+            MainLoopStartupCheck.run(hasLiveFlag(args));
+        }
+
+        @Override
+        public void runPrompt(String[] args) {
+            AgentApplication.runPrompt(RunOptions.parse(args));
+        }
+
+        @Override
+        public ManagedService createTelegramService() {
+            TelegramAgentWebhookService service = TelegramAgentWebhookService.loadDefault();
+            return new ManagedService() {
+                @Override
+                public void start() {
+                    service.start();
+                }
+
+                @Override
+                public void stop() {
+                    service.stop();
+                }
+            };
+        }
+
+        @Override
+        public void addShutdownHook(Runnable hook) {
+            Runtime.getRuntime().addShutdownHook(new Thread(hook, "telegram-webhook-shutdown"));
+        }
+
+        @Override
+        public void awaitStop() throws InterruptedException {
+            new CountDownLatch(1).await();
+        }
     }
 
     private static final class RunOptions {

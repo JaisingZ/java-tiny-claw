@@ -14,6 +14,67 @@ import org.junit.jupiter.api.Test;
 class AgentApplicationTest {
 
     @Test
+    void noArgsKeepsHarnessWhenTelegramStartupDisabled() throws Exception {
+        FakeRuntime runtime = new FakeRuntime(false);
+
+        AgentApplication.execute(new String[0], runtime);
+
+        assertThat(runtime.harnessStarts).isEqualTo(1);
+        assertThat(runtime.telegramStarts).isZero();
+        assertThat(runtime.awaitCalls).isZero();
+    }
+
+    @Test
+    void noArgsStartsTelegramServiceWhenEnabledByConfig() throws Exception {
+        FakeRuntime runtime = new FakeRuntime(true);
+
+        AgentApplication.execute(new String[0], runtime);
+
+        assertThat(runtime.harnessStarts).isZero();
+        assertThat(runtime.telegramStarts).isEqualTo(1);
+        assertThat(runtime.awaitCalls).isEqualTo(1);
+        assertThat(runtime.telegramStops).isEqualTo(1);
+        assertThat(runtime.shutdownHooks).isEqualTo(1);
+    }
+
+    @Test
+    void telegramCommandStartsTelegramServiceEvenWhenConfigDisabled() throws Exception {
+        FakeRuntime runtime = new FakeRuntime(false);
+
+        AgentApplication.execute(new String[] { "telegram" }, runtime);
+
+        assertThat(runtime.harnessStarts).isZero();
+        assertThat(runtime.telegramStarts).isEqualTo(1);
+        assertThat(runtime.awaitCalls).isEqualTo(1);
+        assertThat(runtime.runCalls).isZero();
+        assertThat(runtime.startupChecks).isZero();
+    }
+
+    @Test
+    void runCommandDoesNotStartTelegramService() throws Exception {
+        FakeRuntime runtime = new FakeRuntime(true);
+
+        AgentApplication.execute(new String[] { "run", "--prompt", "hello" }, runtime);
+
+        assertThat(runtime.runCalls).isEqualTo(1);
+        assertThat(runtime.telegramStarts).isZero();
+        assertThat(runtime.harnessStarts).isZero();
+        assertThat(runtime.startupChecks).isZero();
+    }
+
+    @Test
+    void startupCheckCommandDoesNotStartTelegramService() throws Exception {
+        FakeRuntime runtime = new FakeRuntime(true);
+
+        AgentApplication.execute(new String[] { "startup-check" }, runtime);
+
+        assertThat(runtime.startupChecks).isEqualTo(1);
+        assertThat(runtime.telegramStarts).isZero();
+        assertThat(runtime.harnessStarts).isZero();
+        assertThat(runtime.runCalls).isZero();
+    }
+
+    @Test
     void debugRunOutputPrintsOnlyCompactResult() {
         RunResult result = RunResult.success(1, Collections.singletonList("Hello，Java！"), "done");
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -44,5 +105,66 @@ class AgentApplicationTest {
                 .contains("OBSERVATIONS")
                 .contains("Hello，Java！")
                 .doesNotContain("TRACE");
+    }
+
+    private static final class FakeRuntime implements AgentApplication.ApplicationRuntime {
+
+        private final boolean telegramEnabled;
+        private int harnessStarts;
+        private int telegramStarts;
+        private int telegramStops;
+        private int awaitCalls;
+        private int shutdownHooks;
+        private int runCalls;
+        private int startupChecks;
+
+        private FakeRuntime(boolean telegramEnabled) {
+            this.telegramEnabled = telegramEnabled;
+        }
+
+        @Override
+        public boolean telegramWebhookEnabled() {
+            return telegramEnabled;
+        }
+
+        @Override
+        public void startHarness() {
+            harnessStarts++;
+        }
+
+        @Override
+        public void runStartupCheck(String[] args) {
+            startupChecks++;
+        }
+
+        @Override
+        public void runPrompt(String[] args) {
+            runCalls++;
+        }
+
+        @Override
+        public AgentApplication.ManagedService createTelegramService() {
+            return new AgentApplication.ManagedService() {
+                @Override
+                public void start() {
+                    telegramStarts++;
+                }
+
+                @Override
+                public void stop() {
+                    telegramStops++;
+                }
+            };
+        }
+
+        @Override
+        public void addShutdownHook(Runnable hook) {
+            shutdownHooks++;
+        }
+
+        @Override
+        public void awaitStop() {
+            awaitCalls++;
+        }
     }
 }
