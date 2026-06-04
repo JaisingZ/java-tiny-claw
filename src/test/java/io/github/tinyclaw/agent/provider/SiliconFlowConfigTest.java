@@ -26,25 +26,16 @@ class SiliconFlowConfigTest {
     }
 
     @Test
-    void loadDefaultUsesAgentConfigSystemProperty() throws Exception {
+    void loadsCustomBaseUrlFromExplicitPath() throws Exception {
         Path configPath = tempDir.resolve("custom-agent.properties");
         Files.writeString(configPath, "siliconflow.apiKey=custom-key\n"
                 + "siliconflow.baseUrl=http://localhost:8080/v1\n"
                 + "siliconflow.model=custom-model\n");
-        String previous = System.getProperty("agent.config");
-        System.setProperty("agent.config", configPath.toString());
-        try {
-            SiliconFlowConfig config = SiliconFlowConfig.loadDefault();
 
-            assertThat(config.apiKey()).isEqualTo("custom-key");
-            assertThat(config.baseUrl()).isEqualTo("http://localhost:8080/v1");
-            assertThat(config.model()).isEqualTo("custom-model");
-        } finally {
-            if (previous == null) {
-                System.clearProperty("agent.config");
-            } else {
-                System.setProperty("agent.config", previous);
-            }
-        }
+        SiliconFlowConfig config = SiliconFlowConfig.load(configPath);
+
+        assertThat(config.apiKey()).isEqualTo("custom-key");
+        assertThat(config.baseUrl()).isEqualTo("http://localhost:8080/v1");
+        assertThat(config.model()).isEqualTo("custom-model");
     }
 }

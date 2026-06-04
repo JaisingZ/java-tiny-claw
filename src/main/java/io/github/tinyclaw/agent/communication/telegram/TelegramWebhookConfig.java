@@ -67,7 +67,7 @@ public final class TelegramWebhookConfig {
             int registrationMaxAttempts,
             int registrationRetryIntervalSeconds) {
         if (token == null || token.isBlank()) {
-            throw new IllegalStateException("TELEGRAM_BOT_TOKEN is required");
+            throw new IllegalStateException("telegram.bot.token is required");
         }
         this.token = token;
         this.publicWebhookUrl = publicWebhookUrl;
@@ -85,10 +85,6 @@ public final class TelegramWebhookConfig {
                 "telegram.webhook.registrationRetryIntervalSeconds");
     }
 
-    public static TelegramWebhookConfig fromEnv() {
-        return from(System.getenv());
-    }
-
     public static TelegramWebhookConfig load(Path path) {
         Properties properties = new Properties();
         try (InputStream inputStream = Files.newInputStream(path)) {
@@ -104,10 +100,6 @@ public final class TelegramWebhookConfig {
     }
 
     public static TelegramWebhookConfig loadDefault() {
-        String configPath = System.getProperty("agent.config");
-        if (configPath != null && !configPath.trim().isEmpty()) {
-            return load(Path.of(configPath));
-        }
         Path localConfig = Path.of("agent.properties");
         if (Files.exists(localConfig)) {
             return load(localConfig);
@@ -130,31 +122,27 @@ public final class TelegramWebhookConfig {
         return from(values);
     }
 
-    public static TelegramWebhookConfig from(Map<String, String> env) {
+    public static TelegramWebhookConfig from(Map<String, String> values) {
         return new TelegramWebhookConfig(
-                requiredEnv(env, "TELEGRAM_BOT_TOKEN", "telegram.bot.token"),
-                optional(env, "TELEGRAM_WEBHOOK_URL", "telegram.webhook.url", ""),
-                optional(env, "TELEGRAM_WEBHOOK_HOST", "telegram.webhook.host", "0.0.0.0"),
+                required(values, "telegram.bot.token"),
+                optional(values, "telegram.webhook.url", ""),
+                optional(values, "telegram.webhook.host", "0.0.0.0"),
                 parsePositiveInt(
-                        optional(env, "TELEGRAM_WEBHOOK_PORT", "telegram.webhook.port", ""),
+                        optional(values, "telegram.webhook.port", ""),
                         8080,
-                        "TELEGRAM_WEBHOOK_PORT"),
-                optional(env, "TELEGRAM_WEBHOOK_PATH", "telegram.webhook.path", "/telegram/webhook"),
-                optional(env, "TELEGRAM_WEBHOOK_SECRET", "telegram.webhook.secret", ""),
-                parseBoolean(optional(env, "TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES",
-                        "telegram.webhook.dropPendingUpdates", "false"), false),
-                parsePositiveInt(optional(env, "TELEGRAM_WEBHOOK_MAX_CONNECTIONS",
-                        "telegram.webhook.maxConnections", ""), 40, "TELEGRAM_WEBHOOK_MAX_CONNECTIONS"),
-                optional(env, "TELEGRAM_WEBHOOK_TUNNEL", "telegram.webhook.tunnel", ""),
-                parseNonNegativeInt(optional(env, "TELEGRAM_WEBHOOK_REGISTRATION_DELAY_SECONDS",
-                        "telegram.webhook.registrationDelaySeconds", "0"),
-                        0, "TELEGRAM_WEBHOOK_REGISTRATION_DELAY_SECONDS"),
-                parsePositiveInt(optional(env, "TELEGRAM_WEBHOOK_REGISTRATION_MAX_ATTEMPTS",
-                        "telegram.webhook.registrationMaxAttempts", "1"),
-                        1, "TELEGRAM_WEBHOOK_REGISTRATION_MAX_ATTEMPTS"),
-                parseNonNegativeInt(optional(env, "TELEGRAM_WEBHOOK_REGISTRATION_RETRY_INTERVAL_SECONDS",
-                        "telegram.webhook.registrationRetryIntervalSeconds", "0"),
-                        0, "TELEGRAM_WEBHOOK_REGISTRATION_RETRY_INTERVAL_SECONDS"));
+                        "telegram.webhook.port"),
+                optional(values, "telegram.webhook.path", "/telegram/webhook"),
+                optional(values, "telegram.webhook.secret", ""),
+                parseBoolean(optional(values, "telegram.webhook.dropPendingUpdates", "false"), false),
+                parsePositiveInt(optional(values, "telegram.webhook.maxConnections", ""),
+                        40, "telegram.webhook.maxConnections"),
+                optional(values, "telegram.webhook.tunnel", ""),
+                parseNonNegativeInt(optional(values, "telegram.webhook.registrationDelaySeconds", "0"),
+                        0, "telegram.webhook.registrationDelaySeconds"),
+                parsePositiveInt(optional(values, "telegram.webhook.registrationMaxAttempts", "1"),
+                        1, "telegram.webhook.registrationMaxAttempts"),
+                parseNonNegativeInt(optional(values, "telegram.webhook.registrationRetryIntervalSeconds", "0"),
+                        0, "telegram.webhook.registrationRetryIntervalSeconds"));
     }
 
     public String token() {
@@ -211,24 +199,16 @@ public final class TelegramWebhookConfig {
                 registrationRetryIntervalSeconds);
     }
 
-    private static String requiredEnv(Map<String, String> env, String primaryKey, String fallbackKey) {
-        String value = env.get(primaryKey);
+    private static String required(Map<String, String> values, String key) {
+        String value = values.get(key);
         if (value != null && !value.isBlank()) {
             return value;
         }
-        value = env.get(fallbackKey);
-        if (value != null && !value.isBlank()) {
-            return value;
-        }
-        throw new IllegalStateException(primaryKey + " or " + fallbackKey + " is required");
+        throw new IllegalStateException(key + " is required");
     }
 
-    private static String optional(Map<String, String> env, String primaryKey, String fallbackKey, String defaultValue) {
-        String value = env.get(primaryKey);
-        if (value != null && !value.isBlank()) {
-            return value;
-        }
-        value = env.get(fallbackKey);
+    private static String optional(Map<String, String> values, String key, String defaultValue) {
+        String value = values.get(key);
         if (value != null && !value.isBlank()) {
             return value;
         }

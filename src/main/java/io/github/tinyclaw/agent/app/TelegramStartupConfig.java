@@ -40,11 +40,6 @@ final class TelegramStartupConfig {
     }
 
     private static Map<String, String> loadDefaultProperties() {
-        String configPath = System.getProperty("agent.config");
-        if (hasText(configPath)) {
-            return loadProperties(Path.of(configPath));
-        }
-
         Path localConfig = Path.of("agent.properties");
         if (Files.exists(localConfig)) {
             return loadProperties(localConfig);

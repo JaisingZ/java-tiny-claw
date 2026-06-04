@@ -24,23 +24,14 @@ class LmStudioConfigTest {
     }
 
     @Test
-    void loadDefaultUsesAgentConfigSystemProperty() throws Exception {
+    void loadsCustomBaseUrlFromExplicitPath() throws Exception {
         Path configPath = tempDir.resolve("custom-agent.properties");
         Files.writeString(configPath, "lmstudio.baseUrl=http://127.0.0.1:2345/v1\n"
                 + "lmstudio.model=granite-local\n");
-        String previous = System.getProperty("agent.config");
-        System.setProperty("agent.config", configPath.toString());
-        try {
-            LmStudioConfig config = LmStudioConfig.loadDefault();
 
-            assertThat(config.baseUrl()).isEqualTo("http://127.0.0.1:2345/v1");
-            assertThat(config.model()).isEqualTo("granite-local");
-        } finally {
-            if (previous == null) {
-                System.clearProperty("agent.config");
-            } else {
-                System.setProperty("agent.config", previous);
-            }
-        }
+        LmStudioConfig config = LmStudioConfig.load(configPath);
+
+        assertThat(config.baseUrl()).isEqualTo("http://127.0.0.1:2345/v1");
+        assertThat(config.model()).isEqualTo("granite-local");
     }
 }

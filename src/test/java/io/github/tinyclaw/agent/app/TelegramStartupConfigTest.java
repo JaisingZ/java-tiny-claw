@@ -33,16 +33,6 @@ class TelegramStartupConfigTest {
     }
 
     @Test
-    void ignoresEnvironmentStyleNameInApplicationStartupConfig() {
-        Map<String, String> values = new HashMap<String, String>();
-        values.put("TELEGRAM_WEBHOOK_ENABLED", "true");
-
-        TelegramStartupConfig config = TelegramStartupConfig.from(values);
-
-        assertThat(config.enabled()).isFalse();
-    }
-
-    @Test
     void rejectsInvalidBoolean() {
         Map<String, String> values = new HashMap<String, String>();
         values.put("telegram.webhook.enabled", "maybe");
@@ -53,21 +43,12 @@ class TelegramStartupConfigTest {
     }
 
     @Test
-    void loadDefaultUsesAgentConfigSystemProperty() throws Exception {
+    void loadsFromExplicitPath() throws Exception {
         Path configPath = tempDir.resolve("agent.properties");
         Files.writeString(configPath, "telegram.webhook.enabled=true\n");
-        String previous = System.getProperty("agent.config");
-        System.setProperty("agent.config", configPath.toString());
-        try {
-            TelegramStartupConfig config = TelegramStartupConfig.loadDefault();
 
-            assertThat(config.enabled()).isTrue();
-        } finally {
-            if (previous == null) {
-                System.clearProperty("agent.config");
-            } else {
-                System.setProperty("agent.config", previous);
-            }
-        }
+        TelegramStartupConfig config = TelegramStartupConfig.load(configPath);
+
+        assertThat(config.enabled()).isTrue();
     }
 }

@@ -40,11 +40,6 @@ public final class TelegramAgentConfig {
     }
 
     static TelegramAgentConfig loadDefault() {
-        String configPath = System.getProperty("agent.config");
-        if (hasText(configPath)) {
-            return load(Path.of(configPath));
-        }
-
         Path localConfig = Path.of("agent.properties");
         if (Files.exists(localConfig)) {
             return load(localConfig);

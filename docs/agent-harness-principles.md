@@ -1,10 +1,10 @@
 # Agent Harness 设计原则
 
-本文档定义 `Tiny Agent Harness` 的项目级架构基线。后续所有设计与实现都以本文档为准；若实现与本文档冲突，先改文档，再改代码。
+本文档定义 `Tiny Agent Harness` 的项目级架构基线。后续所有设计与实现都以本文档为准；若实现与本文档冲突，先同步文档，再改代码。
 
 ## 1. 目标
 
-- 构建一个可控、可测试、可审计体验的 Java AI Agent Harness（当前以可观测可追踪闭环为主）。
+- 构建一个可控、可测试、可观测的 Java AI Agent Harness。
 - 让大模型负责“决策”，Harness 负责“运行时控制”。
 - 用清晰边界替代黑盒框架，降低上下文失控和边界失控。
 
@@ -24,36 +24,42 @@
 
 ### 3.2 工具极简
 
-默认只保留最小工具集：
+当前真实物理工具集保持最小化：
 
-- `read`
-- `write`
-- `edit`
+- `read_file`
+- `write_file`
+- `edit_file`
 - `bash`
 
-### 3.3 上下文模型（当前实现）
+### 3.3 上下文模型
 
 当前 Tiny Agent Harness 精简版不做任务持久化/恢复。
 
 - 运行时只维护内存上下文 `AgentContext`。
-- 每次运行由 CLI 输入/内存上下文重建，步进信息不跨 JVM 持久化。
-- 历史上 `io.github.tinyclaw.agent.state`、`StateStore`、`checkpoint` 可用于外部恢复，这些能力**不在当前实现中**。
+- 每次运行由 CLI 输入或通信入口消息创建新的 `Task`。
+- 步进信息不跨 JVM 持久化。
+- 历史上 `io.github.tinyclaw.agent.state`、`StateStore`、`checkpoint` 可作为外部恢复方向，但这些能力不在当前实现中。
 
-### 3.4 安全前置
+### 3.4 安全边界
 
-- 高危操作必须在执行前可拦截。
-- 所有工具调用统一经过 Middleware。
-- 越界行为必须可追踪（至少在日志与结果中留痕）。
+当前没有独立 `middleware` 包，也没有完整审批/授权层。当前安全边界由以下实现承担：
+
+- `Tool` 自身校验参数和工作区路径边界。
+- `ToolRegistry` 统一路由工具调用，并把未知工具和工具异常包装为失败结果。
+- `AgentEngine` 按 `Tool.isSideEffect()` 处理只读并发和涉写串行。
+- `RunLogger` 和 `RunResult` 保留人类可读的运行观测。
+
+审批、白名单、黑名单、风险分级等治理能力属于后续扩展方向，不能写成当前已实现。
 
 ### 3.5 观测优先
 
 - 以可读日志为主，使用 `RunLogger` 输出关键步骤。
-- CLI 非 debug 场景必须输出 `OBSERVATIONS`，用于闭环判断。
+- CLI 非 debug 场景输出 `OBSERVATIONS`，用于闭环判断。
 - 最终输出以 `RunResult` 为准，覆盖成功/失败、步数与观察信息。
 
 ### 3.6 接口分层
 
-- 通过接口隔离 Provider、Tool、Middleware，避免跨层耦合。
+- 通过接口隔离 Provider、Tool、Runtime 与通信入口。
 - 实现可替换，边界不能模糊。
 - 不把模型厂商能力泄漏到 Runtime，不把运行时控制放进 Provider。
 
@@ -63,13 +69,12 @@
 
 Runtime 负责主循环与控制流。
 
-- 接收任务
-- 组织消息上下文
-- 调用模型
-- 解析动作
-- 执行工具
-- 处理观测结果并推进下一步
-- 决定继续或结束
+- 接收 `Task`
+- 创建并推进 `AgentContext`
+- 调用 `ModelProvider`
+- 处理 `ThinkingDecision`、`FinishDecision`、`ToolDecision`、`ParallelToolDecision`
+- 执行工具调用并记录观测
+- 决定继续、成功或失败
 
 Runtime 不负责具体工具实现，也不处理模型厂商协议。
 
@@ -77,9 +82,9 @@ Runtime 不负责具体工具实现，也不处理模型厂商协议。
 
 Provider 负责模型协议适配。
 
-- 把 `AgentContext` + `DecisionPhase` 映射为厂商请求
-- 把厂商响应映射为 `Decision`
-- 处理厂商错误与响应校验
+- 把 `AgentContext` + `DecisionPhase` + 工具定义映射为厂商请求。
+- 把厂商响应映射为项目内部 `Decision`。
+- 处理厂商错误与响应校验。
 
 Provider 不执行工具、不修改主循环状态。
 
@@ -87,76 +92,86 @@ Provider 不执行工具、不修改主循环状态。
 
 Tool Registry 负责工具声明与路由执行。
 
-- 注册工具
-- 按名查找工具
-- 暴露工具定义给模型
-- 路由执行并包装统一结果
+- 注册工具。
+- 按名查找工具。
+- 暴露工具定义给模型。
+- 路由执行并包装统一结果。
 
-### 4.4 Middleware
+### 4.4 Communication
 
-Middleware 负责治理与安全约束。
+Communication 负责把外部消息转换成 Agent 任务。
 
-- 路径与参数边界
-- 授权和 allow/deny
-- 风险拦截与策略执行
+- `communication` 定义统一聊天消息、会话输出和串行调度。
+- `communication.telegram` 提供 Telegram Webhook 接入、Webhook 注册和消息回复。
+- 通信层不把 Telegram 协议泄漏进 Runtime。
 
 ### 4.5 StateStore（历史目标）
 
 - 历史目标：任务计划、当前步骤、历史摘要、错误信息可持久化，并可恢复。
-- 当前 Tiny Agent Harness：**不实现** `StateStore`（对应的历史分层 `io.github.tinyclaw.agent.state` 已停用）。
+- 当前 Tiny Agent Harness：不实现 `StateStore`，对应历史分层 `io.github.tinyclaw.agent.state` 已停用。
 
 ### 4.6 Tracer（历史目标）
 
 - 历史目标：记录结构化 trace、决策链、模型输入输出。
-- 当前 Tiny Agent Harness：**不实现** `Tracer`（对应的历史分层 `io.github.tinyclaw.agent.trace` 已停用）；观测由 `RunLogger` + `RunResult` 覆盖。
+- 当前 Tiny Agent Harness：不实现 `Tracer`，对应历史分层 `io.github.tinyclaw.agent.trace` 已停用；观测由 `RunLogger` + `RunResult` 覆盖。
 
 ## 5. 默认实现策略
 
-### 5.1 第一版形态
+### 5.1 当前形态
 
-- 模块化单体，先把边界收紧再扩展。
-- 以 CLI 场景与本地任务为主要验证对象。
+- 模块化单体。
+- 以 CLI、本地工具任务和 Telegram Webhook 为主要验证入口。
+- 默认 Provider 装配使用 LM Studio OpenAI-compatible 服务。
 
 ### 5.2 循环模型
 
-默认采用：
+当前主循环采用：
 
-`think -> act -> observe -> decide`
+```text
+optional thinking -> action decision -> tool/finish -> observe -> decide
+```
 
 其中：
 
-- `think`：模型给出 `Decision`
-- `act`：Runtime 调用 Registry 执行工具
-- `observe`：Runtime 记录观察并更新 `AgentContext`
-- `decide`：Runtime 判断继续、失败或结束
+- `thinking`：可选 `THINKING` 阶段，模型输出 `ThinkingDecision`。
+- `action decision`：`ACTION` 阶段，模型输出最终回答或工具调用。
+- `tool/finish`：Runtime 执行工具或结束任务。
+- `observe`：Runtime 记录工具结果并更新 `AgentContext`。
+- `decide`：Runtime 判断继续、失败或结束。
 
 ### 5.3 失败处理
 
-- 工具失败要返回统一失败语义
-- 连续异常和上限命中可触发中断
-- 高危动作必须被拦截或返回失败
+- Provider 异常转换为 `provider_error: ...`。
+- 未知工具返回 `Unknown tool: <name>`。
+- 工具异常转换为 `tool_error: ...`。
+- 工具返回失败时直接结束本轮任务。
+- 不支持的决策返回 `unsupported_decision`。
+- Thinking 阶段返回非 `ThinkingDecision` 时返回 `unsupported_thinking_decision`。
+- 并行工具执行异常返回 `parallel_execution_failed: ...`。
+- 超过最大步数返回 `max_steps_exceeded`。
 
 ## 6. 开发约束
 
-- 新功能必须明确落在哪一层：Runtime、Provider、Tool Registry、Middleware。
-- 新工具必须先经过 Registry 与 Middleware 约束。
+- 新功能必须明确落在哪一层：Runtime、Provider、Tool Registry、Communication 或 app 装配。
+- 新工具必须先经过 `ToolRegistry` 注册，并由工具自身保留参数和物理边界校验。
 - 新逻辑不能把控制流散落在业务层。
-- 若跨层边界变模糊，优先先重构边界再加功能。
+- 若跨层边界变模糊，优先重构边界再加功能。
 
 ## 7. 版本控制原则
 
-- 本文档是实现前约束；实现发生变化先更新本文档。
+- 本文档是实现前约束；实现发生变化要同步本文档。
 - 未经文档确认，不应进入大规模实现。
 
 ## 8. 当前结论
 
-实现顺序建议：
+当前稳定实现顺序是：
 
 1. Runtime
 2. Provider
 3. Tool Registry
-4. Middleware
+4. Communication
 5. 可观测增强（RunLogger/RunResult 继续补齐）
+6. 可选治理层（审批、白名单、风险控制）
 
 ## 9. 技术选型
 
@@ -171,34 +186,36 @@ Middleware 负责治理与安全约束。
 
 ```text
 src/main/java/io/github/tinyclaw/agent
-├── app          启动入口与装配
-├── runtime      主循环、AgentContext、RunLogger、RunResult
-├── provider     模型适配
-├── tool         工具注册与执行
-├── middleware   安全、白名单、循环限制
-└── domain       纯数据模型
+├── app            命令行入口与应用装配
+├── communication  可选通信适配，含 Telegram Webhook
+├── domain         纯数据模型
+├── provider       模型适配
+├── runtime        主循环、RunLogger、RunResult
+└── tool           工具注册与执行
 ```
 
 对应测试结构：
 
 ```text
 src/test/java/io/github/tinyclaw/agent
-├── runtime
+├── app
+├── architecture
+├── communication
 ├── provider
-├── tool
-├── middleware
-└── architecture
+├── runtime
+└── tool
 ```
 
 ## 11. 单元测试基线
 
-- `runtime`：`think -> act -> observe -> decide` 主循环正确结束
-- `tool`：工具注册、查找、执行、失败返回统一结果
-- `middleware`：高危调用在执行前被拦截
-- `architecture`：分层不能直接依赖具体工具实现
+- `runtime`：主循环能处理成功、失败、Thinking、单工具和并行工具。
+- `tool`：工具注册、查找、执行、失败返回统一结果。
+- `communication`：消息接收、串行调度、Webhook 安全校验和回复行为。
+- `provider`：文本完成、工具调用、空响应和厂商错误。
+- `architecture`：Runtime 不依赖具体 Provider 实现或厂商 SDK 类型。
 
 最小验收标准：
 
-- 所有新增 public 行为都有单元测试
-- 关键流程至少一条成功与一条失败路径
-- 非 debug 与 debug 输出行为保持一致（尤其是 `OBSERVATIONS`）
+- 所有新增 public 行为都有单元测试。
+- 关键流程至少一条成功与一条失败路径。
+- 非 debug 与 debug 输出行为保持一致，尤其是 `OBSERVATIONS` 和 `RESULT`。

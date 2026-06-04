@@ -20,11 +20,11 @@ class TelegramWebhookConfigTest {
     Path tempDir;
 
     /**
-     * 环境变量缺省时使用保守默认值。
+     * 未配置可选项时使用保守默认值。
      */
     @Test
-    void loadsDefaultsFromEnvironment() {
-        TelegramWebhookConfig config = TelegramWebhookConfig.from(newEnv("TELEGRAM_BOT_TOKEN", "token-1"));
+    void loadsDefaultsFromProperties() {
+        TelegramWebhookConfig config = TelegramWebhookConfig.from(newValues("telegram.bot.token", "token-1"));
 
         assertThat(config.token()).isEqualTo("token-1");
         assertThat(config.publicWebhookUrl()).isEqualTo("");
@@ -40,11 +40,11 @@ class TelegramWebhookConfigTest {
     }
 
     /**
-     * 兼容 agent.properties 中的配置键。
+     * 从 agent.properties key 读取 Bot Token。
      */
     @Test
     void loadsBotTokenFromPropertyName() {
-        TelegramWebhookConfig config = TelegramWebhookConfig.from(newEnv("telegram.bot.token", "token-1"));
+        TelegramWebhookConfig config = TelegramWebhookConfig.from(newValues("telegram.bot.token", "token-1"));
 
         assertThat(config.token()).isEqualTo("token-1");
     }
@@ -85,50 +85,28 @@ class TelegramWebhookConfigTest {
     }
 
     /**
-     * 默认加载遵守项目已有 agent.config 约定。
-     */
-    @Test
-    void loadDefaultUsesAgentConfigSystemProperty() throws Exception {
-        Path configPath = tempDir.resolve("custom-agent.properties");
-        Files.writeString(configPath, "telegram.bot.token=token-1\n");
-        String previous = System.getProperty("agent.config");
-        System.setProperty("agent.config", configPath.toString());
-        try {
-            TelegramWebhookConfig config = TelegramWebhookConfig.loadDefault();
-
-            assertThat(config.token()).isEqualTo("token-1");
-        } finally {
-            if (previous == null) {
-                System.clearProperty("agent.config");
-            } else {
-                System.setProperty("agent.config", previous);
-            }
-        }
-    }
-
-    /**
      * token 必填。
      */
     @Test
     void requiresBotToken() {
         assertThatThrownBy(() -> TelegramWebhookConfig.from(Collections.<String, String>emptyMap()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("TELEGRAM_BOT_TOKEN");
+                .hasMessageContaining("telegram.bot.token");
     }
 
     /**
-     * 显式环境变量覆盖默认监听配置。
+     * 显式 properties 覆盖默认监听配置。
      */
     @Test
-    void overridesDefaultsFromEnvironment() {
-        Map<String, String> env = newEnv("TELEGRAM_BOT_TOKEN", "token-1");
-        env.put("TELEGRAM_WEBHOOK_URL", "https://example.com/hook");
-        env.put("TELEGRAM_WEBHOOK_SECRET", "secret-1");
-        env.put("TELEGRAM_WEBHOOK_HOST", "127.0.0.1");
-        env.put("TELEGRAM_WEBHOOK_PORT", "9090");
-        env.put("TELEGRAM_WEBHOOK_PATH", "/hook");
+    void overridesDefaultsFromProperties() {
+        Map<String, String> values = newValues("telegram.bot.token", "token-1");
+        values.put("telegram.webhook.url", "https://example.com/hook");
+        values.put("telegram.webhook.secret", "secret-1");
+        values.put("telegram.webhook.host", "127.0.0.1");
+        values.put("telegram.webhook.port", "9090");
+        values.put("telegram.webhook.path", "/hook");
 
-        TelegramWebhookConfig config = TelegramWebhookConfig.from(env);
+        TelegramWebhookConfig config = TelegramWebhookConfig.from(values);
 
         assertThat(config.publicWebhookUrl()).isEqualTo("https://example.com/hook");
         assertThat(config.secretToken()).isEqualTo("secret-1");
@@ -137,9 +115,9 @@ class TelegramWebhookConfigTest {
         assertThat(config.webhookPath()).isEqualTo("/hook");
     }
 
-    private static Map<String, String> newEnv(String key, String value) {
-        Map<String, String> env = new HashMap<String, String>();
-        env.put(key, value);
-        return env;
+    private static Map<String, String> newValues(String key, String value) {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put(key, value);
+        return values;
     }
 }

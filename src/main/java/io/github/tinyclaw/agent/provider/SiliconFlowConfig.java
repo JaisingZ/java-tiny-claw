@@ -47,13 +47,9 @@ public final class SiliconFlowConfig {
     }
 
     /**
-     * 从系统属性、本地文件或 classpath 默认文件加载配置。
+     * 从本地文件或 classpath 默认文件加载配置。
      */
     public static SiliconFlowConfig loadDefault() {
-        String configPath = System.getProperty("agent.config");
-        if (configPath != null && !configPath.trim().isEmpty()) {
-            return load(Path.of(configPath));
-        }
         Path localConfig = Path.of("agent.properties");
         if (Files.exists(localConfig)) {
             return load(localConfig);

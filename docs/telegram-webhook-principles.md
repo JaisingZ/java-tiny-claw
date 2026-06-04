@@ -95,9 +95,9 @@ sequenceDiagram
 | 生产模型角色 | 本项目对应实现 | 说明 |
 | --- | --- | --- |
 | `setWebhook` 注册 | `TelegramWebhookRegistrar` | 调用 Telegram Bot API `setWebhook`，设置 `url`、`allowed_updates=["message"]`、`secret_token`、`drop_pending_updates`、`max_connections`。 |
-| 公网 HTTPS 入口 | `TELEGRAM_WEBHOOK_URL` 或 `TELEGRAM_WEBHOOK_TUNNEL=trycloudflare` | 生产可由 Nginx/网关转发；本地可用 trycloudflare 临时 HTTPS 地址。 |
-| Webhook Controller | `TelegramTransport` | 使用 JDK `HttpServer` 监听 `TELEGRAM_WEBHOOK_PATH`，接收 Telegram POST update。 |
-| Secret token 校验 | `TelegramTransport` | 校验 `X-Telegram-Bot-Api-Secret-Token` 是否等于 `TELEGRAM_WEBHOOK_SECRET`。 |
+| 公网 HTTPS 入口 | `telegram.webhook.url` 或 `telegram.webhook.tunnel=trycloudflare` | 生产可由 Nginx/网关转发；本地可用 trycloudflare 临时 HTTPS 地址。 |
+| Webhook Controller | `TelegramTransport` | 使用 JDK `HttpServer` 监听 `telegram.webhook.path`，接收 Telegram POST update。 |
+| Secret token 校验 | `TelegramTransport` | 校验 `X-Telegram-Bot-Api-Secret-Token` 是否等于 `telegram.webhook.secret`。 |
 | Update 解析 | `TelegramTransport` | 只处理文本消息，转换为 `ChatMessage(messageId, chatId, senderId, text)`；非文本 update 返回 200 并忽略。 |
 | 轻量队列 | `WorkspaceSerialExecutor` | 单线程串行执行同一工作区的 Agent 任务，避免并发写工作区。 |
 | Agent 调度 | `ChatAgentService` | 将消息转换为 `Task("chat-" + messageId, text)`，创建带聊天日志的 `AgentEngine` 并提交执行。 |
@@ -124,15 +124,26 @@ Telegram Bot API
 
 ## 配置入口
 
-常用配置来自 `agent.properties`、系统属性或环境变量：
+默认运行读取项目根目录 `agent.properties`；如果根目录不存在，则读取 classpath 中的 `agent.properties`。当前应用启动配置和 Webhook 宿主配置都只使用 properties key。
 
-- `TELEGRAM_BOT_TOKEN` / `telegram.bot.token`：Bot Token，必填。
-- `TELEGRAM_WEBHOOK_URL` / `telegram.webhook.url`：公网 HTTPS Webhook URL；为空时只启动本地 server，不注册公网 Webhook。
-- `TELEGRAM_WEBHOOK_SECRET` / `telegram.webhook.secret`：可选 secret token，用于校验 Telegram 请求头。
-- `TELEGRAM_WEBHOOK_PATH` / `telegram.webhook.path`：本地 Webhook path，默认 `/telegram/webhook`。
-- `TELEGRAM_WEBHOOK_TUNNEL` / `telegram.webhook.tunnel`：设为 `trycloudflare` 时，本地启动临时公网 HTTPS 隧道。
-- `TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES` / `telegram.webhook.dropPendingUpdates`：注册 Webhook 时是否丢弃积压 update。
-- `TELEGRAM_WEBHOOK_MAX_CONNECTIONS` / `telegram.webhook.maxConnections`：传给 `setWebhook.max_connections`。
+常用 properties key：
+
+- `telegram.bot.token`：Bot Token，必填。
+- `telegram.webhook.enabled`：无参数启动时是否进入 Telegram Webhook 服务，默认 `false`。
+- `telegram.webhook.url`：公网 HTTPS Webhook URL；为空且未启用 trycloudflare 时只启动本地 server，不注册公网 Webhook。
+- `telegram.webhook.secret`：可选 secret token，用于校验 Telegram 请求头。
+- `telegram.webhook.host`：本地监听地址，默认 `0.0.0.0`。
+- `telegram.webhook.port`：本地监听端口，默认 `8080`。
+- `telegram.webhook.path`：本地 Webhook path，默认 `/telegram/webhook`。
+- `telegram.webhook.tunnel`：设为 `trycloudflare` 时，本地启动临时公网 HTTPS 隧道。
+- `telegram.webhook.dropPendingUpdates`：注册 Webhook 时是否丢弃积压 update，默认 `false`。
+- `telegram.webhook.maxConnections`：传给 `setWebhook.max_connections`，默认 `40`。
+- `telegram.webhook.registrationDelaySeconds`：trycloudflare 动态 URL 注册前延迟秒数，默认 `60`。
+- `telegram.webhook.registrationMaxAttempts`：`setWebhook` 最大尝试次数（含首次），默认 `3`。
+- `telegram.webhook.registrationRetryIntervalSeconds`：`setWebhook` 重试间隔秒数，默认 `20`。
+- `agent.workdir`：Webhook 模式 Agent 工作目录，默认 `.`。
+- `agent.maxSteps`：Webhook 模式 Agent 最大步数，默认 `8`。
+- `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
 
 ## 当前未实现项
 
