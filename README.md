@@ -24,9 +24,11 @@ src/main/java/io/github/tinyclaw/agent
   communication/ 可选通信适配
   domain/       Task、Decision、ToolCall、AgentContext 相关对象
 
-docs/           设计说明和 Main Loop 规划
+docs/           设计说明、Main Loop 规划和 Telegram Webhook 工作原理
 scripts/        可选本地辅助脚本
 ```
+
+Telegram Webhook 工作原理见 [docs/telegram-webhook-principles.md](docs/telegram-webhook-principles.md)。
 
 ## 环境要求
 
