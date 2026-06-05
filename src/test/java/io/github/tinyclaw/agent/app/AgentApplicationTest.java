@@ -3,13 +3,19 @@ package io.github.tinyclaw.agent.app;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.tinyclaw.agent.runtime.ConsoleRunLogger;
+import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ThinkingDecision;
+import io.github.tinyclaw.agent.domain.ToolCall;
+import io.github.tinyclaw.agent.domain.ToolDecision;
+import io.github.tinyclaw.agent.domain.ToolDefinition;
+import io.github.tinyclaw.agent.runtime.RunLogger;
 import io.github.tinyclaw.agent.runtime.RunResult;
 import io.github.tinyclaw.agent.runtime.RunStatus;
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
+import io.github.tinyclaw.agent.tool.ToolResult;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AgentApplicationTest {
@@ -77,34 +83,89 @@ class AgentApplicationTest {
     @Test
     void debugRunOutputPrintsOnlyCompactResult() {
         RunResult result = RunResult.success(1, Collections.singletonList("Hello，Java！"), "done");
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        ConsoleRunLogger logger = new ConsoleRunLogger(
-                new PrintStream(output, true, StandardCharsets.UTF_8), false);
+        RecordingRunLogger logger = new RecordingRunLogger();
 
         AgentApplication.emitRunOutput(logger, result, true);
 
-        assertThat(output.toString(StandardCharsets.UTF_8))
-                .contains("RESULT status=SUCCESS answer=done failure=null")
-                .doesNotContain("TRACE")
-                .doesNotContain("OBSERVATIONS")
-                .doesNotContain("Hello，Java！");
+        assertThat(logger.lines()).containsExactly("RESULT status=SUCCESS answer=done failure=null");
     }
 
     @Test
     void normalRunOutputKeepsResultAndObservations() {
         RunResult result = new RunResult(RunStatus.SUCCESS, "done", null, 1,
                 Collections.singletonList("Hello，Java！"));
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        ConsoleRunLogger logger = new ConsoleRunLogger(
-                new PrintStream(output, true, StandardCharsets.UTF_8), false);
+        RecordingRunLogger logger = new RecordingRunLogger();
 
         AgentApplication.emitRunOutput(logger, result, false);
 
-        assertThat(output.toString(StandardCharsets.UTF_8))
-                .contains("RESULT status=SUCCESS answer=done failure=null")
-                .contains("OBSERVATIONS")
-                .contains("Hello，Java！")
-                .doesNotContain("TRACE");
+        assertThat(logger.lines()).containsExactly(
+                "RESULT status=SUCCESS answer=done failure=null",
+                "OBSERVATIONS",
+                "Hello，Java！");
+    }
+
+    private static final class RecordingRunLogger implements RunLogger {
+
+        private final List<String> lines = new ArrayList<String>();
+
+        @Override
+        public void writeLine(String line) {
+            lines.add(line);
+        }
+
+        @Override
+        public void writeBlankLine() {
+            lines.add("");
+        }
+
+        @Override
+        public void registryMounted(String toolName) {
+        }
+
+        @Override
+        public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
+                List<ToolDefinition> tools) {
+        }
+
+        @Override
+        public void turnStarted(int turn) {
+        }
+
+        @Override
+        public void thinkingStarted() {
+        }
+
+        @Override
+        public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
+        }
+
+        @Override
+        public void actionStarted(List<ToolDefinition> tools) {
+        }
+
+        @Override
+        public void toolDecision(ToolDecision decision) {
+        }
+
+        @Override
+        public void toolStarted(ToolCall call) {
+        }
+
+        @Override
+        public void toolCompleted(ToolCall call, ToolResult result, long durationMillis) {
+        }
+
+        @Override
+        public void finished(FinishDecision decision) {
+        }
+
+        @Override
+        public void failed(String reason) {
+        }
+
+        private List<String> lines() {
+            return lines;
+        }
     }
 
     private static final class FakeRuntime implements AgentApplication.ApplicationRuntime {

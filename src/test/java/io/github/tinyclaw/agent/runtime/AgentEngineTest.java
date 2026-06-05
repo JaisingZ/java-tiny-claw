@@ -2,6 +2,8 @@ package io.github.tinyclaw.agent.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.tinyclaw.agent.context.PromptComposer;
+import io.github.tinyclaw.agent.context.PromptContext;
 import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
@@ -128,6 +130,23 @@ class AgentEngineTest {
     }
 
     /**
+     * 每次调用模型前由 Runtime 组装 System Prompt 并传给 Provider
+     */
+    @Test
+    void passesComposedSystemPromptToProvider() {
+        RecordingPromptComposer composer = new RecordingPromptComposer("composed-system-prompt");
+        RecordingPromptProvider provider = new RecordingPromptProvider(finish("done"));
+        EngineFixture fixture = fixture().withPromptComposer(composer);
+
+        RunResult result = fixture.run(provider, "task-prompt", "finish");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(composer.contexts()).hasSize(1);
+        assertThat(composer.contexts().get(0).phase()).isEqualTo(DecisionPhase.ACTION);
+        assertThat(provider.prompts()).containsExactly("composed-system-prompt");
+    }
+
+    /**
      * 可读运行日志按主循环顺序输出关键节点
      */
     @Test
@@ -160,7 +179,7 @@ class AgentEngineTest {
     void failsWhenThinkingProviderThrows() {
         EngineFixture fixture = fixture().withThinking(true);
 
-        RunResult result = fixture.run((state, phase, tools) -> {
+        RunResult result = fixture.run((state, phase, tools, systemPrompt) -> {
             if (phase == DecisionPhase.THINKING) {
                 throw new RuntimeException("boom");
             }
@@ -283,7 +302,8 @@ class AgentEngineTest {
             private int index = 0;
 
             @Override
-            public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+            public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                    String systemPrompt) {
                 int current = index;
                 if (current < decisions.length - 1) {
                     index++;
@@ -294,7 +314,7 @@ class AgentEngineTest {
     }
 
     private static ModelProvider constantProvider(final Decision decision) {
-        return (state, phase, availableTools) -> decision;
+        return (state, phase, availableTools, systemPrompt) -> decision;
     }
 
     private static ToolDecision tool(String toolName, Object... arguments) {
@@ -325,7 +345,8 @@ class AgentEngineTest {
         private final List<List<ToolDefinition>> toolsByPhase = new ArrayList<List<ToolDefinition>>();
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
             phases.add(phase);
             toolsByPhase.add(availableTools);
             if (phase == DecisionPhase.THINKING) {
@@ -428,6 +449,45 @@ class AgentEngineTest {
         @Override
         public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.failure("read failed");
+        }
+    }
+
+    private static final class RecordingPromptComposer implements PromptComposer {
+        private final String prompt;
+        private final List<PromptContext> contexts = new ArrayList<PromptContext>();
+
+        private RecordingPromptComposer(String prompt) {
+            this.prompt = prompt;
+        }
+
+        @Override
+        public String compose(PromptContext context) {
+            contexts.add(context);
+            return prompt;
+        }
+
+        private List<PromptContext> contexts() {
+            return contexts;
+        }
+    }
+
+    private static final class RecordingPromptProvider implements ModelProvider {
+        private final Decision decision;
+        private final List<String> prompts = new ArrayList<String>();
+
+        private RecordingPromptProvider(Decision decision) {
+            this.decision = decision;
+        }
+
+        @Override
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            prompts.add(systemPrompt);
+            return decision;
+        }
+
+        private List<String> prompts() {
+            return prompts;
         }
     }
 
@@ -555,6 +615,7 @@ class AgentEngineTest {
         private RunLogger runLogger = new RunLoggerAdapter();
         private int maxSteps = 4;
         private boolean thinking = false;
+        private PromptComposer promptComposer = null;
 
         private EngineFixture withTools(Tool... tools) {
             for (Tool tool : tools) {
@@ -578,9 +639,17 @@ class AgentEngineTest {
             return this;
         }
 
+        private EngineFixture withPromptComposer(PromptComposer value) {
+            promptComposer = value;
+            return this;
+        }
+
         private RunResult run(ModelProvider provider, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
-            AgentEngine engine = new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor);
+            AgentEngine engine = promptComposer == null
+                    ? new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor)
+                    : new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
+                            promptComposer, Path.of("."));
             try {
                 return engine.run(new Task(taskId, goal));
             } finally {

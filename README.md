@@ -18,6 +18,7 @@
 src/main/java/io/github/tinyclaw/agent
   app/          命令行入口和应用装配
   runtime/      AgentEngine、RunLogger、RunResult
+  context/      系统提示词组装与上下文约束
   provider/     ModelProvider 和 OpenAI-compatible Provider 实现
   tool/         工具接口、注册表和内置工具
   communication/ 可选通信适配
@@ -28,6 +29,12 @@ scripts/        可选本地辅助脚本
 ```
 
 Telegram Webhook 工作原理见 [docs/telegram-webhook-principles.md](docs/telegram-webhook-principles.md)。
+
+运行时每轮请求模型前会先经过 `PromptComposer` 生成 `systemPrompt`，并注入 Provider：
+
+- `AGENTS.md`（标准文件名，仅支持 `AGENTS.md`，不读取 `AGENT.md`）
+- 当前阶段约束（THINKING/ACTION）与运行约束
+- `SKILL.md` 外挂能力摘要（存在时追加）
 
 ## 环境要求
 

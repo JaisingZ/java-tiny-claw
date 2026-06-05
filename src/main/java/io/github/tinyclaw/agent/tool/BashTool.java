@@ -88,7 +88,7 @@ public final class BashTool implements Tool {
         }
 
         String command = (String) rawCommand;
-        logger.info("Executing bash command: {}", command);
+        logger.debug("Executing bash command: {}", command);
         Process process;
         try {
             process = newProcess(command).start();

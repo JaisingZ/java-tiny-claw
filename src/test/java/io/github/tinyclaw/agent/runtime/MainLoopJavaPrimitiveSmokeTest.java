@@ -59,7 +59,8 @@ class MainLoopJavaPrimitiveSmokeTest {
     private static final class WriteCompileRunProvider implements ModelProvider {
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
             if (state.observations().isEmpty()) {
                 Map<String, Object> arguments = new LinkedHashMap<String, Object>();
                 arguments.put("path", "HelloFromAgent.java");

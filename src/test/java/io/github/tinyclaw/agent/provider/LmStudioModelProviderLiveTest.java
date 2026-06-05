@@ -34,6 +34,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 @EnabledIfSystemProperty(named = "lmstudio.live", matches = "true")
 class LmStudioModelProviderLiveTest {
 
+    private static final String SYSTEM_PROMPT = "你是 Tiny Agent Harness 的模型 Provider。";
+
     @Test
     void mainLoopPrintsProviderDebugWithRealApi() {
         StringBuilder providerExchange = new StringBuilder();
@@ -65,7 +67,7 @@ class LmStudioModelProviderLiveTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("live-thinking-weather",
                         "请先思考如何查询今天合肥天气，不要调用工具，不要给最终答案。")),
-                DecisionPhase.THINKING, Collections.<ToolDefinition>emptyList());
+                DecisionPhase.THINKING, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
 
         assertThat(decision).isInstanceOf(ThinkingDecision.class);
         ThinkingDecision thinking = (ThinkingDecision) decision;
@@ -78,7 +80,7 @@ class LmStudioModelProviderLiveTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("live-tool-read-file",
                         "必须调用 read_file 工具读取 a.txt。工具参数 path 必须是 a.txt，不要直接回答。")),
-                DecisionPhase.ACTION, Collections.singletonList(readFileToolDefinition()));
+                DecisionPhase.ACTION, Collections.singletonList(readFileToolDefinition()), SYSTEM_PROMPT);
 
         assertThat(decision).isInstanceOf(ToolDecision.class);
         ToolDecision toolDecision = (ToolDecision) decision;
@@ -93,7 +95,7 @@ class LmStudioModelProviderLiveTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("live-parallel-tools",
                         "必须并行调用两个 read_file 工具，分别读取 a.txt 和 b.txt。不要直接回答。")),
-                DecisionPhase.ACTION, Collections.singletonList(readFileToolDefinition()));
+                DecisionPhase.ACTION, Collections.singletonList(readFileToolDefinition()), SYSTEM_PROMPT);
 
         assertThat(decision).isInstanceOf(ParallelToolDecision.class);
         ParallelToolDecision parallelDecision = (ParallelToolDecision) decision;

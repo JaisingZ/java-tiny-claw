@@ -20,16 +20,18 @@ class ArchitectureTest {
                     .consideringOnlyDependenciesInLayers()
                     .layer("Domain").definedBy("io.github.tinyclaw.agent.domain..")
                     .layer("Provider").definedBy("io.github.tinyclaw.agent.provider..")
+                    .layer("Context").definedBy("io.github.tinyclaw.agent.context..")
                     .layer("Tool").definedBy("io.github.tinyclaw.agent.tool..")
                     .layer("Runtime").definedBy("io.github.tinyclaw.agent.runtime..")
                     .layer("Communication").definedBy("io.github.tinyclaw.agent.communication..")
                     .layer("App").definedBy("io.github.tinyclaw.agent.app..")
                     .whereLayer("Runtime").mayOnlyAccessLayers(
-                            "Domain", "Provider", "Tool")
+                            "Domain", "Provider", "Tool", "Context")
                     .whereLayer("Communication").mayOnlyAccessLayers(
                             "Domain", "Provider", "Tool", "Runtime")
                     .whereLayer("Provider").mayOnlyAccessLayers("Domain")
+                    .whereLayer("Context").mayOnlyAccessLayers("Domain")
                     .whereLayer("Tool").mayOnlyAccessLayers("Domain")
                     .whereLayer("App").mayOnlyAccessLayers(
-                            "Domain", "Provider", "Tool", "Runtime", "Communication");
+                            "Domain", "Provider", "Tool", "Runtime", "Communication", "Context");
 }

@@ -1,5 +1,8 @@
 package io.github.tinyclaw.agent.runtime;
 
+import io.github.tinyclaw.agent.context.DefaultPromptComposer;
+import io.github.tinyclaw.agent.context.PromptComposer;
+import io.github.tinyclaw.agent.context.PromptContext;
 import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
@@ -19,11 +22,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 主循环运行时。
@@ -31,14 +33,14 @@ import org.slf4j.LoggerFactory;
  */
 public final class AgentEngine {
 
-    private static final Logger logger = LoggerFactory.getLogger(AgentEngine.class);
-
     private final ModelProvider provider;
     private final ToolRegistry toolRegistry;
     private final int maxSteps;
     private final boolean enableThinking;
     private final RunLogger runLogger;
     private final ExecutorService toolExecutor;
+    private final PromptComposer promptComposer;
+    private final Path workDir;
 
     /**
      * 创建不启用 thinking 的主循环。
@@ -62,21 +64,37 @@ public final class AgentEngine {
         this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor());
     }
 
+    /**
+     * 创建带 Prompt 组装器和可读日志输出的主循环。
+     */
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger, PromptComposer promptComposer, Path workDir) {
+        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor(),
+                promptComposer, workDir);
+    }
+
     AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor) {
+        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+                new DefaultPromptComposer(Path.of(".")), Path.of("."));
+    }
+
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.runLogger = runLogger == null ? NoopRunLogger.INSTANCE : runLogger;
         this.toolExecutor = toolExecutor;
+        this.promptComposer = promptComposer == null ? new DefaultPromptComposer(Path.of(".")) : promptComposer;
+        this.workDir = workDir == null ? Path.of(".") : workDir;
     }
 
     /**
      * 执行任务直到模型结束、工具失败、provider 失败或达到最大步数。
      */
     public RunResult run(Task task) {
-        logger.info("Starting task: {} (ID: {})", task.goal(), task.taskId());
         AgentContext context = AgentContext.create(task);
         while (context.stepCount() < maxSteps) {
             TurnResult turn = runTurn(context);
@@ -101,7 +119,6 @@ public final class AgentEngine {
 
     private TurnResult runTurn(AgentContext context) {
         int currentStep = context.stepCount() + 1;
-        logger.info("Starting turn {}/{}", currentStep, maxSteps);
         runLogger.turnStarted(currentStep);
 
         if (enableThinking) {
@@ -131,7 +148,6 @@ public final class AgentEngine {
         }
 
         ThinkingDecision thinking = (ThinkingDecision) response.decision();
-        logger.info("Thinking complete in {}ms: {}", response.durationMillis(), thinking.thought());
         runLogger.thinkingCompleted(thinking, response.durationMillis());
         return context.think(thinking.thought());
     }
@@ -141,8 +157,6 @@ public final class AgentEngine {
         runLogger.actionStarted(toolDefinitions);
         ProviderResponse response = invokeProvider(context, DecisionPhase.ACTION, toolDefinitions);
 
-        logger.info("Action decision received in {}ms: {}", response.durationMillis(),
-                decisionSummary(response.decision()));
         if (response.decision() instanceof ToolDecision) {
             runLogger.toolDecision((ToolDecision) response.decision());
         }
@@ -154,7 +168,8 @@ public final class AgentEngine {
         long start = System.nanoTime();
         Decision decision;
         try {
-            decision = provider.decide(context, phase, availableTools);
+            String systemPrompt = promptComposer.compose(new PromptContext(workDir, phase, availableTools));
+            decision = provider.decide(context, phase, availableTools, systemPrompt);
         } catch (RuntimeException ex) {
             throw new ProviderCallException("provider_error: " + ex.getMessage());
         }
@@ -180,14 +195,11 @@ public final class AgentEngine {
     }
 
     private TurnResult handleToolDecision(AgentContext context, ToolCall call) {
-        logger.info("Executing tool: {} with args: {}", call.toolName(), call.arguments());
         ToolResult toolResult = executeToolCall(context, call);
         if (!toolResult.success()) {
-            logger.warn("Tool {} execution failed: {}", call.toolName(), toolResult.errorMessage());
             return TurnResult.done(fail(context, toolResult.errorMessage()));
         }
 
-        logger.info("Tool {} execution successful", call.toolName());
         return TurnResult.next(advanceAndObserve(context, Collections.singletonList(toolResult.output())));
     }
 
@@ -250,7 +262,6 @@ public final class AgentEngine {
     }
 
     private RunResult fail(AgentContext context, String reason) {
-        logger.error("Step failed: {}", reason);
         runLogger.failed(reason);
         return RunResult.failed(context.stepCount(), context.observations(), reason);
     }
@@ -268,23 +279,6 @@ public final class AgentEngine {
 
     private long elapsedMillis(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000L;
-    }
-
-    private String decisionSummary(Decision decision) {
-        if (decision instanceof ThinkingDecision) {
-            return "ThinkingDecision thought=" + ((ThinkingDecision) decision).thought();
-        }
-        if (decision instanceof FinishDecision) {
-            return "FinishDecision answer=" + ((FinishDecision) decision).answer();
-        }
-        if (decision instanceof ToolDecision) {
-            ToolCall call = ((ToolDecision) decision).call();
-            return "ToolDecision tool=" + call.toolName() + " args=" + call.arguments();
-        }
-        if (decision instanceof ParallelToolDecision) {
-            return "ParallelToolDecision calls=" + ((ParallelToolDecision) decision).getCalls();
-        }
-        return decision.getClass().getSimpleName();
     }
 
     private static final class TurnResult {

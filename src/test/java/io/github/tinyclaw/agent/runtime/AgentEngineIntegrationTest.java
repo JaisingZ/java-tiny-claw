@@ -88,7 +88,8 @@ class AgentEngineIntegrationTest {
      */
     private static final class WriteThenBashProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
             if (state.observations().isEmpty()) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
                 arguments.put("path", "hello.txt");
@@ -115,7 +116,8 @@ class AgentEngineIntegrationTest {
      */
     private static final class FailingBashThenFinishProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
             if (state.observations().isEmpty()) {
                 return new ToolDecision(new ToolCall("bash",
                         Collections.<String, Object>singletonMap("command", commandThatFails())));
@@ -136,7 +138,8 @@ class AgentEngineIntegrationTest {
      */
     private static final class WriteThenEditProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
             if (state.observations().isEmpty()) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
                 arguments.put("path", "Server.java");

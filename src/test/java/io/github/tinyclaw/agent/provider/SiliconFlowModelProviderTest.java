@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 class SiliconFlowModelProviderTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String SYSTEM_PROMPT = "external system prompt";
 
     private HttpServer server;
 
@@ -49,13 +50,14 @@ class SiliconFlowModelProviderTest {
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-1", "finish it")),
-                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new FinishDecision("done"));
         assertThat(authorization.get()).isEqualTo("Bearer test-key");
         assertThat(requestBody.get().get("stream").asBoolean()).isFalse();
         assertThat(requestBody.get().get("model").asText()).isEqualTo("Qwen/Qwen3-8B");
         assertThat(requestBody.get().has("tools")).isFalse();
+        assertSystemPromptContains(requestBody.get(), SYSTEM_PROMPT);
     }
 
     @Test
@@ -69,20 +71,11 @@ class SiliconFlowModelProviderTest {
                 Collections.<String, Object>singletonMap("type", "object"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-2", "think")),
-                DecisionPhase.THINKING, Collections.singletonList(tool));
+                DecisionPhase.THINKING, Collections.singletonList(tool), SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new ThinkingDecision("think first"));
         assertThat(requestBody.get().has("tools")).isFalse();
-        assertSystemPromptContains(requestBody.get(),
-                "powershell -NoProfile -NonInteractive -Command",
-                "Do not use && or ||",
-                "Do not use ; to mean run the next command only when the previous command succeeds",
-                "$LASTEXITCODE",
-                "write_file",
-                "UTF-8",
-                "Set-Content",
-                "Out-File",
-                "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }");
+        assertSystemPromptContains(requestBody.get(), SYSTEM_PROMPT);
     }
 
     @Test
@@ -97,25 +90,12 @@ class SiliconFlowModelProviderTest {
                 Collections.<String, Object>singletonMap("type", "object"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-3", "echo hello")),
-                DecisionPhase.ACTION, Collections.singletonList(tool));
+                DecisionPhase.ACTION, Collections.singletonList(tool), SYSTEM_PROMPT);
 
         assertThat(requestBody.get().get("tools")).hasSize(1);
         assertThat(requestBody.get().get("tools").get(0).get("type").asText()).isEqualTo("function");
         assertThat(requestBody.get().get("tools").get(0).get("function").get("name").asText()).isEqualTo("echo");
-        assertSystemPromptContains(requestBody.get(),
-                "powershell -NoProfile -NonInteractive -Command",
-                "Do not use && or ||",
-                "Do not use ; to mean run the next command only when the previous command succeeds",
-                "$LASTEXITCODE",
-                "write_file",
-                "UTF-8",
-                "Set-Content",
-                "Out-File",
-                "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }",
-                "必须输出最终回答，或在需要时调用一个或多个独立工具",
-                "如果多个操作互相独立",
-                "Observation 已经满足用户目标",
-                "不要重复调用相同工具");
+        assertSystemPromptContains(requestBody.get(), SYSTEM_PROMPT);
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
     }
@@ -129,7 +109,8 @@ class SiliconFlowModelProviderTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-fenced", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
-                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
+                SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -144,7 +125,8 @@ class SiliconFlowModelProviderTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-escaped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
-                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
+                SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -159,7 +141,8 @@ class SiliconFlowModelProviderTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-wrapped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
-                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
+                SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -174,7 +157,8 @@ class SiliconFlowModelProviderTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-missing-brace", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
-                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
+                SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -189,7 +173,8 @@ class SiliconFlowModelProviderTest {
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-string-braces", "echo braces")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
-                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))));
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
+                SYSTEM_PROMPT);
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "literal { and } braces"))));
@@ -206,7 +191,7 @@ class SiliconFlowModelProviderTest {
                 line -> debugOutput.append(line).append('\n'));
 
         provider.decide(AgentContext.create(new Task("task-debug", "debug it")),
-                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList());
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
 
         assertThat(debugOutput.toString())
                 .contains("========== [Provider][ACTION] Request JSON ==========")
@@ -235,7 +220,7 @@ class SiliconFlowModelProviderTest {
 
         provider.decide(AgentContext.create(new Task("task-debug-long",
                         "请直接回答：" + "A".repeat(400))),
-                DecisionPhase.ACTION, java.util.List.of(readFile, writeFile));
+                DecisionPhase.ACTION, java.util.List.of(readFile, writeFile), SYSTEM_PROMPT);
 
         assertThat(debugOutput.toString())
                 .contains("\"tools_summary\"")
@@ -253,7 +238,7 @@ class SiliconFlowModelProviderTest {
                 new SiliconFlowConfig("bad-key", baseUrl(), "Qwen/Qwen3-8B"));
 
         assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-4", "fail")),
-                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList()))
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("SiliconFlow request failed: 401");
     }
@@ -265,7 +250,7 @@ class SiliconFlowModelProviderTest {
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
         assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-5", "empty")),
-                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList()))
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("SiliconFlow returned empty choices");
     }
@@ -280,7 +265,8 @@ class SiliconFlowModelProviderTest {
 
         assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-6", "bad json")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
-                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object")))))
+                        "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
+                SYSTEM_PROMPT))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Invalid tool arguments JSON: not-json");
     }

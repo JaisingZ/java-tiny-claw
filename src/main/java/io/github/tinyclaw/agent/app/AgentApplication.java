@@ -1,13 +1,15 @@
 package io.github.tinyclaw.agent.app;
 
+import io.github.tinyclaw.agent.context.DefaultPromptComposer;
+import io.github.tinyclaw.agent.context.PromptComposer;
 import io.github.tinyclaw.agent.communication.telegram.TelegramAgentWebhookService;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
-import io.github.tinyclaw.agent.runtime.ConsoleRunLogger;
 import io.github.tinyclaw.agent.runtime.RunLogger;
 import io.github.tinyclaw.agent.runtime.RunResult;
+import io.github.tinyclaw.agent.runtime.Slf4jRunLogger;
 import io.github.tinyclaw.agent.tool.BashTool;
 import io.github.tinyclaw.agent.tool.EditFileTool;
 import io.github.tinyclaw.agent.tool.ReadFileTool;
@@ -88,14 +90,14 @@ public final class AgentApplication {
                 .register(new WriteFileTool(Path.of(".")))
                 .register(new EditFileTool(Path.of(".")))
                 .register(new BashTool(Path.of(".")));
-        RunLogger logger = ConsoleRunLogger.standardOutput(false);
+        RunLogger logger = new Slf4jRunLogger(false);
         logger.writeLine("Tiny Agent Harness provider=" + config.model()
                 + " tools=" + registry.definitions().size());
     }
 
     private static void runPrompt(RunOptions options) {
         LmStudioConfig config = LmStudioConfig.loadDefault();
-        RunLogger runLogger = ConsoleRunLogger.standardOutput(options.debug());
+        RunLogger runLogger = new Slf4jRunLogger(options.debug());
         Path workDir = Path.of(".");
         ToolRegistry registry = new ToolRegistry();
         registerTool(registry, new ReadFileTool(workDir), runLogger);
@@ -105,9 +107,11 @@ public final class AgentApplication {
         LmStudioModelProvider provider = options.debug()
                 ? new LmStudioModelProvider(config, runLogger::writeLine)
                 : new LmStudioModelProvider(config);
+        PromptComposer promptComposer = new DefaultPromptComposer(workDir);
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
-        AgentEngine engine = new AgentEngine(provider, registry, options.maxSteps(), options.thinking(), runLogger);
+        AgentEngine engine = new AgentEngine(provider, registry, options.maxSteps(), options.thinking(), runLogger,
+                promptComposer, workDir);
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
 

@@ -7,6 +7,7 @@
 - 构建一个可控、可测试、可观测的 Java AI Agent Harness。
 - 让大模型负责“决策”，Harness 负责“运行时控制”。
 - 用清晰边界替代黑盒框架，降低上下文失控和边界失控。
+- 用独立 Context 层组装 System Prompt，避免 Provider 内部堆叠面条提示词。
 
 ## 2. 非目标
 
@@ -82,13 +83,23 @@ Runtime 不负责具体工具实现，也不处理模型厂商协议。
 
 Provider 负责模型协议适配。
 
-- 把 `AgentContext` + `DecisionPhase` + 工具定义映射为厂商请求。
+- 把 `AgentContext` + `DecisionPhase` + 工具定义 + 已组装的 System Prompt 映射为厂商请求。
 - 把厂商响应映射为项目内部 `Decision`。
 - 处理厂商错误与响应校验。
 
 Provider 不执行工具、不修改主循环状态。
+Provider 不读取 `AGENTS.md`、不扫描 Skills、不在内部拼接运行时提示词。
 
-### 4.3 Tool Registry
+### 4.3 Context
+
+Context 负责上下文工程与 System Prompt 组装。
+
+- `DefaultPromptComposer` 组装 Minimal Core、运行环境约束、阶段约束、工作区规范和 Skill 摘要。
+- `AgentsFileLoader` 只读取标准 `AGENTS.md`；不兼容、不读取 legacy `AGENT.md`。
+- `SkillLoader` 只扫描 `.tinyclaw/skills/**/SKILL.md` 的 `name` 和 `description` 摘要，不注入正文。
+- Context 不执行工具、不请求模型、不推进主循环。
+
+### 4.4 Tool Registry
 
 Tool Registry 负责工具声明与路由执行。
 
@@ -97,7 +108,7 @@ Tool Registry 负责工具声明与路由执行。
 - 暴露工具定义给模型。
 - 路由执行并包装统一结果。
 
-### 4.4 Communication
+### 4.5 Communication
 
 Communication 负责把外部消息转换成 Agent 任务。
 
@@ -105,12 +116,12 @@ Communication 负责把外部消息转换成 Agent 任务。
 - `communication.telegram` 提供 Telegram Webhook 接入、Webhook 注册和消息回复。
 - 通信层不把 Telegram 协议泄漏进 Runtime。
 
-### 4.5 StateStore（历史目标）
+### 4.6 StateStore（历史目标）
 
 - 历史目标：任务计划、当前步骤、历史摘要、错误信息可持久化，并可恢复。
 - 当前 Tiny Agent Harness：不实现 `StateStore`，对应历史分层 `io.github.tinyclaw.agent.state` 已停用。
 
-### 4.6 Tracer（历史目标）
+### 4.7 Tracer（历史目标）
 
 - 历史目标：记录结构化 trace、决策链、模型输入输出。
 - 当前 Tiny Agent Harness：不实现 `Tracer`，对应历史分层 `io.github.tinyclaw.agent.trace` 已停用；观测由 `RunLogger` + `RunResult` 覆盖。
@@ -188,6 +199,7 @@ optional thinking -> action decision -> tool/finish -> observe -> decide
 src/main/java/io/github/tinyclaw/agent
 ├── app            命令行入口与应用装配
 ├── communication  可选通信适配，含 Telegram Webhook
+├── context        System Prompt 组装、AGENTS.md 和 Skill 摘要加载
 ├── domain         纯数据模型
 ├── provider       模型适配
 ├── runtime        主循环、RunLogger、RunResult

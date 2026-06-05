@@ -96,7 +96,8 @@ class ChatAgentServiceTest {
         }
 
         @Override
-        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools) {
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
             taskId.set(context.taskId());
             goal.set(context.goal());
             return new FinishDecision("answer:" + context.goal());

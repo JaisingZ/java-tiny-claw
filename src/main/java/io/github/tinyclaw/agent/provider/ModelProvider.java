@@ -12,7 +12,8 @@ import java.util.List;
  */
 public interface ModelProvider {
     /**
-     * 根据当前上下文、决策阶段和可用工具返回模型决策。
+     * 根据当前上下文、决策阶段、可用工具和系统提示词返回模型决策。
      */
-    Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools);
+    Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+            String systemPrompt);
 }
