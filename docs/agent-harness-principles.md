@@ -34,11 +34,14 @@
 
 ### 3.3 上下文模型
 
-当前 Tiny Agent Harness 精简版不做任务持久化/恢复。
+当前 Tiny Agent Harness 精简版支持进程内 Session，但不做任务持久化/恢复。
 
 - 运行时只维护内存上下文 `AgentContext`。
 - 每次运行由 CLI 输入或通信入口消息创建新的 `Task`。
-- 步进信息不跨 JVM 持久化。
+- Telegram/Webhook 等长驻入口通过 `SessionManager` 按来源隔离会话历史。
+- 每次请求模型前只截取 Session 的 Working Memory，默认最多 12 条消息、12000 字符。
+- CLI `run --prompt` 保持单次任务语义，不复用 Session 历史。
+- 步进信息和 Session 历史不跨 JVM 持久化。
 - 历史上 `io.github.tinyclaw.agent.state`、`StateStore`、`checkpoint` 可作为外部恢复方向，但这些能力不在当前实现中。
 
 ### 3.4 安全边界
@@ -119,7 +122,7 @@ Communication 负责把外部消息转换成 Agent 任务。
 ### 4.6 StateStore（历史目标）
 
 - 历史目标：任务计划、当前步骤、历史摘要、错误信息可持久化，并可恢复。
-- 当前 Tiny Agent Harness：不实现 `StateStore`，对应历史分层 `io.github.tinyclaw.agent.state` 已停用。
+- 当前 Tiny Agent Harness：只实现进程内 `SessionManager` 和 Working Memory，不实现 `StateStore`，对应历史分层 `io.github.tinyclaw.agent.state` 已停用。
 
 ### 4.7 Tracer（历史目标）
 

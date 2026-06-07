@@ -6,9 +6,11 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
+import io.github.tinyclaw.agent.runtime.SessionManager;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,6 +88,57 @@ class ChatAgentServiceTest {
         assertThat(session.errors()).containsExactly("Agent 调度失败：provider missing");
     }
 
+    /**
+     * 相同 chatId 的消息复用同一个 Agent Session。
+     */
+    @Test
+    void reusesAgentSessionForSameChatId() throws Exception {
+        RecordingContextProvider provider = new RecordingContextProvider();
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        ChatAgentService service = new ChatAgentService(
+                logger -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger),
+                TelegramStyleRunLogger::new,
+                executor,
+                new SessionManager());
+
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "first"), session);
+        service.handle(new ChatMessage("m2", "chat-a", "user-a", "second"), session);
+
+        assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
+        executor.close();
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(0).workingMemory()).isEmpty();
+        assertThat(provider.contexts().get(1).workingMemory())
+                .containsExactly(
+                        SessionMessage.user("first"),
+                        SessionMessage.assistant("answer:first"));
+    }
+
+    /**
+     * 不同 chatId 的消息使用不同 Agent Session。
+     */
+    @Test
+    void isolatesAgentSessionsForDifferentChatIds() throws Exception {
+        RecordingContextProvider provider = new RecordingContextProvider();
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        ChatAgentService service = new ChatAgentService(
+                logger -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger),
+                TelegramStyleRunLogger::new,
+                executor,
+                new SessionManager());
+
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "first"), session);
+        service.handle(new ChatMessage("m2", "chat-b", "user-a", "second"), session);
+
+        assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
+        executor.close();
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(0).workingMemory()).isEmpty();
+        assertThat(provider.contexts().get(1).workingMemory()).isEmpty();
+    }
+
     private static final class EchoFinishProvider implements ModelProvider {
         private final AtomicReference<String> taskId;
         private final AtomicReference<String> goal;
@@ -101,6 +154,21 @@ class ChatAgentServiceTest {
             taskId.set(context.taskId());
             goal.set(context.goal());
             return new FinishDecision("answer:" + context.goal());
+        }
+    }
+
+    private static final class RecordingContextProvider implements ModelProvider {
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+
+        @Override
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(context);
+            return new FinishDecision("answer:" + context.goal());
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
         }
     }
 

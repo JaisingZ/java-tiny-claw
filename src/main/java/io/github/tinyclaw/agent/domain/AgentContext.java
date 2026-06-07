@@ -15,12 +15,21 @@ public final class AgentContext {
     private final int step;
     private final List<String> observations;
     private final String lastThought;
+    private final List<SessionMessage> workingMemory;
 
     /**
      * 创建上下文。
      * observations 会被封装为不可变列表，避免后续被外部修改。
      */
     public AgentContext(Task task, int step, List<String> observations, String lastThought) {
+        this(task, step, observations, lastThought, Collections.<SessionMessage>emptyList());
+    }
+
+    /**
+     * 创建带 Session Working Memory 的上下文。
+     */
+    public AgentContext(Task task, int step, List<String> observations, String lastThought,
+            List<SessionMessage> workingMemory) {
         this.task = task;
         this.step = step;
         List<String> safeObservations = observations == null
@@ -28,6 +37,10 @@ public final class AgentContext {
                 : observations;
         this.observations = Collections.unmodifiableList(new ArrayList<String>(safeObservations));
         this.lastThought = lastThought;
+        List<SessionMessage> safeWorkingMemory = workingMemory == null
+                ? Collections.<SessionMessage>emptyList()
+                : workingMemory;
+        this.workingMemory = Collections.unmodifiableList(new ArrayList<SessionMessage>(safeWorkingMemory));
     }
 
     /**
@@ -38,10 +51,17 @@ public final class AgentContext {
     }
 
     /**
+     * 根据任务和 Working Memory 创建主循环首轮上下文。
+     */
+    public static AgentContext create(Task task, List<SessionMessage> workingMemory) {
+        return new AgentContext(task, 0, Collections.<String>emptyList(), null, workingMemory);
+    }
+
+    /**
      * 进入下一步并返回新上下文。
      */
     public AgentContext advance() {
-        return new AgentContext(task, step + 1, observations, lastThought);
+        return new AgentContext(task, step + 1, observations, lastThought, workingMemory);
     }
 
     /**
@@ -50,14 +70,14 @@ public final class AgentContext {
     public AgentContext observe(String observation) {
         List<String> nextObservations = new ArrayList<String>(observations);
         nextObservations.add(observation);
-        return new AgentContext(task, step, nextObservations, lastThought);
+        return new AgentContext(task, step, nextObservations, lastThought, workingMemory);
     }
 
     /**
      * 更新当前思考内容并返回新上下文。
      */
     public AgentContext think(String thought) {
-        return new AgentContext(task, step, observations, thought);
+        return new AgentContext(task, step, observations, thought, workingMemory);
     }
 
     /**
@@ -110,6 +130,13 @@ public final class AgentContext {
     }
 
     /**
+     * 获取 Session Working Memory 快照。
+     */
+    public List<SessionMessage> workingMemory() {
+        return workingMemory;
+    }
+
+    /**
      * 获取任务实体（兼容 get 风格调用）。
      */
     public Task getTask() {
@@ -159,6 +186,13 @@ public final class AgentContext {
     }
 
     /**
+     * 获取 Session Working Memory 快照（兼容 get 风格调用）。
+     */
+    public List<SessionMessage> getWorkingMemory() {
+        return workingMemory;
+    }
+
+    /**
      * 判断上下文是否等价。
      */
     @Override
@@ -173,7 +207,8 @@ public final class AgentContext {
         return step == that.step
                 && Objects.equals(task, that.task)
                 && Objects.equals(observations, that.observations)
-                && Objects.equals(lastThought, that.lastThought);
+                && Objects.equals(lastThought, that.lastThought)
+                && Objects.equals(workingMemory, that.workingMemory);
     }
 
     /**
@@ -181,6 +216,6 @@ public final class AgentContext {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(task, step, observations, lastThought);
+        return Objects.hash(task, step, observations, lastThought, workingMemory);
     }
 }

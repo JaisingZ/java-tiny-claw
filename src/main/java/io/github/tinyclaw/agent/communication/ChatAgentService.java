@@ -2,7 +2,9 @@ package io.github.tinyclaw.agent.communication;
 
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
+import io.github.tinyclaw.agent.runtime.AgentSession;
 import io.github.tinyclaw.agent.runtime.RunLogger;
+import io.github.tinyclaw.agent.runtime.SessionManager;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -14,12 +16,20 @@ public final class ChatAgentService implements ChatMessageHandler {
     private final Function<RunLogger, AgentEngine> engineFactory;
     private final Function<ChatSession, RunLogger> runLoggerFactory;
     private final WorkspaceSerialExecutor executor;
+    private final SessionManager sessionManager;
 
     public ChatAgentService(Function<RunLogger, AgentEngine> engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor) {
+        this(engineFactory, runLoggerFactory, executor, new SessionManager());
+    }
+
+    public ChatAgentService(Function<RunLogger, AgentEngine> engineFactory,
+            Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
+            SessionManager sessionManager) {
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
         this.runLoggerFactory = Objects.requireNonNull(runLoggerFactory, "runLoggerFactory");
         this.executor = Objects.requireNonNull(executor, "executor");
+        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager");
     }
 
     @Override
@@ -39,7 +49,8 @@ public final class ChatAgentService implements ChatMessageHandler {
         try {
             RunLogger runLogger = runLoggerFactory.apply(session);
             engine = engineFactory.apply(runLogger);
-            engine.run(new Task("chat-" + message.messageId(), message.text()));
+            AgentSession agentSession = sessionManager.getOrCreate(sessionKey(message));
+            engine.run(agentSession, new Task("chat-" + message.messageId(), message.text()));
         } catch (RuntimeException ex) {
             session.sendError("Agent 调度失败：" + ex.getMessage());
         } finally {
@@ -47,5 +58,19 @@ public final class ChatAgentService implements ChatMessageHandler {
                 engine.shutdown();
             }
         }
+    }
+
+    private String sessionKey(ChatMessage message) {
+        if (hasText(message.chatId())) {
+            return "chat:" + message.chatId().trim();
+        }
+        if (hasText(message.senderId())) {
+            return "sender:" + message.senderId().trim();
+        }
+        return "message:" + message.messageId();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }

@@ -11,6 +11,8 @@ import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.SessionMessage;
+import io.github.tinyclaw.agent.domain.SessionMessageKind;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
@@ -111,8 +113,9 @@ public final class SiliconFlowModelProvider implements ModelProvider {
 
         ArrayNode messages = root.putArray("messages");
         addMessage(messages, "system", systemPrompt);
+        addWorkingMemoryMessages(messages, context);
         addMessage(messages, "user", context.goal());
-        if (hasText(context.lastThought())) {
+        if (phase == DecisionPhase.THINKING && hasText(context.lastThought())) {
             addMessage(messages, "system", "内部思考记录：" + context.lastThought());
         }
         for (String observation : context.observations()) {
@@ -132,6 +135,18 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         }
 
         return root;
+    }
+
+    private void addWorkingMemoryMessages(ArrayNode messages, AgentContext context) {
+        for (SessionMessage message : context.workingMemory()) {
+            if (message.kind() == SessionMessageKind.ASSISTANT) {
+                addMessage(messages, "assistant", message.content());
+            } else if (message.kind() == SessionMessageKind.OBSERVATION) {
+                addMessage(messages, "user", "Observation: " + message.content());
+            } else {
+                addMessage(messages, "user", message.content());
+            }
+        }
     }
 
     private void addMessage(ArrayNode messages, String role, String content) {

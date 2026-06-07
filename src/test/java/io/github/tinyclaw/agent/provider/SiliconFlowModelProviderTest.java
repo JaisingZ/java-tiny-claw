@@ -11,6 +11,7 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
@@ -21,6 +22,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -98,6 +100,39 @@ class SiliconFlowModelProviderTest {
         assertSystemPromptContains(requestBody.get(), SYSTEM_PROMPT);
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
+    }
+
+    @Test
+    void sendsWorkingMemoryBeforeCurrentTaskAndObservations() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+                new AtomicReference<String>(), requestBody);
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+        AgentContext context = AgentContext.create(new Task("task-memory", "current question"),
+                Arrays.asList(
+                        SessionMessage.user("previous question"),
+                        SessionMessage.assistant("previous answer"),
+                        SessionMessage.observation("previous observation")))
+                .observe("current observation");
+
+        Decision decision = provider.decide(context, DecisionPhase.ACTION,
+                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
+
+        assertThat(decision).isEqualTo(new FinishDecision("done"));
+        JsonNode messages = requestBody.get().get("messages");
+        assertThat(messages).hasSize(6);
+        assertThat(messages.get(0).get("role").asText()).isEqualTo("system");
+        assertThat(messages.get(1).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(1).get("content").asText()).isEqualTo("previous question");
+        assertThat(messages.get(2).get("role").asText()).isEqualTo("assistant");
+        assertThat(messages.get(2).get("content").asText()).isEqualTo("previous answer");
+        assertThat(messages.get(3).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(3).get("content").asText()).isEqualTo("Observation: previous observation");
+        assertThat(messages.get(4).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(4).get("content").asText()).isEqualTo("current question");
+        assertThat(messages.get(5).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(5).get("content").asText()).isEqualTo("Observation: current observation");
     }
 
     @Test

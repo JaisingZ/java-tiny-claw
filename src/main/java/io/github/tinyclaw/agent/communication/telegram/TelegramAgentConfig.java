@@ -1,5 +1,6 @@
 package io.github.tinyclaw.agent.communication.telegram;
 
+import io.github.tinyclaw.agent.runtime.WorkingMemoryPolicy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -19,11 +20,14 @@ public final class TelegramAgentConfig {
     private final Path workDir;
     private final int maxSteps;
     private final boolean enableThinking;
+    private final WorkingMemoryPolicy workingMemoryPolicy;
 
-    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking) {
+    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking,
+            WorkingMemoryPolicy workingMemoryPolicy) {
         this.workDir = workDir;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
+        this.workingMemoryPolicy = workingMemoryPolicy;
     }
 
     public static TelegramAgentConfig from(Map<String, String> values) {
@@ -32,7 +36,14 @@ public final class TelegramAgentConfig {
                 parsePositiveInt(optional(values, "agent.maxSteps", String.valueOf(DEFAULT_MAX_STEPS)),
                         "agent.maxSteps"),
                 parseBoolean(optional(values, "agent.enableThinking", String.valueOf(DEFAULT_ENABLE_THINKING)),
-                        "agent.enableThinking"));
+                        "agent.enableThinking"),
+                new WorkingMemoryPolicy(
+                        parsePositiveInt(optional(values, "agent.workingMemory.maxMessages",
+                                String.valueOf(WorkingMemoryPolicy.DEFAULT_MAX_MESSAGES)),
+                                "agent.workingMemory.maxMessages"),
+                        parsePositiveInt(optional(values, "agent.workingMemory.maxChars",
+                                String.valueOf(WorkingMemoryPolicy.DEFAULT_MAX_CHARS)),
+                                "agent.workingMemory.maxChars")));
     }
 
     static TelegramAgentConfig load(Path path) {
@@ -49,7 +60,8 @@ public final class TelegramAgentConfig {
         try (InputStream inputStream = TelegramAgentConfig.class.getClassLoader()
                 .getResourceAsStream("agent.properties")) {
             if (inputStream == null) {
-                return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING);
+                return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING,
+                        new WorkingMemoryPolicy());
             }
             properties.load(inputStream);
         } catch (IOException ex) {
@@ -68,6 +80,10 @@ public final class TelegramAgentConfig {
 
     public boolean enableThinking() {
         return enableThinking;
+    }
+
+    public WorkingMemoryPolicy workingMemoryPolicy() {
+        return workingMemoryPolicy;
     }
 
     private static Map<String, String> loadProperties(Path path) {

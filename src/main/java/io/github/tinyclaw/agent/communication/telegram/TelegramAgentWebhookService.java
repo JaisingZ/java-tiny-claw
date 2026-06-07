@@ -5,6 +5,8 @@ import io.github.tinyclaw.agent.communication.WorkspaceSerialExecutor;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
+import io.github.tinyclaw.agent.runtime.SessionManager;
+import io.github.tinyclaw.agent.runtime.WorkingMemoryPolicy;
 import io.github.tinyclaw.agent.tool.BashTool;
 import io.github.tinyclaw.agent.tool.EditFileTool;
 import io.github.tinyclaw.agent.tool.ReadFileTool;
@@ -24,6 +26,7 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     private final Path workDir;
     private final int maxSteps;
     private final boolean enableThinking;
+    private final WorkingMemoryPolicy workingMemoryPolicy;
     private final TunnelFactory tunnelFactory;
     private final RegistrarFactory registrarFactory;
     private WorkspaceSerialExecutor executor;
@@ -32,18 +35,26 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
 
     public TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
             Path workDir, int maxSteps, boolean enableThinking) {
-        this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking,
+        this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking, new WorkingMemoryPolicy(),
                 TryCloudflareTunnel::start, TelegramWebhookRegistrar::new);
     }
 
     TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
             Path workDir, int maxSteps, boolean enableThinking, TunnelFactory tunnelFactory,
             RegistrarFactory registrarFactory) {
+        this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking, new WorkingMemoryPolicy(),
+                tunnelFactory, registrarFactory);
+    }
+
+    TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
+            Path workDir, int maxSteps, boolean enableThinking, WorkingMemoryPolicy workingMemoryPolicy,
+            TunnelFactory tunnelFactory, RegistrarFactory registrarFactory) {
         this.telegramConfig = Objects.requireNonNull(telegramConfig, "telegramConfig");
         this.lmStudioConfig = Objects.requireNonNull(lmStudioConfig, "lmStudioConfig");
         this.workDir = Objects.requireNonNull(workDir, "workDir");
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
+        this.workingMemoryPolicy = Objects.requireNonNull(workingMemoryPolicy, "workingMemoryPolicy");
         this.tunnelFactory = Objects.requireNonNull(tunnelFactory, "tunnelFactory");
         this.registrarFactory = Objects.requireNonNull(registrarFactory, "registrarFactory");
     }
@@ -55,7 +66,10 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
                 LmStudioConfig.loadDefault(),
                 agentConfig.workDir(),
                 agentConfig.maxSteps(),
-                agentConfig.enableThinking());
+                agentConfig.enableThinking(),
+                agentConfig.workingMemoryPolicy(),
+                TryCloudflareTunnel::start,
+                TelegramWebhookRegistrar::new);
     }
 
     public void start() {
@@ -63,7 +77,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
             return;
         }
         executor = new WorkspaceSerialExecutor();
-        ChatAgentService service = new ChatAgentService(this::createEngine, TelegramRunLogger::new, executor);
+        ChatAgentService service = new ChatAgentService(this::createEngine, TelegramRunLogger::new, executor,
+                new SessionManager(workingMemoryPolicy));
         if (usesTryCloudflareTunnel()) {
             startWithTryCloudflare(service);
             return;

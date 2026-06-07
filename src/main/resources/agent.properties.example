@@ -4,6 +4,8 @@ lmstudio.model=qwen-local
 agent.workdir=.
 agent.maxSteps=8
 agent.enableThinking=false
+agent.workingMemory.maxMessages=12
+agent.workingMemory.maxChars=12000
 
 telegram.webhook.enabled=false
 telegram.bot.token=

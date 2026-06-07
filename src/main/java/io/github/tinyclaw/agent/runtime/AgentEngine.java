@@ -8,6 +8,7 @@ import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
@@ -96,6 +97,20 @@ public final class AgentEngine {
      */
     public RunResult run(Task task) {
         AgentContext context = AgentContext.create(task);
+        return runContext(context);
+    }
+
+    /**
+     * 在指定 Session 中执行任务，并把本轮输入、观测和成功回答写回 Session。
+     */
+    public RunResult run(AgentSession session, Task task) {
+        AgentContext context = AgentContext.create(task, session.workingMemory());
+        RunResult result = runContext(context);
+        recordSessionResult(session, task, result);
+        return result;
+    }
+
+    private RunResult runContext(AgentContext context) {
         while (context.stepCount() < maxSteps) {
             TurnResult turn = runTurn(context);
             if (turn.result() != null) {
@@ -104,6 +119,16 @@ public final class AgentEngine {
             context = turn.context();
         }
         return fail(context, "max_steps_exceeded");
+    }
+
+    private void recordSessionResult(AgentSession session, Task task, RunResult result) {
+        session.append(SessionMessage.user(task.goal()));
+        for (String observation : result.observations()) {
+            session.append(SessionMessage.observation(observation));
+        }
+        if (result.status() == RunStatus.SUCCESS) {
+            session.append(SessionMessage.assistant(result.finalAnswer()));
+        }
     }
 
     /**

@@ -104,6 +104,8 @@ mvn exec:java -Dexec.args="telegram"
 agent.workdir=.
 agent.maxSteps=8
 agent.enableThinking=false
+agent.workingMemory.maxMessages=12
+agent.workingMemory.maxChars=12000
 
 telegram.webhook.enabled=true
 telegram.bot.token=your-telegram-bot-token
@@ -121,6 +123,13 @@ telegram.webhook.registrationRetryIntervalSeconds=20
 ```
 
 固定公网 HTTPS 入口可改用 `telegram.webhook.url=https://.../telegram/webhook`，并清空 `telegram.webhook.tunnel`。
+
+Telegram Webhook 是长驻入口，会按消息来源维护进程内 Session：
+
+- 同一个 `chatId` 复用同一段会话历史。
+- 不同 `chatId` 的历史彼此隔离。
+- 每次请求模型前只截取最近 Working Memory，默认最多 12 条消息、12000 字符。
+- Session 不落盘，进程重启后历史清空；CLI `run --prompt` 仍是单次任务，不复用会话历史。
 
 开启可读调试日志：
 

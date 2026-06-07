@@ -9,6 +9,7 @@ import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
@@ -293,6 +294,53 @@ class AgentEngineTest {
         assertThat(parallelResult.observations()).hasSize(1);
     }
 
+    /**
+     * 同一 Session 的后续任务可以看到前一次最终回答。
+     */
+    @Test
+    void runWithSessionCarriesPreviousAnswerIntoNextTask() {
+        RecordingContextProvider provider = new RecordingContextProvider(finish("first-answer"), finish("second-answer"));
+        EngineFixture fixture = fixture();
+        AgentSession session = new AgentSession("chat-a");
+
+        RunResult first = fixture.run(provider, session, "task-session-1", "first question");
+        RunResult second = fixture.run(provider, session, "task-session-2", "second question");
+
+        assertThat(first.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(second.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(0).workingMemory()).isEmpty();
+        assertThat(provider.contexts().get(1).workingMemory())
+                .containsExactly(
+                        SessionMessage.user("first question"),
+                        SessionMessage.assistant("first-answer"));
+    }
+
+    /**
+     * 不同 Session 的历史互不泄漏。
+     */
+    @Test
+    void runWithDifferentSessionsKeepsHistoryIsolated() {
+        RecordingContextProvider provider = new RecordingContextProvider(
+                finish("answer-a"),
+                finish("answer-b"),
+                finish("answer-a2"));
+        EngineFixture fixture = fixture();
+        AgentSession sessionA = new AgentSession("chat-a");
+        AgentSession sessionB = new AgentSession("chat-b");
+
+        fixture.run(provider, sessionA, "task-a1", "question a1");
+        fixture.run(provider, sessionB, "task-b1", "question b1");
+        fixture.run(provider, sessionA, "task-a2", "question a2");
+
+        assertThat(provider.contexts()).hasSize(3);
+        assertThat(provider.contexts().get(1).workingMemory()).isEmpty();
+        assertThat(provider.contexts().get(2).workingMemory())
+                .containsExactly(
+                        SessionMessage.user("question a1"),
+                        SessionMessage.assistant("answer-a"));
+    }
+
     private EngineFixture fixture() {
         return new EngineFixture();
     }
@@ -491,6 +539,31 @@ class AgentEngineTest {
         }
     }
 
+    private static final class RecordingContextProvider implements ModelProvider {
+        private final Decision[] decisions;
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+        private int index;
+
+        private RecordingContextProvider(Decision... decisions) {
+            this.decisions = decisions;
+        }
+
+        @Override
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            int current = index;
+            if (current < decisions.length - 1) {
+                index++;
+            }
+            return decisions[current];
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
+        }
+    }
+
     private static class RunLoggerAdapter implements RunLogger {
         @Override
         public void writeLine(String line) {
@@ -652,6 +725,19 @@ class AgentEngineTest {
                             promptComposer, Path.of("."));
             try {
                 return engine.run(new Task(taskId, goal));
+            } finally {
+                engine.shutdown();
+            }
+        }
+
+        private RunResult run(ModelProvider provider, AgentSession session, String taskId, String goal) {
+            ExecutorService executor = Executors.newFixedThreadPool(4);
+            AgentEngine engine = promptComposer == null
+                    ? new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor)
+                    : new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
+                            promptComposer, Path.of("."));
+            try {
+                return engine.run(session, new Task(taskId, goal));
             } finally {
                 engine.shutdown();
             }
