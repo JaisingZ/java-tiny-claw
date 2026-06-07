@@ -68,6 +68,26 @@ class AgentApplicationTest {
     }
 
     @Test
+    void runOptionsParsesPlanMode() {
+        AgentApplication.RunOptions options = AgentApplication.RunOptions.parse(
+                new String[] { "run", "--plan", "--prompt", "hello" });
+
+        assertThat(options.prompt()).isEqualTo("hello");
+        assertThat(options.planMode()).isTrue();
+        assertThat(options.thinking()).isFalse();
+        assertThat(options.maxSteps()).isEqualTo(8);
+        assertThat(options.debug()).isFalse();
+    }
+
+    @Test
+    void runOptionsKeepsPlanModeDisabledByDefault() {
+        AgentApplication.RunOptions options = AgentApplication.RunOptions.parse(
+                new String[] { "run", "--prompt", "hello" });
+
+        assertThat(options.planMode()).isFalse();
+    }
+
+    @Test
     void startupCheckCommandIsUnknown() {
         FakeRuntime runtime = new FakeRuntime(true);
 

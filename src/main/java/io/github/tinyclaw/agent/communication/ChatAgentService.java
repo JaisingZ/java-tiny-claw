@@ -13,7 +13,7 @@ import java.util.function.Function;
  */
 public final class ChatAgentService implements ChatMessageHandler {
 
-    private final Function<RunLogger, AgentEngine> engineFactory;
+    private final EngineFactory engineFactory;
     private final Function<ChatSession, RunLogger> runLoggerFactory;
     private final WorkspaceSerialExecutor executor;
     private final SessionManager sessionManager;
@@ -24,6 +24,12 @@ public final class ChatAgentService implements ChatMessageHandler {
     }
 
     public ChatAgentService(Function<RunLogger, AgentEngine> engineFactory,
+            Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
+            SessionManager sessionManager) {
+        this((runLogger, message) -> engineFactory.apply(runLogger), runLoggerFactory, executor, sessionManager);
+    }
+
+    public ChatAgentService(EngineFactory engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
             SessionManager sessionManager) {
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
@@ -48,7 +54,7 @@ public final class ChatAgentService implements ChatMessageHandler {
         AgentEngine engine = null;
         try {
             RunLogger runLogger = runLoggerFactory.apply(session);
-            engine = engineFactory.apply(runLogger);
+            engine = engineFactory.create(runLogger, message);
             AgentSession agentSession = sessionManager.getOrCreate(sessionKey(message));
             engine.run(agentSession, new Task("chat-" + message.messageId(), message.text()));
         } catch (RuntimeException ex) {
@@ -72,5 +78,11 @@ public final class ChatAgentService implements ChatMessageHandler {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    @FunctionalInterface
+    public interface EngineFactory {
+
+        AgentEngine create(RunLogger runLogger, ChatMessage message);
     }
 }

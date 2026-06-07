@@ -11,7 +11,7 @@
 3. 执行工具或结束任务
 4. 落日志并返回 `RunResult`
 
-历史上 `StateStore` 与 `TraceRecorder` 是可选扩展，但当前版本不实现状态持久化和结构化 trace 层。
+历史上 `StateStore` 与 `TraceRecorder` 是可选扩展。当前版本不实现 Java 侧状态机和结构化 trace 层；长程任务只通过可选 Plan Mode 引导模型维护 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
 
 ## 最小流程
 

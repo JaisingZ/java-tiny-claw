@@ -75,6 +75,16 @@ public final class AgentEngine {
                 promptComposer, workDir);
     }
 
+    /**
+     * 创建带 Plan Mode 状态目录的主循环。
+     */
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger, Path workDir, boolean planMode, Path stateDir) {
+        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor(),
+                new DefaultPromptComposer(workDir == null ? Path.of(".") : workDir, planMode, stateDir),
+                workDir == null ? Path.of(".") : workDir);
+    }
+
     AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor) {
         this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,

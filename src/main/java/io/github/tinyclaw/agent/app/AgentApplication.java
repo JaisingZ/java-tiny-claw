@@ -29,6 +29,7 @@ public final class AgentApplication {
     private static final String RUN_COMMAND = "run";
     private static final String TELEGRAM_COMMAND = "telegram";
     private static final String PROMPT_OPTION = "--prompt";
+    private static final String PLAN_OPTION = "--plan";
     private static final String THINKING_OPTION = "--thinking";
     private static final String MAX_STEPS_OPTION = "--max-steps";
     private static final String DEBUG_OPTION = "--debug";
@@ -107,7 +108,7 @@ public final class AgentApplication {
         LmStudioModelProvider provider = options.debug()
                 ? new LmStudioModelProvider(config, runLogger::writeLine)
                 : new LmStudioModelProvider(config);
-        PromptComposer promptComposer = new DefaultPromptComposer(workDir);
+        PromptComposer promptComposer = new DefaultPromptComposer(workDir, options.planMode(), cliStateDir());
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
         AgentEngine engine = new AgentEngine(provider, registry, options.maxSteps(), options.thinking(), runLogger,
@@ -145,6 +146,10 @@ public final class AgentApplication {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private static Path cliStateDir() {
+        return Path.of(".tinyclaw", "state", "cli", "default");
     }
 
     interface ApplicationRuntime {
@@ -213,22 +218,25 @@ public final class AgentApplication {
         }
     }
 
-    private static final class RunOptions {
+    static final class RunOptions {
         private final String prompt;
         private final boolean thinking;
+        private final boolean planMode;
         private final int maxSteps;
         private final boolean debug;
 
-        private RunOptions(String prompt, boolean thinking, int maxSteps, boolean debug) {
+        private RunOptions(String prompt, boolean thinking, boolean planMode, int maxSteps, boolean debug) {
             this.prompt = prompt;
             this.thinking = thinking;
+            this.planMode = planMode;
             this.maxSteps = maxSteps;
             this.debug = debug;
         }
 
-        private static RunOptions parse(String[] args) {
+        static RunOptions parse(String[] args) {
             String prompt = null;
             boolean thinking = false;
+            boolean planMode = false;
             int maxSteps = DEFAULT_MAX_STEPS;
             boolean debug = false;
             for (int i = 1; i < args.length; i++) {
@@ -238,6 +246,8 @@ public final class AgentApplication {
                         throw new IllegalArgumentException("Missing value for --prompt");
                     }
                     prompt = args[i];
+                } else if (PLAN_OPTION.equals(args[i])) {
+                    planMode = true;
                 } else if (THINKING_OPTION.equals(args[i])) {
                     thinking = true;
                 } else if (MAX_STEPS_OPTION.equals(args[i])) {
@@ -255,7 +265,7 @@ public final class AgentApplication {
             if (!hasText(prompt)) {
                 throw new IllegalArgumentException("--prompt is required");
             }
-            return new RunOptions(prompt, thinking, maxSteps, debug);
+            return new RunOptions(prompt, thinking, planMode, maxSteps, debug);
         }
 
         private static int parseMaxSteps(String value) {
@@ -270,19 +280,23 @@ public final class AgentApplication {
             }
         }
 
-        private String prompt() {
+        String prompt() {
             return prompt;
         }
 
-        private boolean thinking() {
+        boolean thinking() {
             return thinking;
         }
 
-        private int maxSteps() {
+        boolean planMode() {
+            return planMode;
+        }
+
+        int maxSteps() {
             return maxSteps;
         }
 
-        private boolean debug() {
+        boolean debug() {
             return debug;
         }
     }

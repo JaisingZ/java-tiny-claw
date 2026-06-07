@@ -2,6 +2,7 @@ package io.github.tinyclaw.agent.communication;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.tinyclaw.agent.context.DefaultPromptComposer;
 import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
@@ -12,6 +13,7 @@ import io.github.tinyclaw.agent.provider.ModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.SessionManager;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -139,6 +141,30 @@ class ChatAgentServiceTest {
         assertThat(provider.contexts().get(1).workingMemory()).isEmpty();
     }
 
+    @Test
+    void engineFactoryCanRoutePlanModeStateByChatId() throws Exception {
+        RecordingPromptProvider provider = new RecordingPromptProvider();
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        ChatAgentService service = new ChatAgentService(
+                (logger, message) -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger,
+                        new DefaultPromptComposer(Path.of("."), true,
+                                Path.of(".tinyclaw", "state", "chat", message.chatId())),
+                        Path.of(".")),
+                TelegramStyleRunLogger::new,
+                executor,
+                new SessionManager());
+
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "first"), session);
+        service.handle(new ChatMessage("m2", "chat-b", "user-a", "second"), session);
+
+        assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
+        executor.close();
+        assertThat(provider.prompts()).hasSize(2);
+        assertThat(provider.prompts().get(0)).contains(".tinyclaw/state/chat/chat-a");
+        assertThat(provider.prompts().get(1)).contains(".tinyclaw/state/chat/chat-b");
+    }
+
     private static final class EchoFinishProvider implements ModelProvider {
         private final AtomicReference<String> taskId;
         private final AtomicReference<String> goal;
@@ -169,6 +195,21 @@ class ChatAgentServiceTest {
 
         private List<AgentContext> contexts() {
             return contexts;
+        }
+    }
+
+    private static final class RecordingPromptProvider implements ModelProvider {
+        private final List<String> prompts = new ArrayList<String>();
+
+        @Override
+        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            prompts.add(systemPrompt);
+            return new FinishDecision("answer:" + context.goal());
+        }
+
+        private List<String> prompts() {
+            return prompts;
         }
     }
 

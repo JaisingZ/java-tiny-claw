@@ -60,6 +60,54 @@ class DefaultPromptComposerTest {
     }
 
     @Test
+    void planModeIsDisabledByDefault() {
+        DefaultPromptComposer composer = new DefaultPromptComposer(workDir);
+
+        String prompt = composer.compose(new PromptContext(workDir, DecisionPhase.ACTION,
+                Collections.<ToolDefinition>emptyList()));
+
+        assertThat(prompt)
+                .doesNotContain("Plan Mode: State Externalization")
+                .doesNotContain("PLAN.md")
+                .doesNotContain("TODO.md");
+    }
+
+    @Test
+    void planModeInjectsStateExternalizationRules() {
+        DefaultPromptComposer composer = new DefaultPromptComposer(workDir, true,
+                Path.of(".tinyclaw", "state", "cli", "default"));
+
+        String prompt = composer.compose(new PromptContext(workDir, DecisionPhase.ACTION,
+                Collections.<ToolDefinition>emptyList()));
+
+        assertThat(prompt)
+                .contains("Plan Mode: State Externalization")
+                .contains("状态目录（相对于当前工作区）：.tinyclaw/state/cli/default")
+                .contains("PLAN.md")
+                .contains("TODO.md")
+                .contains("先检查状态目录")
+                .contains("如果文件不存在")
+                .contains("如果文件已存在")
+                .contains("更新 TODO.md 的 checkbox")
+                .contains("最终回答必须说明实际完成了什么");
+    }
+
+    @Test
+    void thinkingPhaseWithPlanModeStillDoesNotExposeToolCallInstructions() {
+        DefaultPromptComposer composer = new DefaultPromptComposer(workDir, true,
+                Path.of(".tinyclaw", "state", "cli", "default"));
+
+        String prompt = composer.compose(new PromptContext(workDir, DecisionPhase.THINKING,
+                Collections.<ToolDefinition>emptyList()));
+
+        assertThat(prompt)
+                .contains("当前是 THINKING 阶段")
+                .contains("Plan Mode: State Externalization")
+                .doesNotContain("调用一个或多个独立工具")
+                .doesNotContain("function.arguments");
+    }
+
+    @Test
     void includesSkillSummariesWithoutSkillBody() throws Exception {
         Path skillDir = workDir.resolve(".tinyclaw").resolve("skills").resolve("java");
         Files.createDirectories(skillDir);

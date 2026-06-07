@@ -16,17 +16,20 @@ public final class TelegramAgentConfig {
 
     private static final int DEFAULT_MAX_STEPS = 8;
     private static final boolean DEFAULT_ENABLE_THINKING = false;
+    private static final boolean DEFAULT_PLAN_MODE = false;
 
     private final Path workDir;
     private final int maxSteps;
     private final boolean enableThinking;
+    private final boolean planMode;
     private final WorkingMemoryPolicy workingMemoryPolicy;
 
-    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking,
+    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking, boolean planMode,
             WorkingMemoryPolicy workingMemoryPolicy) {
         this.workDir = workDir;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
+        this.planMode = planMode;
         this.workingMemoryPolicy = workingMemoryPolicy;
     }
 
@@ -37,6 +40,8 @@ public final class TelegramAgentConfig {
                         "agent.maxSteps"),
                 parseBoolean(optional(values, "agent.enableThinking", String.valueOf(DEFAULT_ENABLE_THINKING)),
                         "agent.enableThinking"),
+                parseBoolean(optional(values, "agent.planMode", String.valueOf(DEFAULT_PLAN_MODE)),
+                        "agent.planMode"),
                 new WorkingMemoryPolicy(
                         parsePositiveInt(optional(values, "agent.workingMemory.maxMessages",
                                 String.valueOf(WorkingMemoryPolicy.DEFAULT_MAX_MESSAGES)),
@@ -61,6 +66,7 @@ public final class TelegramAgentConfig {
                 .getResourceAsStream("agent.properties")) {
             if (inputStream == null) {
                 return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING,
+                        DEFAULT_PLAN_MODE,
                         new WorkingMemoryPolicy());
             }
             properties.load(inputStream);
@@ -80,6 +86,10 @@ public final class TelegramAgentConfig {
 
     public boolean enableThinking() {
         return enableThinking;
+    }
+
+    public boolean planMode() {
+        return planMode;
     }
 
     public WorkingMemoryPolicy workingMemoryPolicy() {

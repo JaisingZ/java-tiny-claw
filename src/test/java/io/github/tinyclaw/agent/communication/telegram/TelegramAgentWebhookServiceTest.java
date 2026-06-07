@@ -3,14 +3,89 @@ package io.github.tinyclaw.agent.communication.telegram;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.tinyclaw.agent.communication.ChatMessage;
+import io.github.tinyclaw.agent.context.PromptContext;
+import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
+import io.github.tinyclaw.agent.runtime.AgentEngine;
+import io.github.tinyclaw.agent.runtime.NoopRunLogger;
+import io.github.tinyclaw.agent.runtime.RunLogger;
+import io.github.tinyclaw.agent.runtime.WorkingMemoryPolicy;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class TelegramAgentWebhookServiceTest {
+
+    @Test
+    void createsChatScopedStateDirWhenPlanModeEnabled(@TempDir Path workDir) throws Exception {
+        RecordingRegistrarFactory registrarFactory = new RecordingRegistrarFactory(new ArrayList<String>());
+        TelegramWebhookConfig telegramConfig = new TelegramWebhookConfig(
+                "token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40);
+        TelegramAgentWebhookService service = new TelegramAgentWebhookService(
+                telegramConfig,
+                new LmStudioConfig("http://localhost:1234/v1", "model-1"),
+                workDir,
+                2,
+                false,
+                true,
+                new WorkingMemoryPolicy(),
+                port -> {
+                    throw new AssertionError("not expected in createEngine test");
+                },
+                registrarFactory);
+
+        AgentEngine engine = createEngineForTest(service, new ChatMessage("m1", "chat-abc", "user-a", "check state dir"));
+        try {
+            String prompt = composePromptForTest(engine, workDir);
+            assertThat(prompt).contains("Plan Mode: State Externalization");
+            assertThat(prompt).contains("状态目录（相对于当前工作区）：" + stateDir("chat-abc"));
+        } finally {
+            engine.shutdown();
+        }
+    }
+
+    @Test
+    void isolatesPlanStateByChatId(@TempDir Path workDir) throws Exception {
+        RecordingRegistrarFactory registrarFactory = new RecordingRegistrarFactory(new ArrayList<String>());
+        TelegramWebhookConfig telegramConfig = new TelegramWebhookConfig(
+                "token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40);
+        TelegramAgentWebhookService service = new TelegramAgentWebhookService(
+                telegramConfig,
+                new LmStudioConfig("http://localhost:1234/v1", "model-1"),
+                workDir,
+                2,
+                false,
+                true,
+                new WorkingMemoryPolicy(),
+                port -> {
+                    throw new AssertionError("not expected in createEngine test");
+                },
+                registrarFactory);
+
+        AgentEngine first = createEngineForTest(service, new ChatMessage("m1", "chat-a", "user-a", "first chat"));
+        AgentEngine second = createEngineForTest(service, new ChatMessage("m2", "chat-b", "user-a", "second chat"));
+        try {
+            String firstPrompt = composePromptForTest(first, workDir);
+            String secondPrompt = composePromptForTest(second, workDir);
+
+            String firstStateDir = stateDir("chat-a");
+            String secondStateDir = stateDir("chat-b");
+
+            assertThat(firstPrompt).contains("状态目录（相对于当前工作区）：" + firstStateDir);
+            assertThat(secondPrompt).contains("状态目录（相对于当前工作区）：" + secondStateDir);
+            assertThat(firstStateDir).isNotEqualTo(secondStateDir);
+        } finally {
+            first.shutdown();
+            second.shutdown();
+        }
+    }
 
     @Test
     void startsLocalServerThenTryCloudflareThenRegistersDynamicWebhook() {
@@ -164,5 +239,25 @@ class TelegramAgentWebhookServiceTest {
         private TelegramWebhookConfig lastConfig() {
             return lastConfig;
         }
+    }
+
+    private static AgentEngine createEngineForTest(TelegramAgentWebhookService service, ChatMessage message)
+            throws Exception {
+        Method method = TelegramAgentWebhookService.class.getDeclaredMethod("createEngine", RunLogger.class,
+                ChatMessage.class);
+        method.setAccessible(true);
+        return (AgentEngine) method.invoke(service, NoopRunLogger.INSTANCE, message);
+    }
+
+    private static String composePromptForTest(AgentEngine engine, Path workDir) throws Exception {
+        Field field = AgentEngine.class.getDeclaredField("promptComposer");
+        field.setAccessible(true);
+        Object composer = field.get(engine);
+        Method method = composer.getClass().getDeclaredMethod("compose", PromptContext.class);
+        return (String) method.invoke(composer, new PromptContext(workDir, DecisionPhase.ACTION, Collections.emptyList()));
+    }
+
+    private static String stateDir(String chatId) {
+        return ".tinyclaw/state/chat/" + chatId;
     }
 }

@@ -40,7 +40,7 @@
 
 - `TelegramTransport`：使用 JDK `HttpServer` 启动本地 webhook endpoint，接收 Telegram POST update。
 - `TelegramWebhookConfig`：读取 token、公网 webhook URL、本地监听地址、webhook path、secret token、注册延迟和重试等配置。
-- `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数和 Thinking 开关。
+- `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数、Thinking 开关和 Plan Mode 开关。
 - `TelegramWebhookRegistrar`：调用 Telegram Bot API `setWebhook`，设置 `allowed_updates=["message"]`，可选 `secret_token`。
 - `TryCloudflareTunnel`：本地测试时启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`，解析临时 `trycloudflare.com` HTTPS URL。
 - `TelegramAgentWebhookService`：库式宿主，组装 Telegram transport、trycloudflare 隧道、`ChatAgentService`、LM Studio Provider 和工具注册表。
@@ -71,6 +71,7 @@
 - `agent.workdir`：`TelegramAgentWebhookService` 的工作目录，默认 `.`。
 - `agent.maxSteps`：Webhook 模式下 `AgentEngine` 最大步数，默认 `8`。
 - `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
+- `agent.planMode`：Webhook 模式是否开启任务级状态外部化，默认 `false`。
 
 Provider 配置沿用现有 `LmStudioConfig`、`SiliconFlowConfig` 等配置体系；当前 Telegram Webhook 宿主默认装配 `LmStudioModelProvider`。
 
@@ -116,7 +117,7 @@ Telegram POST /telegram/webhook
 
 - `TelegramTransportTest`：覆盖合法文本、非文本忽略、secret token、malformed JSON、handler 异常仍 ACK。
 - `TelegramWebhookConfigTest`：覆盖 properties 读取、默认值和 token 必填。
-- `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking` 的默认值、properties 读取和非法值。
+- `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking`、`agent.planMode` 的默认值、properties 读取和非法值。
 - `TelegramWebhookRegistrarTest`：覆盖 `setWebhook` 请求体、空公网 URL 跳过注册、HTTP 错误、`ok=false`。
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
 - `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、动态 URL 注册和注册重试编排。
@@ -128,7 +129,7 @@ Telegram POST /telegram/webhook
 
 - 不新增 Telegram 启动之外的 CLI 子命令。
 - 不让 `run` 触发 Telegram Webhook 启动。
-- 不在通信层维护长程会话记忆。
+- 不在通信层解析或维护长程会话记忆；Plan Mode 只把 chat-scoped 状态目录传给 PromptComposer。
 - 不保留 Long Polling / `getUpdates` 路径。
 - 不把 `deleteWebhook` / `getUpdates` 作为正式 webhook 验收路径。
 - 不新增复杂任务队列、数据库或工作流引擎。

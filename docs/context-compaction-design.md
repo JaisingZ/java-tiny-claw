@@ -76,7 +76,7 @@ maskThresholdChars   = 200
 - 真实 token 计数。
 - LLM 摘要压缩。
 - 向量检索或 memory paging。
-- 文件系统持久化记忆。
+- 由 ContextCompactor 直接写入文件系统持久化记忆。
 - `read_file` 按行读取参数扩展。
 
 后续若 Provider 能返回 usage，可把固定字符水位线升级为基于真实 prompt tokens 的自适应压缩。若要引入摘要，应在后台或 StateStore/Memory 层做，不应每次 Provider 调用前同步请求另一个模型。
