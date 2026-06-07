@@ -10,6 +10,7 @@ import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
+import io.github.tinyclaw.agent.domain.SessionMessageKind;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
@@ -341,6 +342,88 @@ class AgentEngineTest {
                         SessionMessage.assistant("answer-a"));
     }
 
+    /**
+     * Provider 调用前应压缩超长 observation，但 RunResult 仍保留真实工具输出。
+     */
+    @Test
+    void compactsOversizedObservationBeforeNextProviderCall() {
+        String longOutput = "HEAD-" + repeat("x", 1_200) + "-TAIL";
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("echo", "text", longOutput),
+                finish("done"));
+        ContextCompactionPolicy policy = new ContextCompactionPolicy(200, 2, 100, 20, 20, 50);
+        EngineFixture fixture = fixture()
+                .withTools(new EchoTool())
+                .withContextCompactor(new ContextCompactor(policy));
+
+        RunResult result = fixture.run(provider, "task-compact-observation", "read huge output");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly(longOutput);
+        assertThat(provider.contexts()).hasSize(2);
+        String providerObservation = provider.contexts().get(1).observations().get(0);
+        assertThat(providerObservation).contains("HEAD-");
+        assertThat(providerObservation).contains("-TAIL");
+        assertThat(providerObservation).contains("内容过长");
+        assertThat(providerObservation).doesNotContain(repeat("x", 200));
+    }
+
+    /**
+     * Session 历史保存原始输出，压缩只影响本次 Provider 输入。
+     */
+    @Test
+    void compactionDoesNotMutateSessionHistory() {
+        String longOutput = "RAW-" + repeat("o", 1_200) + "-END";
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("echo", "text", longOutput),
+                finish("done"));
+        ContextCompactionPolicy policy = new ContextCompactionPolicy(200, 2, 100, 20, 20, 50);
+        EngineFixture fixture = fixture()
+                .withTools(new EchoTool())
+                .withContextCompactor(new ContextCompactor(policy));
+        AgentSession session = new AgentSession("chat-compaction");
+
+        RunResult result = fixture.run(provider, session, "task-session-compaction", "read huge output");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(session.history())
+                .containsExactly(
+                        SessionMessage.user("read huge output"),
+                        SessionMessage.observation(longOutput),
+                        SessionMessage.assistant("done"));
+    }
+
+    /**
+     * Thinking 和 Action 阶段都应使用压缩后的上下文。
+     */
+    @Test
+    void compactsContextForThinkingAndActionPhases() {
+        ContextPhaseRecordingProvider provider = new ContextPhaseRecordingProvider();
+        ContextCompactionPolicy policy = new ContextCompactionPolicy(200, 2, 100, 20, 20, 50);
+        EngineFixture fixture = fixture()
+                .withThinking(true)
+                .withContextCompactor(new ContextCompactor(policy));
+        AgentSession session = new AgentSession("chat-thinking-compaction",
+                new WorkingMemoryPolicy(10, 5_000));
+        session.append(SessionMessage.user("previous question"));
+        session.append(SessionMessage.observation("OBS-" + repeat("z", 1_200) + "-END"));
+
+        RunResult result = fixture.run(provider, session, "task-thinking-compaction", "finish");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.phases()).containsExactly(DecisionPhase.THINKING, DecisionPhase.ACTION);
+        assertThat(provider.contexts()).hasSize(2);
+        for (AgentContext context : provider.contexts()) {
+            SessionMessage compactedObservation = context.workingMemory().get(1);
+            assertThat(compactedObservation.kind()).isEqualTo(SessionMessageKind.OBSERVATION);
+            assertThat(compactedObservation.content())
+                    .contains("内容过长")
+                    .contains("OBS-")
+                    .contains("-END")
+                    .doesNotContain(repeat("z", 200));
+        }
+    }
+
     private EngineFixture fixture() {
         return new EngineFixture();
     }
@@ -375,6 +458,14 @@ class AgentEngineTest {
 
     private static ParallelToolDecision parallel(ToolCall... calls) {
         return new ParallelToolDecision(Arrays.asList(calls));
+    }
+
+    private static String repeat(String value, int count) {
+        StringBuilder builder = new StringBuilder(value.length() * count);
+        for (int i = 0; i < count; i++) {
+            builder.append(value);
+        }
+        return builder.toString();
     }
 
     private static ToolCall call(String toolName, Object... arguments) {
@@ -564,6 +655,30 @@ class AgentEngineTest {
         }
     }
 
+    private static final class ContextPhaseRecordingProvider implements ModelProvider {
+        private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+
+        @Override
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            phases.add(phase);
+            if (phase == DecisionPhase.THINKING) {
+                return new ThinkingDecision("ready");
+            }
+            return finish("done");
+        }
+
+        private List<DecisionPhase> phases() {
+            return phases;
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
+        }
+    }
+
     private static class RunLoggerAdapter implements RunLogger {
         @Override
         public void writeLine(String line) {
@@ -689,6 +804,7 @@ class AgentEngineTest {
         private int maxSteps = 4;
         private boolean thinking = false;
         private PromptComposer promptComposer = null;
+        private ContextCompactor contextCompactor = null;
 
         private EngineFixture withTools(Tool... tools) {
             for (Tool tool : tools) {
@@ -717,12 +833,14 @@ class AgentEngineTest {
             return this;
         }
 
+        private EngineFixture withContextCompactor(ContextCompactor value) {
+            contextCompactor = value;
+            return this;
+        }
+
         private RunResult run(ModelProvider provider, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
-            AgentEngine engine = promptComposer == null
-                    ? new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor)
-                    : new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
-                            promptComposer, Path.of("."));
+            AgentEngine engine = createEngine(provider, executor);
             try {
                 return engine.run(new Task(taskId, goal));
             } finally {
@@ -732,15 +850,24 @@ class AgentEngineTest {
 
         private RunResult run(ModelProvider provider, AgentSession session, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
-            AgentEngine engine = promptComposer == null
-                    ? new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor)
-                    : new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
-                            promptComposer, Path.of("."));
+            AgentEngine engine = createEngine(provider, executor);
             try {
                 return engine.run(session, new Task(taskId, goal));
             } finally {
                 engine.shutdown();
             }
+        }
+
+        private AgentEngine createEngine(ModelProvider provider, ExecutorService executor) {
+            PromptComposer composer = promptComposer == null ? null : promptComposer;
+            ContextCompactor compactor = contextCompactor == null
+                    ? new ContextCompactor()
+                    : contextCompactor;
+            if (composer == null) {
+                return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor, compactor);
+            }
+            return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
+                    composer, Path.of("."), compactor);
         }
     }
 }

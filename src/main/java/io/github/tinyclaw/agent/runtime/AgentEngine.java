@@ -42,6 +42,7 @@ public final class AgentEngine {
     private final ExecutorService toolExecutor;
     private final PromptComposer promptComposer;
     private final Path workDir;
+    private final ContextCompactor contextCompactor;
 
     /**
      * 创建不启用 thinking 的主循环。
@@ -77,11 +78,24 @@ public final class AgentEngine {
     AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor) {
         this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
-                new DefaultPromptComposer(Path.of(".")), Path.of("."));
+                new DefaultPromptComposer(Path.of(".")), Path.of("."), new ContextCompactor());
+    }
+
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger, ExecutorService toolExecutor, ContextCompactor contextCompactor) {
+        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+                new DefaultPromptComposer(Path.of(".")), Path.of("."), contextCompactor);
     }
 
     AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir) {
+        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+                promptComposer, workDir, new ContextCompactor());
+    }
+
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+            RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir,
+            ContextCompactor contextCompactor) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
         this.maxSteps = maxSteps;
@@ -90,6 +104,7 @@ public final class AgentEngine {
         this.toolExecutor = toolExecutor;
         this.promptComposer = promptComposer == null ? new DefaultPromptComposer(Path.of(".")) : promptComposer;
         this.workDir = workDir == null ? Path.of(".") : workDir;
+        this.contextCompactor = contextCompactor == null ? new ContextCompactor() : contextCompactor;
     }
 
     /**
@@ -194,7 +209,8 @@ public final class AgentEngine {
         Decision decision;
         try {
             String systemPrompt = promptComposer.compose(new PromptContext(workDir, phase, availableTools));
-            decision = provider.decide(context, phase, availableTools, systemPrompt);
+            AgentContext compactedContext = contextCompactor.compact(context);
+            decision = provider.decide(compactedContext, phase, availableTools, systemPrompt);
         } catch (RuntimeException ex) {
             throw new ProviderCallException("provider_error: " + ex.getMessage());
         }
