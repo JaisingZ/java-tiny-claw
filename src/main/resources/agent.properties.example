@@ -8,7 +8,6 @@ agent.planMode=false
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 
-telegram.webhook.enabled=false
 telegram.bot.token=
 telegram.webhook.host=127.0.0.1
 telegram.webhook.port=8080

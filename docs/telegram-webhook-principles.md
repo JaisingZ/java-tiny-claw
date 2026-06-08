@@ -129,7 +129,6 @@ Telegram Bot API
 常用 properties key：
 
 - `telegram.bot.token`：Bot Token，必填。
-- `telegram.webhook.enabled`：无参数启动时是否进入 Telegram Webhook 服务，默认 `false`。
 - `telegram.webhook.url`：公网 HTTPS Webhook URL；为空且未启用 trycloudflare 时只启动本地 server，不注册公网 Webhook。
 - `telegram.webhook.secret`：可选 secret token，用于校验 Telegram 请求头。
 - `telegram.webhook.host`：本地监听地址，默认 `0.0.0.0`。

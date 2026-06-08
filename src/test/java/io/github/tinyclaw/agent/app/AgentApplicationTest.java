@@ -8,43 +8,36 @@ import org.junit.jupiter.api.Test;
 class AgentApplicationTest {
 
     @Test
-    void noArgsResolvesHarnessWhenTelegramStartupDisabled() {
-        StartupMode mode = AgentApplication.resolveStartupMode(new String[0], false);
-
-        assertThat(mode).isEqualTo(StartupMode.HARNESS);
+    void noArgsRequiresExplicitCommand() {
+        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[0]))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Missing command: run or telegram");
     }
 
     @Test
-    void noArgsResolvesTelegramWhenStartupEnabled() {
-        StartupMode mode = AgentApplication.resolveStartupMode(new String[0], true);
-
-        assertThat(mode).isEqualTo(StartupMode.TELEGRAM);
-    }
-
-    @Test
-    void telegramCommandResolvesTelegramEvenWhenConfigDisabled() {
-        StartupMode mode = AgentApplication.resolveStartupMode(new String[] { "telegram" }, false);
+    void telegramCommandResolvesTelegram() {
+        StartupMode mode = AgentApplication.resolveStartupMode(new String[] { "telegram" });
 
         assertThat(mode).isEqualTo(StartupMode.TELEGRAM);
     }
 
     @Test
     void runCommandResolvesRunPrompt() {
-        StartupMode mode = AgentApplication.resolveStartupMode(new String[] { "run", "--prompt", "hello" }, true);
+        StartupMode mode = AgentApplication.resolveStartupMode(new String[] { "run", "--prompt", "hello" });
 
         assertThat(mode).isEqualTo(StartupMode.RUN_PROMPT);
     }
 
     @Test
     void startupCheckCommandIsUnknown() {
-        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "startup-check" }, true))
+        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "startup-check" }))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Unknown command: startup-check");
     }
 
     @Test
     void telegramCommandRejectsExtraArgs() {
-        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "telegram", "--debug" }, true))
+        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "telegram", "--debug" }))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Unknown telegram option: --debug");
     }

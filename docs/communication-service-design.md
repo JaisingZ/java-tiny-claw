@@ -11,15 +11,12 @@
 - `runtime` 不感知 Telegram，只接收 `Task` 并推进 Main Loop。
 - `communication` 负责统一消息模型、会话输出、消息处理和工作区串行调度。
 - `communication.telegram` 负责 Telegram Webhook 接收、`setWebhook` 注册、trycloudflare 隧道和消息发送。
-- `telegram` 子命令用于显式启动 Webhook；无参数启动遵循 `telegram.webhook.enabled` 配置。
+- `telegram` 子命令用于显式启动 Webhook；无参数启动不再承载通信服务或 harness 信息输出。
 
 ## CLI 启动行为
 
-- `telegram.webhook.enabled` 默认值为 `false`。
-- 无参数启动：
-  - `telegram.webhook.enabled=false`（默认）：启动主 harness 信息输出。
-  - `telegram.webhook.enabled=true`：启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务。
-- `telegram` 子命令：无视 `telegram.webhook.enabled`，直接启动 `TelegramAgentWebhookService`。
+- 无参数启动：缺少正式命令，提示使用 `run` 或 `telegram`。
+- `telegram` 子命令：直接启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务。
 - `run`：只走命令行运行，不启动 Telegram Webhook。
 
 ## 核心抽象
@@ -55,7 +52,6 @@
 
 常用 properties key：
 
-- `telegram.webhook.enabled`：可选，默认 `false`，控制无参数启动是否进入 Telegram Webhook 服务。
 - `telegram.bot.token`：Telegram Bot Token，必填。
 - `telegram.webhook.url`：HTTPS 公网 webhook URL；为空且未启用 trycloudflare 时只启动本地 server，不调用 `setWebhook`。
 - `telegram.webhook.secret`：可选 secret token，用于校验 `X-Telegram-Bot-Api-Secret-Token`。
@@ -103,7 +99,7 @@ Telegram POST /telegram/webhook
 
 1. 确认 `cloudflared --version` 可执行。
 2. 设置 `telegram.webhook.tunnel=trycloudflare`，并保持 `telegram.webhook.url` 为空。
-3. 通过 `telegram` 子命令，或通过 `telegram.webhook.enabled=true` 的无参数启动，启动 `TelegramAgentWebhookService`。
+3. 通过 `telegram` 子命令启动 `TelegramAgentWebhookService`。
 4. 服务先启动本地 `HttpServer`。
 5. 服务启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`。
 6. 服务解析 `https://*.trycloudflare.com`，拼接 `<publicBaseUrl><webhookPath>`。
@@ -122,8 +118,7 @@ Telegram POST /telegram/webhook
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
 - `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、动态 URL 注册和注册重试编排。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、串行执行和日志映射覆盖。
-- `AgentApplicationTest`：覆盖无参数启动策略、`telegram` 子命令、`run` 命令与未知命令行为。
-- `TelegramStartupConfigTest`：覆盖 `telegram.webhook.enabled` 默认值与 properties 读取。
+- `AgentApplicationTest`：覆盖无参数缺命令、`telegram` 子命令、`run` 命令与未知命令行为。
 
 ## 非目标
 

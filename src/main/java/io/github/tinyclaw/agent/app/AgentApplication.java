@@ -40,12 +40,7 @@ public final class AgentApplication {
     }
 
     static void execute(String[] args) throws Exception {
-        // 无参数是否进入 Telegram，由配置决定；显式子命令不再读取多余配置。
-        StartupMode mode = resolveStartupMode(args, TelegramStartupConfig.loadDefault().enabled());
-        if (mode == StartupMode.HARNESS) {
-            startHarness();
-            return;
-        }
+        StartupMode mode = resolveStartupMode(args);
         if (mode == StartupMode.RUN_PROMPT) {
             runPrompt(RunOptions.parse(args));
             return;
@@ -53,9 +48,9 @@ public final class AgentApplication {
         startTelegram();
     }
 
-    static StartupMode resolveStartupMode(String[] args, boolean telegramEnabled) {
+    static StartupMode resolveStartupMode(String[] args) {
         if (args.length == 0) {
-            return telegramEnabled ? StartupMode.TELEGRAM : StartupMode.HARNESS;
+            throw new IllegalArgumentException("Missing command: run or telegram");
         }
         if (RUN_COMMAND.equals(args[0])) {
             return StartupMode.RUN_PROMPT;
@@ -83,19 +78,6 @@ public final class AgentApplication {
         if (args.length > 1) {
             throw new IllegalArgumentException("Unknown telegram option: " + args[1]);
         }
-    }
-
-    private static void startHarness() {
-        LmStudioConfig config = LmStudioConfig.loadDefault();
-        new LmStudioModelProvider(config);
-        ToolRegistry registry = new ToolRegistry()
-                .register(new ReadFileTool(Path.of(".")))
-                .register(new WriteFileTool(Path.of(".")))
-                .register(new EditFileTool(Path.of(".")))
-                .register(new BashTool(Path.of(".")));
-        RunLogger logger = new Slf4jRunLogger(false);
-        logger.writeLine("Tiny Agent Harness provider=" + config.model()
-                + " tools=" + registry.definitions().size());
     }
 
     private static void runPrompt(RunOptions options) {
