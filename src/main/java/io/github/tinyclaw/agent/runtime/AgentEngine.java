@@ -138,8 +138,9 @@ public final class AgentEngine {
     }
 
     private RunResult runContext(AgentContext context) {
+        SystemReminderInjector systemReminderInjector = new SystemReminderInjector();
         while (context.stepCount() < maxSteps) {
-            TurnResult turn = runTurn(context);
+            TurnResult turn = runTurn(context, systemReminderInjector);
             if (turn.result() != null) {
                 return turn.result();
             }
@@ -169,7 +170,7 @@ public final class AgentEngine {
         return Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
     }
 
-    private TurnResult runTurn(AgentContext context) {
+    private TurnResult runTurn(AgentContext context, SystemReminderInjector systemReminderInjector) {
         int currentStep = context.stepCount() + 1;
         runLogger.turnStarted(currentStep);
 
@@ -187,7 +188,7 @@ public final class AgentEngine {
         } catch (ProviderCallException ex) {
             return TurnResult.done(fail(context, ex.reason()));
         }
-        return applyDecision(context, decision);
+        return applyDecision(context, decision, systemReminderInjector);
     }
 
     private AgentContext runThinkingPhase(AgentContext context) {
@@ -229,7 +230,8 @@ public final class AgentEngine {
         return new ProviderResponse(decision, elapsedMillis(start));
     }
 
-    private TurnResult applyDecision(AgentContext context, Decision decision) {
+    private TurnResult applyDecision(AgentContext context, Decision decision,
+            SystemReminderInjector systemReminderInjector) {
         if (decision instanceof FinishDecision) {
             FinishDecision finish = (FinishDecision) decision;
             runLogger.finished(finish);
@@ -237,23 +239,27 @@ public final class AgentEngine {
         }
 
         if (decision instanceof ToolDecision) {
-            return handleToolDecision(context, ((ToolDecision) decision).call());
+            return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector);
         }
 
         if (decision instanceof ParallelToolDecision) {
-            return handleParallelToolDecision(context, (ParallelToolDecision) decision);
+            return handleParallelToolDecision(context, (ParallelToolDecision) decision, systemReminderInjector);
         }
 
         return TurnResult.done(fail(context, "unsupported_decision"));
     }
 
-    private TurnResult handleToolDecision(AgentContext context, ToolCall call) {
+    private TurnResult handleToolDecision(AgentContext context, ToolCall call,
+            SystemReminderInjector systemReminderInjector) {
         ToolResult toolResult = executeToolCall(context, call);
-        return TurnResult.next(advanceAndObserve(context,
-                Collections.singletonList(observationFor(call, toolResult))));
+        List<String> outputs = new ArrayList<String>();
+        outputs.add(observationFor(call, toolResult));
+        appendReminder(outputs, systemReminderInjector.afterToolCall(call, toolResult));
+        return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
-    private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision) {
+    private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision,
+            SystemReminderInjector systemReminderInjector) {
         List<ToolCall> calls = decision.getCalls();
         if (calls.isEmpty()) {
             return TurnResult.next(context.advance());
@@ -273,6 +279,7 @@ public final class AgentEngine {
         }
 
         List<String> outputs = new ArrayList<String>();
+        String lastReminder = null;
         for (ToolCall call : calls) {
             ToolResult result;
             CompletableFuture<ToolResult> future = readOnlyResults.get(call);
@@ -287,8 +294,13 @@ public final class AgentEngine {
             }
 
             outputs.add(observationFor(call, result));
+            String reminder = systemReminderInjector.afterToolCall(call, result);
+            if (reminder != null) {
+                lastReminder = reminder;
+            }
         }
 
+        appendReminder(outputs, lastReminder);
         return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
@@ -305,6 +317,12 @@ public final class AgentEngine {
             return toolResult.output();
         }
         return errorRecoveryAdvisor.advise(call, toolResult.errorMessage());
+    }
+
+    private void appendReminder(List<String> outputs, String reminder) {
+        if (reminder != null) {
+            outputs.add(reminder);
+        }
     }
 
     private AgentContext advanceAndObserve(AgentContext context, List<String> outputs) {

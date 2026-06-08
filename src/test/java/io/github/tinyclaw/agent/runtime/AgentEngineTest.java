@@ -275,6 +275,72 @@ class AgentEngineTest {
     }
 
     /**
+     * 连续无效工具调用第三次后注入 System Reminder，供下一轮模型决策读取。
+     */
+    @Test
+    void injectsSystemReminderAfterThreeRepeatedIneffectiveToolCalls() {
+        EngineFixture fixture = fixture().withTools(new FailingTool()).withMaxSteps(5);
+        ReminderAwareProvider provider = new ReminderAwareProvider();
+
+        RunResult result = fixture.run(provider, "task-reminder", "avoid repeated failure");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("stopped after reminder");
+        assertThat(result.observations()).hasSize(3);
+        assertThat(result.observations().get(2))
+                .contains("Error executing fail_tool: read failed")
+                .contains("[SYSTEM REMINDER]");
+        assertThat(provider.contexts()).hasSize(4);
+        assertThat(provider.contexts().get(3).observations().get(2)).contains("[SYSTEM REMINDER]");
+    }
+
+    /**
+     * Reminder 追加在同一轮观测末尾。
+     */
+    @Test
+    void appendsSystemReminderAtEndOfCurrentObservation() {
+        EngineFixture fixture = fixture().withTools(new FailingTool()).withMaxSteps(4);
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("fail_tool"),
+                tool("fail_tool"),
+                tool("fail_tool"),
+                finish("done"));
+
+        RunResult result = fixture.run(provider, "task-reminder-order", "repeat same failed tool");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(3);
+        assertThat(result.observations().get(2))
+                .startsWith("Error executing fail_tool: read failed")
+                .endsWith("explain what manual input is needed.");
+    }
+
+    /**
+     * 并行工具多次无效时，每轮最多追加一条 Reminder。
+     */
+    @Test
+    void appendsAtMostOneSystemReminderForParallelFailuresPerTurn() {
+        EngineFixture fixture = fixture()
+                .withTools(new FailingTool(), new FailingTool("fail_tool_2"))
+                .withMaxSteps(4);
+        RecordingContextProvider provider = new RecordingContextProvider(
+                parallel(call("fail_tool"), call("fail_tool_2")),
+                parallel(call("fail_tool"), call("fail_tool_2")),
+                parallel(call("fail_tool"), call("fail_tool_2")),
+                finish("done"));
+
+        RunResult result = fixture.run(provider, "task-parallel-reminder", "repeat parallel failures");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(3);
+        assertThat(countOccurrences(result.observations().get(2), "[SYSTEM REMINDER]")).isEqualTo(1);
+        assertThat(result.observations().get(2))
+                .contains("Error executing fail_tool: read failed")
+                .contains("Error executing fail_tool_2: read failed")
+                .contains("[SYSTEM REMINDER]");
+    }
+
+    /**
      * 空并行决策也会推进一步
      */
     @Test
@@ -451,6 +517,25 @@ class AgentEngineTest {
     }
 
     /**
+     * Session 历史应保存包含 System Reminder 的观测。
+     */
+    @Test
+    void sessionHistoryStoresSystemReminderObservation() {
+        ReminderAwareProvider provider = new ReminderAwareProvider();
+        EngineFixture fixture = fixture().withTools(new FailingTool()).withMaxSteps(5);
+        AgentSession session = new AgentSession("chat-system-reminder");
+
+        RunResult result = fixture.run(provider, session, "task-session-reminder", "repeat same failed tool");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(session.history())
+                .contains(
+                        SessionMessage.user("repeat same failed tool"),
+                        SessionMessage.assistant("stopped after reminder"));
+        assertThat(session.history().get(3).content()).contains("[SYSTEM REMINDER]");
+    }
+
+    /**
      * Thinking 和 Action 阶段都应使用压缩后的上下文。
      */
     @Test
@@ -523,6 +608,19 @@ class AgentEngineTest {
             builder.append(value);
         }
         return builder.toString();
+    }
+
+    private static int countOccurrences(String content, String text) {
+        int count = 0;
+        int index = 0;
+        while (index >= 0) {
+            index = content.indexOf(text, index);
+            if (index >= 0) {
+                count++;
+                index += text.length();
+            }
+        }
+        return count;
     }
 
     private static ToolCall call(String toolName, Object... arguments) {
@@ -637,9 +735,19 @@ class AgentEngineTest {
      * 总是返回失败的工具
      */
     private static final class FailingTool implements Tool {
+        private final String name;
+
+        private FailingTool() {
+            this("fail_tool");
+        }
+
+        private FailingTool(String name) {
+            this.name = name;
+        }
+
         @Override
         public String name() {
-            return "fail_tool";
+            return name;
         }
 
         @Override
@@ -723,6 +831,33 @@ class AgentEngineTest {
                 return tool("fail_tool");
             }
             return finish("recovered");
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
+        }
+    }
+
+    private static final class ReminderAwareProvider implements ModelProvider {
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+
+        @Override
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            if (containsReminder(state.observations())) {
+                return finish("stopped after reminder");
+            }
+            return tool("fail_tool");
+        }
+
+        private boolean containsReminder(List<String> observations) {
+            for (String observation : observations) {
+                if (observation.contains("[SYSTEM REMINDER]")) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private List<AgentContext> contexts() {

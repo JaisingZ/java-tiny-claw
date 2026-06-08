@@ -17,6 +17,7 @@
 
 ```text
 ctx = AgentContext.create(task)
+reminder = new SystemReminderInjector()
 
 while ctx.stepCount < maxSteps:
   if enableThinking:
@@ -37,12 +38,15 @@ while ctx.stepCount < maxSteps:
       ctx = ctx.advance().observe(output)
     else:
       ctx = ctx.advance().observe(recovery_observation)
+    if reminder is triggered:
+      append [SYSTEM REMINDER] at the end of the current observation
     continue
 
   if ParallelToolDecision:
     execute read-only tools concurrently
     execute side-effect tools serially in model order
     convert each failed result to a recovery observation
+    append at most one [SYSTEM REMINDER] for this turn
     ctx = ctx.advance().observe(joined_outputs)
     continue
 
@@ -58,6 +62,7 @@ return failed("max_steps_exceeded")
 - `Tool` 负责自身参数校验和物理边界校验。
 - `AgentContext` 只负责本轮运行时上下文（内存）。
 - `RunLogger` 负责可读日志输出。
+- `SystemReminderInjector` 是单次 run 内的局部防呆状态，不跨任务复用。
 - 当前没有独立的执行前拦截包。
 
 ## 失败规则
@@ -67,6 +72,7 @@ return failed("max_steps_exceeded")
 - 未知工具 -> 写入 `Error executing <name>: Unknown tool: <name>` 观测
 - 工具执行抛异常 -> `tool_error: <message>`
 - 工具返回失败 -> 写入 `Error executing <tool>: <message>` 观测，命中规则时追加 `[Recovery Hint]`
+- 连续无效工具调用 -> 在最新观测末尾追加 `[SYSTEM REMINDER]`，提醒模型停止重复、换策略或说明需要人工输入
 - 并行工具执行异常 -> `parallel_execution_failed: <message>`
 - 不支持的决策类型 -> `unsupported_decision`
 - 超过最大步数 -> `max_steps_exceeded`
