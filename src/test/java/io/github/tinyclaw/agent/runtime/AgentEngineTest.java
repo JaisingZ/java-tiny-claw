@@ -67,29 +67,41 @@ class AgentEngineTest {
     }
 
     /**
-     * 找不到工具时失败
+     * 找不到工具时作为可恢复观测进入下一轮，最终由步数兜底。
      */
     @Test
-    void failsWhenToolIsMissing() {
-        EngineFixture fixture = fixture();
+    void recordsMissingToolAsRecoveryObservationUntilMaxSteps() {
+        EngineFixture fixture = fixture().withMaxSteps(1);
 
         RunResult result = fixture.run(constantProvider(tool("missing")), "task-2", "missing tool");
 
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
-        assertThat(result.failureReason()).isEqualTo("Unknown tool: missing");
+        assertThat(result.failureReason()).isEqualTo("max_steps_exceeded");
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0))
+                .contains("Error executing missing: Unknown tool: missing")
+                .contains("[Recovery Hint]")
+                .contains("available tools");
     }
 
     /**
-     * 工具返回失败时主循环失败
+     * 工具返回失败时写入自愈观测，让模型下一轮修正并完成。
      */
     @Test
-    void failsWhenToolReturnsFailure() {
+    void recoversWhenToolReturnsFailureAndProviderCorrectsNextTurn() {
         EngineFixture fixture = fixture().withTools(new FailingTool());
+        RecoveringProvider provider = new RecoveringProvider();
 
-        RunResult result = fixture.run(constantProvider(tool("fail_tool")), "task-tool-fails", "tool fails");
+        RunResult result = fixture.run(provider, "task-tool-fails", "tool fails");
 
-        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
-        assertThat(result.failureReason()).isEqualTo("read failed");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("recovered");
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0))
+                .contains("Error executing fail_tool: read failed")
+                .doesNotContain("[Recovery Hint]");
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(1).observations()).containsExactly(result.observations().get(0));
     }
 
     /**
@@ -233,7 +245,33 @@ class AgentEngineTest {
                 parallel(call("read1"), call("missing"))), "task-parallel-missing", "parallel missing");
 
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
-        assertThat(result.failureReason()).isEqualTo("Unknown tool: missing");
+        assertThat(result.failureReason()).isEqualTo("max_steps_exceeded");
+        assertThat(result.observations()).hasSize(4);
+        assertThat(result.observations().get(0))
+                .contains("hello")
+                .contains("Error executing missing: Unknown tool: missing");
+    }
+
+    /**
+     * 并行工具中的失败也按声明顺序写入同一条观测，供下一轮恢复。
+     */
+    @Test
+    void recordsMixedParallelSuccessAndFailureInDeclaredOrder() {
+        EngineFixture fixture = fixture()
+                .withTools(new ReadOnlyEchoTool("read1", "hello"), new FailingTool());
+        RecordingContextProvider provider = new RecordingContextProvider(
+                parallel(call("read1"), call("fail_tool")),
+                finish("done"));
+
+        RunResult result = fixture.run(provider, "task-parallel-recovery", "parallel recovery");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0))
+                .startsWith("hello")
+                .contains("\n\nError executing fail_tool: read failed");
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(1).observations()).containsExactly(result.observations().get(0));
     }
 
     /**
@@ -391,6 +429,25 @@ class AgentEngineTest {
                         SessionMessage.user("read huge output"),
                         SessionMessage.observation(longOutput),
                         SessionMessage.assistant("done"));
+    }
+
+    /**
+     * Session 历史应保存自愈后的错误观测，供后续任务使用。
+     */
+    @Test
+    void sessionHistoryStoresRecoveryObservation() {
+        RecoveringProvider provider = new RecoveringProvider();
+        EngineFixture fixture = fixture().withTools(new FailingTool());
+        AgentSession session = new AgentSession("chat-recovery");
+
+        RunResult result = fixture.run(provider, session, "task-session-recovery", "recover from tool failure");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(session.history())
+                .containsExactly(
+                        SessionMessage.user("recover from tool failure"),
+                        SessionMessage.observation(result.observations().get(0)),
+                        SessionMessage.assistant("recovered"));
     }
 
     /**
@@ -648,6 +705,24 @@ class AgentEngineTest {
                 index++;
             }
             return decisions[current];
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
+        }
+    }
+
+    private static final class RecoveringProvider implements ModelProvider {
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+
+        @Override
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            if (state.observations().isEmpty()) {
+                return tool("fail_tool");
+            }
+            return finish("recovered");
         }
 
         private List<AgentContext> contexts() {

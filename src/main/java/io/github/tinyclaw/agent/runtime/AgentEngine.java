@@ -43,6 +43,7 @@ public final class AgentEngine {
     private final PromptComposer promptComposer;
     private final Path workDir;
     private final ContextCompactor contextCompactor;
+    private final ErrorRecoveryAdvisor errorRecoveryAdvisor;
 
     /**
      * 创建不启用 thinking 的主循环。
@@ -115,6 +116,7 @@ public final class AgentEngine {
         this.promptComposer = promptComposer == null ? new DefaultPromptComposer(Path.of(".")) : promptComposer;
         this.workDir = workDir == null ? Path.of(".") : workDir;
         this.contextCompactor = contextCompactor == null ? new ContextCompactor() : contextCompactor;
+        this.errorRecoveryAdvisor = new ErrorRecoveryAdvisor();
     }
 
     /**
@@ -247,11 +249,8 @@ public final class AgentEngine {
 
     private TurnResult handleToolDecision(AgentContext context, ToolCall call) {
         ToolResult toolResult = executeToolCall(context, call);
-        if (!toolResult.success()) {
-            return TurnResult.done(fail(context, toolResult.errorMessage()));
-        }
-
-        return TurnResult.next(advanceAndObserve(context, Collections.singletonList(toolResult.output())));
+        return TurnResult.next(advanceAndObserve(context,
+                Collections.singletonList(observationFor(call, toolResult))));
     }
 
     private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision) {
@@ -265,7 +264,7 @@ public final class AgentEngine {
         for (ToolCall call : calls) {
             Tool tool = toolRegistry.snapshot().get(call.toolName());
             if (tool == null) {
-                return TurnResult.done(fail(context, "Unknown tool: " + call.toolName()));
+                continue;
             }
             if (!tool.isSideEffect()) {
                 readOnlyResults.put(call,
@@ -287,10 +286,7 @@ public final class AgentEngine {
                 result = executeToolCall(context, call);
             }
 
-            if (!result.success()) {
-                return TurnResult.done(fail(context, result.errorMessage()));
-            }
-            outputs.add(result.output());
+            outputs.add(observationFor(call, result));
         }
 
         return TurnResult.next(advanceAndObserve(context, outputs));
@@ -302,6 +298,13 @@ public final class AgentEngine {
         ToolResult toolResult = toolRegistry.execute(call, context);
         runLogger.toolCompleted(call, toolResult, elapsedMillis(toolStart));
         return toolResult;
+    }
+
+    private String observationFor(ToolCall call, ToolResult toolResult) {
+        if (toolResult.success()) {
+            return toolResult.output();
+        }
+        return errorRecoveryAdvisor.advise(call, toolResult.errorMessage());
     }
 
     private AgentContext advanceAndObserve(AgentContext context, List<String> outputs) {

@@ -35,16 +35,16 @@ while ctx.stepCount < maxSteps:
     execute one tool through ToolRegistry
     if success:
       ctx = ctx.advance().observe(output)
-      continue
-    return failed(error)
+    else:
+      ctx = ctx.advance().observe(recovery_observation)
+    continue
 
   if ParallelToolDecision:
     execute read-only tools concurrently
     execute side-effect tools serially in model order
-    if all success:
-      ctx = ctx.advance().observe(joined_outputs)
-      continue
-    return failed(error)
+    convert each failed result to a recovery observation
+    ctx = ctx.advance().observe(joined_outputs)
+    continue
 
   return failed("unsupported_decision")
 
@@ -64,9 +64,9 @@ return failed("max_steps_exceeded")
 
 - Provider 抛异常 -> `provider_error: <message>`
 - Thinking 阶段返回非 `ThinkingDecision` -> `unsupported_thinking_decision`
-- 未知工具 -> `Unknown tool: <name>`
+- 未知工具 -> 写入 `Error executing <name>: Unknown tool: <name>` 观测
 - 工具执行抛异常 -> `tool_error: <message>`
-- 工具返回失败 -> 直接失败
+- 工具返回失败 -> 写入 `Error executing <tool>: <message>` 观测，命中规则时追加 `[Recovery Hint]`
 - 并行工具执行异常 -> `parallel_execution_failed: <message>`
 - 不支持的决策类型 -> `unsupported_decision`
 - 超过最大步数 -> `max_steps_exceeded`
