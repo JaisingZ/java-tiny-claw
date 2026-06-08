@@ -21,19 +21,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.UUID;
 
 /**
- * 应用入口
- * 负责命令行入口分发
+ * 应用入口，负责命令行分发和运行时组装。
  */
 public final class AgentApplication {
 
     private static final String RUN_COMMAND = "run";
     private static final String TELEGRAM_COMMAND = "telegram";
-    private static final String PROMPT_OPTION = "--prompt";
-    private static final String PLAN_OPTION = "--plan";
-    private static final String THINKING_OPTION = "--thinking";
-    private static final String MAX_STEPS_OPTION = "--max-steps";
-    private static final String DEBUG_OPTION = "--debug";
-    private static final int DEFAULT_MAX_STEPS = 8;
 
     private AgentApplication() {
     }
@@ -42,36 +35,45 @@ public final class AgentApplication {
      * 程序入口。
      */
     public static void main(String[] args) throws Exception {
-        execute(args, new DefaultApplicationRuntime());
+        // main 只保留最薄的入口，便于 exec-maven-plugin 和测试共享同一分发逻辑。
+        execute(args);
     }
 
-    static void execute(String[] args, ApplicationRuntime runtime) throws Exception {
-        if (args.length == 0) {
-            if (runtime.telegramWebhookEnabled()) {
-                startTelegram(runtime);
-                return;
-            }
-            runtime.startHarness();
+    static void execute(String[] args) throws Exception {
+        // 无参数是否进入 Telegram，由配置决定；显式子命令不再读取多余配置。
+        StartupMode mode = resolveStartupMode(args, TelegramStartupConfig.loadDefault().enabled());
+        if (mode == StartupMode.HARNESS) {
+            startHarness();
             return;
         }
-        if (RUN_COMMAND.equals(args[0])) {
-            runtime.runPrompt(args);
+        if (mode == StartupMode.RUN_PROMPT) {
+            runPrompt(RunOptions.parse(args));
             return;
+        }
+        startTelegram();
+    }
+
+    static StartupMode resolveStartupMode(String[] args, boolean telegramEnabled) {
+        if (args.length == 0) {
+            return telegramEnabled ? StartupMode.TELEGRAM : StartupMode.HARNESS;
+        }
+        if (RUN_COMMAND.equals(args[0])) {
+            return StartupMode.RUN_PROMPT;
         }
         if (TELEGRAM_COMMAND.equals(args[0])) {
             ensureNoExtraArgs(args);
-            startTelegram(runtime);
-            return;
+            return StartupMode.TELEGRAM;
         }
         throw new IllegalArgumentException("Unknown command: " + args[0]);
     }
 
-    private static void startTelegram(ApplicationRuntime runtime) throws Exception {
-        ManagedService service = runtime.createTelegramService();
-        runtime.addShutdownHook(service::stop);
+    private static void startTelegram() throws InterruptedException {
+        // Webhook 服务是长驻进程；这里主动阻塞，直到 JVM 收到外部停止信号。
+        TelegramAgentWebhookService service = TelegramAgentWebhookService.loadDefault();
+        Runtime.getRuntime().addShutdownHook(new Thread(service::stop, "telegram-webhook-shutdown"));
         try {
             service.start();
-            runtime.awaitStop();
+            new CountDownLatch(1).await();
         } finally {
             service.stop();
         }
@@ -97,6 +99,7 @@ public final class AgentApplication {
     }
 
     private static void runPrompt(RunOptions options) {
+        // CLI run 每次独立组装 provider、tools 和 prompt composer，避免污染 Telegram 会话配置。
         LmStudioConfig config = LmStudioConfig.loadDefault();
         RunLogger runLogger = new Slf4jRunLogger(options.debug());
         Path workDir = Path.of(".");
@@ -116,7 +119,7 @@ public final class AgentApplication {
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
 
-        emitRunOutput(runLogger, result, options.debug());
+        writeRunOutput(runLogger, result, options.debug());
     }
 
     private static void registerTool(ToolRegistry registry, Tool tool, RunLogger runLogger) {
@@ -124,180 +127,20 @@ public final class AgentApplication {
         runLogger.registryMounted(tool.name());
     }
 
-    static void emitRunOutput(RunLogger logger, RunResult result, boolean debug) {
-        emitResult(logger, result);
-        if (!debug) {
-            emitObservations(logger, result);
-        }
-    }
-
-    private static void emitResult(RunLogger logger, RunResult result) {
+    private static void writeRunOutput(RunLogger logger, RunResult result, boolean debug) {
         logger.writeLine("RESULT status=" + result.status()
                 + " answer=" + result.finalAnswer()
                 + " failure=" + result.failureReason());
-    }
-
-    private static void emitObservations(RunLogger logger, RunResult result) {
+        if (debug) {
+            return;
+        }
         logger.writeLine("OBSERVATIONS");
         for (String observation : result.observations()) {
             logger.writeLine(observation);
         }
     }
 
-    private static boolean hasText(String value) {
-        return value != null && !value.trim().isEmpty();
-    }
-
     private static Path cliStateDir() {
         return Path.of(".tinyclaw", "state", "cli", "default");
-    }
-
-    interface ApplicationRuntime {
-
-        boolean telegramWebhookEnabled();
-
-        void startHarness();
-
-        void runPrompt(String[] args);
-
-        ManagedService createTelegramService();
-
-        void addShutdownHook(Runnable hook);
-
-        void awaitStop() throws InterruptedException;
-    }
-
-    interface ManagedService {
-
-        void start();
-
-        void stop();
-    }
-
-    private static final class DefaultApplicationRuntime implements ApplicationRuntime {
-
-        @Override
-        public boolean telegramWebhookEnabled() {
-            return TelegramStartupConfig.loadDefault().enabled();
-        }
-
-        @Override
-        public void startHarness() {
-            AgentApplication.startHarness();
-        }
-
-        @Override
-        public void runPrompt(String[] args) {
-            AgentApplication.runPrompt(RunOptions.parse(args));
-        }
-
-        @Override
-        public ManagedService createTelegramService() {
-            TelegramAgentWebhookService service = TelegramAgentWebhookService.loadDefault();
-            return new ManagedService() {
-                @Override
-                public void start() {
-                    service.start();
-                }
-
-                @Override
-                public void stop() {
-                    service.stop();
-                }
-            };
-        }
-
-        @Override
-        public void addShutdownHook(Runnable hook) {
-            Runtime.getRuntime().addShutdownHook(new Thread(hook, "telegram-webhook-shutdown"));
-        }
-
-        @Override
-        public void awaitStop() throws InterruptedException {
-            new CountDownLatch(1).await();
-        }
-    }
-
-    static final class RunOptions {
-        private final String prompt;
-        private final boolean thinking;
-        private final boolean planMode;
-        private final int maxSteps;
-        private final boolean debug;
-
-        private RunOptions(String prompt, boolean thinking, boolean planMode, int maxSteps, boolean debug) {
-            this.prompt = prompt;
-            this.thinking = thinking;
-            this.planMode = planMode;
-            this.maxSteps = maxSteps;
-            this.debug = debug;
-        }
-
-        static RunOptions parse(String[] args) {
-            String prompt = null;
-            boolean thinking = false;
-            boolean planMode = false;
-            int maxSteps = DEFAULT_MAX_STEPS;
-            boolean debug = false;
-            for (int i = 1; i < args.length; i++) {
-                if (PROMPT_OPTION.equals(args[i])) {
-                    i++;
-                    if (i >= args.length) {
-                        throw new IllegalArgumentException("Missing value for --prompt");
-                    }
-                    prompt = args[i];
-                } else if (PLAN_OPTION.equals(args[i])) {
-                    planMode = true;
-                } else if (THINKING_OPTION.equals(args[i])) {
-                    thinking = true;
-                } else if (MAX_STEPS_OPTION.equals(args[i])) {
-                    i++;
-                    if (i >= args.length) {
-                        throw new IllegalArgumentException("Missing value for --max-steps");
-                    }
-                    maxSteps = parseMaxSteps(args[i]);
-                } else if (DEBUG_OPTION.equals(args[i])) {
-                    debug = true;
-                } else {
-                    throw new IllegalArgumentException("Unknown run option: " + args[i]);
-                }
-            }
-            if (!hasText(prompt)) {
-                throw new IllegalArgumentException("--prompt is required");
-            }
-            return new RunOptions(prompt, thinking, planMode, maxSteps, debug);
-        }
-
-        private static int parseMaxSteps(String value) {
-            try {
-                int parsed = Integer.parseInt(value);
-                if (parsed <= 0) {
-                    throw new IllegalArgumentException("--max-steps must be positive");
-                }
-                return parsed;
-            } catch (NumberFormatException ex) {
-                throw new IllegalArgumentException("--max-steps must be an integer: " + value, ex);
-            }
-        }
-
-        String prompt() {
-            return prompt;
-        }
-
-        boolean thinking() {
-            return thinking;
-        }
-
-        boolean planMode() {
-            return planMode;
-        }
-
-        int maxSteps() {
-            return maxSteps;
-        }
-
-        boolean debug() {
-            return debug;
-        }
     }
 }
