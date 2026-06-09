@@ -97,10 +97,14 @@ public final class LmStudioModelProvider implements ModelProvider {
         if (phase == DecisionPhase.ACTION && hasToolCalls(message)) {
             decision = parseToolDecision(message);
         } else {
-            String content = textOrFallback(message, "content", "reasoning_content");
             if (phase == DecisionPhase.THINKING) {
+                String content = textOrFallback(message, "content", "reasoning_content");
                 decision = new ThinkingDecision(sanitizeThinkingText(content));
             } else {
+                String content = text(message.get("content"));
+                if (!hasText(sanitizeFinishText(content))) {
+                    throw new RuntimeException("LM Studio action response missing content or tool calls");
+                }
                 decision = new FinishDecision(sanitizeFinishText(content));
             }
         }

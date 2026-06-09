@@ -82,6 +82,20 @@ class LmStudioModelProviderTest {
     }
 
     @Test
+    void actionPhaseRejectsReasoningOnlyResponseAsFinalAnswer() throws Exception {
+        startServer(200, completionWithMessage("{\"content\":\"\",\"reasoning_content\":\"internal reasoning\"}",
+                        "length"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        LmStudioModelProvider provider = new LmStudioModelProvider(
+                new LmStudioConfig(baseUrl(), "qwen-local"));
+
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-reasoning-only", "finish")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("LM Studio action response missing content or tool calls");
+    }
+
+    @Test
     void actionPhaseSendsToolsAndParsesFirstToolCall() throws Exception {
         AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
         startServer(200, completionWithMessage("{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\"," 
@@ -345,7 +359,11 @@ class LmStudioModelProviderTest {
     }
 
     private static String completionWithMessage(String messageJson) {
-        return "{\"choices\":[{\"message\":" + messageJson + ",\"finish_reason\":\"stop\"}]}";
+        return completionWithMessage(messageJson, "stop");
+    }
+
+    private static String completionWithMessage(String messageJson, String finishReason) {
+        return "{\"choices\":[{\"message\":" + messageJson + ",\"finish_reason\":\"" + finishReason + "\"}]}";
     }
 
     private void assertSystemPromptContains(JsonNode requestBody, String... expectedTexts) {
