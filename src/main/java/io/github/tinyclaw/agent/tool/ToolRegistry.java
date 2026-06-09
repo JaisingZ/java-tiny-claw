@@ -16,12 +16,21 @@ import java.util.Map;
 public final class ToolRegistry {
 
     private final Map<String, Tool> tools = new LinkedHashMap<String, Tool>();
+    private final List<ToolMiddleware> middlewares = new ArrayList<ToolMiddleware>();
 
     /**
      * 注册工具并返回当前注册表，便于链式挂载。
      */
     public ToolRegistry register(Tool tool) {
         tools.put(tool.name(), tool);
+        return this;
+    }
+
+    /**
+     * 挂载工具执行中间件并返回当前注册表，便于链式组装。
+     */
+    public ToolRegistry use(ToolMiddleware middleware) {
+        middlewares.add(middleware);
         return this;
     }
 
@@ -48,9 +57,33 @@ public final class ToolRegistry {
         }
 
         try {
-            return tool.execute(call, context);
+            return executeWithMiddleware(0, tool, call, context);
+        } catch (ToolMiddlewareException ex) {
+            return ToolResult.failure("middleware_error: " + ex.getMessage());
+        } catch (ToolExecutionException ex) {
+            return ToolResult.failure("tool_error: " + ex.getMessage());
         } catch (RuntimeException ex) {
             return ToolResult.failure("tool_error: " + ex.getMessage());
+        }
+    }
+
+    private ToolResult executeWithMiddleware(int index, Tool tool, ToolCall call, AgentContext context) {
+        if (index >= middlewares.size()) {
+            try {
+                return tool.execute(call, context);
+            } catch (RuntimeException ex) {
+                throw new ToolExecutionException(ex.getMessage(), ex);
+            }
+        }
+        ToolMiddleware middleware = middlewares.get(index);
+        try {
+            return middleware.execute(call, context,
+                    (nextCall, nextContext) -> executeWithMiddleware(index + 1, tool, nextCall, nextContext));
+        } catch (RuntimeException ex) {
+            if (ex instanceof ToolExecutionException || ex instanceof ToolMiddlewareException) {
+                throw ex;
+            }
+            throw new ToolMiddlewareException(ex.getMessage(), ex);
         }
     }
 
@@ -70,5 +103,37 @@ public final class ToolRegistry {
             definitions.add(tool.definition());
         }
         return Collections.unmodifiableList(definitions);
+    }
+
+    /**
+     * 工具执行中间件。
+     */
+    @FunctionalInterface
+    public interface ToolMiddleware {
+
+        ToolResult execute(ToolCall call, AgentContext context, ToolExecution next);
+    }
+
+    /**
+     * 中间件放行后的后续执行节点。
+     */
+    @FunctionalInterface
+    public interface ToolExecution {
+
+        ToolResult execute(ToolCall call, AgentContext context);
+    }
+
+    private static final class ToolMiddlewareException extends RuntimeException {
+
+        private ToolMiddlewareException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    private static final class ToolExecutionException extends RuntimeException {
+
+        private ToolExecutionException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

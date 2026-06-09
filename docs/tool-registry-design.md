@@ -18,15 +18,16 @@ Tool Registry 负责：
 - 按工具名查找工具。
 - 暴露工具定义列表给 Provider。
 - 路由执行工具调用。
+- 在工具执行前运行已挂载的 Middleware。
 - 把未知工具和工具异常包装成 `ToolResult.failure(...)`。
 
 Tool Registry 不负责：
 
 - 推进主循环。
 - 适配模型厂商协议。
-- 做完整审批、白名单、黑名单或风险分级。
+- 自行维护完整审批、白名单、黑名单或风险分级。
 
-这些职责分别属于 `Runtime`、`Provider` 和后续可选治理层。当前代码没有独立 `middleware` 包。
+这些职责分别属于 `Runtime`、`Provider` 和可选治理层。`ToolRegistry` 只提供 Middleware 挂载点；具体权限策略在 `tool.permission`，聊天审批在 `communication.approval`。
 
 历史上会有 `StateStore` 与 `Tracer` 的完整分层；当前 Tiny Agent Harness 精简实现里不包含这两层。
 
@@ -51,6 +52,8 @@ default boolean isSideEffect() {
 ```java
 ToolRegistry register(Tool tool);
 
+ToolRegistry use(ToolMiddleware middleware);
+
 Tool require(String toolName);
 
 Map<String, Tool> snapshot();
@@ -60,7 +63,15 @@ List<ToolDefinition> definitions();
 ToolResult execute(ToolCall call, AgentContext context);
 ```
 
-`register` 负责挂载工具，`definitions` 负责向模型暴露工具 Schema，`snapshot` 用于主循环判断工具副作用属性，`execute` 是统一执行入口。
+`register` 负责挂载工具，`use` 负责挂载执行前中间件，`definitions` 负责向模型暴露工具 Schema，`snapshot` 用于主循环判断工具副作用属性，`execute` 是统一执行入口。
+
+Middleware 签名如下：
+
+```java
+ToolResult execute(ToolCall call, AgentContext context, ToolExecution next);
+```
+
+Middleware 在工具存在后、底层 `Tool.execute(...)` 前执行。中间件可直接返回失败结果阻断底层工具，也可调用 `next.execute(...)` 放行。
 
 未知工具不会抛出到主循环外，而是返回：
 
@@ -74,6 +85,12 @@ ToolResult.failure("Unknown tool: <name>")
 ToolResult.failure("tool_error: <message>")
 ```
 
+Middleware 抛出的运行时异常会被包装为：
+
+```text
+ToolResult.failure("middleware_error: <message>")
+```
+
 ## 执行流程
 
 `AgentEngine` 处理工具决策时遵循“只读并发、涉写串行”原则：
@@ -82,7 +99,8 @@ ToolResult.failure("tool_error: <message>")
 2. **多工具决策**：`ParallelToolDecision` 承载多个 `ToolCall`。
 3. **只读并发**：`AgentEngine` 通过 `ToolRegistry.snapshot()` 找到工具实例，`tool.isSideEffect()==false` 的工具会并发执行。
 4. **涉写串行**：写工具或未知副作用工具按模型返回顺序串行执行。
-5. **结果聚合**：所有工具结果成功后，输出按原始调用顺序合并写入 `AgentContext` observation。
+5. **Middleware 检查**：每个工具调用在真正执行前先通过 Registry 中的 Middleware 链。
+6. **结果聚合**：所有工具结果成功后，输出按原始调用顺序合并写入 `AgentContext` observation。
 
 并发组中任一工具失败都会让本轮任务失败；并发执行异常会返回 `parallel_execution_failed: ...`。
 
@@ -167,18 +185,20 @@ ToolResult.failure("tool_error: <message>")
 - 后台进程管理。
 - 动态工具发现。
 - MCP 或插件加载。
-- 独立审批/授权中间件。
+- 权限配置热加载。
 
 ## 安全策略
 
 Tool Registry 是分发层，不是完整安全策略层。当前安全策略按最小实现分布在工具自身和运行时：
 
 - `Tool`：校验自身参数和物理边界，例如路径不能逃逸工作区。
-- `ToolRegistry`：统一路由、未知工具处理和异常包装。
+- `ToolRegistry`：统一路由、Middleware 链、未知工具处理和异常包装。
+- `tool.permission`：按配置计算 `allow / ask / deny`，denyPattern 优先于工具级动作。
+- `communication.approval`：在聊天入口实现人工审批等待、放行、拒绝和超时清理。
 - `AgentEngine`：基于 `Tool.isSideEffect()` 限制写操作串行执行。
 - `RunLogger`：记录工具执行关键日志，运行结论输出为 `RunResult`。
 
-审批、白名单、黑名单和风险分级应作为后续治理层设计，不能假定当前已经存在。
+Telegram Webhook 模式可选择启用审批 Middleware；CLI `run` 默认不启用，保持本地 YOLO 运行语义。权限规则启动时从 `agent.properties` 读取，不做热加载。
 
 ## 测试要求
 
@@ -188,6 +208,7 @@ Tool Registry 是分发层，不是完整安全策略层。当前安全策略按
 - 已注册工具能通过 Registry 执行。
 - 未知工具返回失败结果。
 - 工具异常返回失败结果。
+- Middleware 放行、阻断、执行顺序和异常包装。
 - 具体工具的参数校验、成功路径和失败路径。
 - `AgentEngine` 能正确处理工具成功与失败。
 

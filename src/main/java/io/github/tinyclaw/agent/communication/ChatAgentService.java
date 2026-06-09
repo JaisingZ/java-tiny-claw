@@ -1,5 +1,6 @@
 package io.github.tinyclaw.agent.communication;
 
+import io.github.tinyclaw.agent.communication.approval.ApprovalManager;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.AgentSession;
@@ -13,10 +14,11 @@ import java.util.function.Function;
  */
 public final class ChatAgentService implements ChatMessageHandler {
 
-    private final EngineFactory engineFactory;
+    private final SessionEngineFactory engineFactory;
     private final Function<ChatSession, RunLogger> runLoggerFactory;
     private final WorkspaceSerialExecutor executor;
     private final SessionManager sessionManager;
+    private final ApprovalManager approvalManager;
 
     public ChatAgentService(Function<RunLogger, AgentEngine> engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor) {
@@ -32,10 +34,27 @@ public final class ChatAgentService implements ChatMessageHandler {
     public ChatAgentService(EngineFactory engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
             SessionManager sessionManager) {
+        this(engineFactory, runLoggerFactory, executor, sessionManager, null);
+    }
+
+    public ChatAgentService(EngineFactory engineFactory,
+            Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
+            SessionManager sessionManager, ApprovalManager approvalManager) {
+        this.engineFactory = (runLogger, message, session) -> engineFactory.create(runLogger, message);
+        this.runLoggerFactory = Objects.requireNonNull(runLoggerFactory, "runLoggerFactory");
+        this.executor = Objects.requireNonNull(executor, "executor");
+        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager");
+        this.approvalManager = approvalManager;
+    }
+
+    public ChatAgentService(SessionEngineFactory engineFactory,
+            Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
+            SessionManager sessionManager, ApprovalManager approvalManager) {
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
         this.runLoggerFactory = Objects.requireNonNull(runLoggerFactory, "runLoggerFactory");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager");
+        this.approvalManager = approvalManager;
     }
 
     @Override
@@ -46,6 +65,9 @@ public final class ChatAgentService implements ChatMessageHandler {
             session.sendError("消息内容为空，无法启动 Agent。");
             return;
         }
+        if (approvalManager != null && approvalManager.resolveCommand(message.chatId(), message.text(), session)) {
+            return;
+        }
 
         executor.submit(() -> runAgent(message, session));
     }
@@ -54,7 +76,7 @@ public final class ChatAgentService implements ChatMessageHandler {
         AgentEngine engine = null;
         try {
             RunLogger runLogger = runLoggerFactory.apply(session);
-            engine = engineFactory.create(runLogger, message);
+            engine = engineFactory.create(runLogger, message, session);
             AgentSession agentSession = sessionManager.getOrCreate(sessionKey(message));
             engine.run(agentSession, new Task("chat-" + message.messageId(), message.text()));
         } catch (RuntimeException ex) {
@@ -84,5 +106,11 @@ public final class ChatAgentService implements ChatMessageHandler {
     public interface EngineFactory {
 
         AgentEngine create(RunLogger runLogger, ChatMessage message);
+    }
+
+    @FunctionalInterface
+    public interface SessionEngineFactory {
+
+        AgentEngine create(RunLogger runLogger, ChatMessage message, ChatSession session);
     }
 }

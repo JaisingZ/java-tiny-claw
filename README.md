@@ -12,6 +12,7 @@
 - 错误自愈：工具失败会作为观测写回上下文，并附带可执行恢复建议。
 - 系统防呆：重复无效工具调用会触发 `[SYSTEM REMINDER]` 近因提醒，推动模型换策略或求助。
 - Plan Mode：可选将长程任务状态外部化到 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
+- Telegram 工具审批：Webhook 模式可选启用 `allow / ask / deny` 工具权限和人工审批。
 - RunLogger：输出可读运行日志；`--debug` 时包含更详细事件与 Provider 请求/响应摘要。
 - RunResult：保留最终决策结果与可读观测。
 
@@ -119,6 +120,17 @@ agent.enableThinking=false
 agent.planMode=false
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
+agent.permissions.enabled=false
+agent.permissions.approvalTimeoutSeconds=1800
+agent.permissions.tool.read_file=allow
+agent.permissions.tool.write_file=ask
+agent.permissions.tool.edit_file=ask
+agent.permissions.tool.bash=ask
+agent.permissions.denyPattern.1=(?i)\brm\s+-rf\b
+agent.permissions.denyPattern.2=(?i)\bRemove-Item\b.*\b(-Recurse|-Force)\b
+agent.permissions.denyPattern.3=(?i)\bsudo\b
+agent.permissions.denyPattern.4=(?i)\bdrop\s+(database|table)\b
+agent.permissions.denyPattern.5=(?i)\bkubectl\s+delete\b
 
 telegram.bot.token=your-telegram-bot-token
 telegram.webhook.host=127.0.0.1
@@ -143,6 +155,14 @@ Telegram Webhook 是长驻入口，会按消息来源维护进程内 Session：
 - 开启 `agent.planMode=true` 后，每个 `chatId` 使用 `.tinyclaw/state/chat/<chatId>/` 保存任务级状态文件。
 - 每次请求模型前只截取最近 Working Memory，默认最多 12 条消息、12000 字符。
 - Session 不落盘，进程重启后历史清空；Plan Mode 的 `PLAN.md` / `TODO.md` 是独立的任务级文件状态。
+
+Telegram 模式可选开启工具审批：
+
+- `agent.permissions.enabled=false` 默认关闭；CLI `run` 不挂载审批中间件。
+- 启用后，denyPattern 命中会直接拒绝；`ask` 工具会向同一 Telegram 会话发送审批 ID。
+- 在同一会话回复 `/approve <id>` 放行，回复 `/reject <id>` 拒绝。
+- 超过 `agent.permissions.approvalTimeoutSeconds` 未处理会自动拒绝并清理内存状态。
+- 权限规则只在启动时读取，不做运行时热加载。
 
 开启可读调试日志：
 

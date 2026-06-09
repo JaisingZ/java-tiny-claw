@@ -1,6 +1,7 @@
 package io.github.tinyclaw.agent.communication.telegram;
 
 import io.github.tinyclaw.agent.runtime.WorkingMemoryPolicy;
+import io.github.tinyclaw.agent.tool.permission.ToolPermissionConfig;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -23,14 +24,16 @@ public final class TelegramAgentConfig {
     private final boolean enableThinking;
     private final boolean planMode;
     private final WorkingMemoryPolicy workingMemoryPolicy;
+    private final ToolPermissionConfig toolPermissionConfig;
 
     private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking, boolean planMode,
-            WorkingMemoryPolicy workingMemoryPolicy) {
+            WorkingMemoryPolicy workingMemoryPolicy, ToolPermissionConfig toolPermissionConfig) {
         this.workDir = workDir;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.planMode = planMode;
         this.workingMemoryPolicy = workingMemoryPolicy;
+        this.toolPermissionConfig = toolPermissionConfig;
     }
 
     public static TelegramAgentConfig from(Map<String, String> values) {
@@ -48,7 +51,8 @@ public final class TelegramAgentConfig {
                                 "agent.workingMemory.maxMessages"),
                         parsePositiveInt(optional(values, "agent.workingMemory.maxChars",
                                 String.valueOf(WorkingMemoryPolicy.DEFAULT_MAX_CHARS)),
-                                "agent.workingMemory.maxChars")));
+                                "agent.workingMemory.maxChars")),
+                ToolPermissionConfig.from(values));
     }
 
     static TelegramAgentConfig load(Path path) {
@@ -67,7 +71,8 @@ public final class TelegramAgentConfig {
             if (inputStream == null) {
                 return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING,
                         DEFAULT_PLAN_MODE,
-                        new WorkingMemoryPolicy());
+                        new WorkingMemoryPolicy(),
+                        ToolPermissionConfig.from(new HashMap<String, String>()));
             }
             properties.load(inputStream);
         } catch (IOException ex) {
@@ -94,6 +99,10 @@ public final class TelegramAgentConfig {
 
     public WorkingMemoryPolicy workingMemoryPolicy() {
         return workingMemoryPolicy;
+    }
+
+    public ToolPermissionConfig toolPermissionConfig() {
+        return toolPermissionConfig;
     }
 
     private static Map<String, String> loadProperties(Path path) {

@@ -3,6 +3,7 @@ package io.github.tinyclaw.agent.communication.telegram;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.tinyclaw.agent.tool.permission.ToolPermissionAction;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -25,6 +26,10 @@ class TelegramAgentConfigTest {
         assertThat(config.planMode()).isFalse();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(12);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(12_000);
+        assertThat(config.toolPermissionConfig().enabled()).isFalse();
+        assertThat(config.toolPermissionConfig().approvalTimeout().getSeconds()).isEqualTo(1_800);
+        assertThat(config.toolPermissionConfig().toolActions().get("read_file")).isEqualTo(ToolPermissionAction.ALLOW);
+        assertThat(config.toolPermissionConfig().toolActions().get("bash")).isEqualTo(ToolPermissionAction.ASK);
     }
 
     @Test
@@ -36,6 +41,10 @@ class TelegramAgentConfigTest {
         values.put("agent.planMode", "true");
         values.put("agent.workingMemory.maxMessages", "5");
         values.put("agent.workingMemory.maxChars", "1000");
+        values.put("agent.permissions.enabled", "true");
+        values.put("agent.permissions.approvalTimeoutSeconds", "9");
+        values.put("agent.permissions.tool.bash", "deny");
+        values.put("agent.permissions.denyPattern.1", "(?i)rm\\s+-rf");
 
         TelegramAgentConfig config = TelegramAgentConfig.from(values);
 
@@ -45,6 +54,10 @@ class TelegramAgentConfigTest {
         assertThat(config.planMode()).isTrue();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(5);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(1000);
+        assertThat(config.toolPermissionConfig().enabled()).isTrue();
+        assertThat(config.toolPermissionConfig().approvalTimeout().getSeconds()).isEqualTo(9);
+        assertThat(config.toolPermissionConfig().toolActions().get("bash")).isEqualTo(ToolPermissionAction.DENY);
+        assertThat(config.toolPermissionConfig().denyPatterns()).hasSize(1);
     }
 
     @Test
@@ -55,7 +68,10 @@ class TelegramAgentConfigTest {
                 + "agent.enableThinking=true\n"
                 + "agent.planMode=true\n"
                 + "agent.workingMemory.maxMessages=6\n"
-                + "agent.workingMemory.maxChars=2048\n");
+                + "agent.workingMemory.maxChars=2048\n"
+                + "agent.permissions.enabled=true\n"
+                + "agent.permissions.approvalTimeoutSeconds=11\n"
+                + "agent.permissions.tool.write_file=deny\n");
 
         TelegramAgentConfig config = TelegramAgentConfig.load(configPath);
 
@@ -65,6 +81,9 @@ class TelegramAgentConfigTest {
         assertThat(config.planMode()).isTrue();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(6);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(2048);
+        assertThat(config.toolPermissionConfig().enabled()).isTrue();
+        assertThat(config.toolPermissionConfig().approvalTimeout().getSeconds()).isEqualTo(11);
+        assertThat(config.toolPermissionConfig().toolActions().get("write_file")).isEqualTo(ToolPermissionAction.DENY);
     }
 
     @Test
@@ -95,5 +114,25 @@ class TelegramAgentConfigTest {
         assertThatThrownBy(() -> TelegramAgentConfig.from(values))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("agent.planMode");
+    }
+
+    @Test
+    void rejectsInvalidPermissionAction() {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.permissions.tool.bash", "prompt");
+
+        assertThatThrownBy(() -> TelegramAgentConfig.from(values))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("agent.permissions.tool.bash");
+    }
+
+    @Test
+    void rejectsInvalidApprovalTimeout() {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.permissions.approvalTimeoutSeconds", "-1");
+
+        assertThatThrownBy(() -> TelegramAgentConfig.from(values))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("agent.permissions.approvalTimeoutSeconds");
     }
 }

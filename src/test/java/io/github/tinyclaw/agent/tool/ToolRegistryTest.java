@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,6 +59,71 @@ class ToolRegistryTest {
     void wrapsToolExceptionAsFailure() {
         ToolRegistry registry = new ToolRegistry();
         registry.register(new BrokenTool());
+
+        ToolResult result = registry.execute(new ToolCall("broken",
+                Collections.<String, Object>emptyMap()), state());
+
+        assertThat(result).isEqualTo(ToolResult.failure("tool_error: boom"));
+    }
+
+    @Test
+    void runsMiddlewaresBeforeToolInOrder() {
+        StringBuilder events = new StringBuilder();
+        ToolRegistry registry = new ToolRegistry()
+                .register(new ReadOnlyTool())
+                .use((call, context, next) -> {
+                    events.append("a>");
+                    ToolResult result = next.execute(call, context);
+                    events.append("<a");
+                    return result;
+                })
+                .use((call, context, next) -> {
+                    events.append("b>");
+                    ToolResult result = next.execute(call, context);
+                    events.append("<b");
+                    return result;
+                });
+
+        ToolResult result = registry.execute(new ToolCall("read_only",
+                Collections.<String, Object>emptyMap()), state());
+
+        assertThat(result).isEqualTo(ToolResult.success("ok"));
+        assertThat(events).hasToString("a>b><b<a");
+    }
+
+    @Test
+    void middlewareCanBlockToolExecution() {
+        AtomicInteger executions = new AtomicInteger();
+        ToolRegistry registry = new ToolRegistry()
+                .register(new CountingTool(executions))
+                .use((call, context, next) -> ToolResult.failure("blocked"));
+
+        ToolResult result = registry.execute(new ToolCall("count",
+                Collections.<String, Object>emptyMap()), state());
+
+        assertThat(result).isEqualTo(ToolResult.failure("blocked"));
+        assertThat(executions).hasValue(0);
+    }
+
+    @Test
+    void wrapsMiddlewareExceptionAsFailure() {
+        ToolRegistry registry = new ToolRegistry()
+                .register(new ReadOnlyTool())
+                .use((call, context, next) -> {
+                    throw new IllegalStateException("approval unavailable");
+                });
+
+        ToolResult result = registry.execute(new ToolCall("read_only",
+                Collections.<String, Object>emptyMap()), state());
+
+        assertThat(result).isEqualTo(ToolResult.failure("middleware_error: approval unavailable"));
+    }
+
+    @Test
+    void toolExceptionBehindMiddlewareStillReportsToolError() {
+        ToolRegistry registry = new ToolRegistry()
+                .register(new BrokenTool())
+                .use((call, context, next) -> next.execute(call, context));
 
         ToolResult result = registry.execute(new ToolCall("broken",
                 Collections.<String, Object>emptyMap()), state());
@@ -152,6 +218,25 @@ class ToolRegistryTest {
         @Override
         public ToolResult execute(ToolCall call, AgentContext state) {
             throw new RuntimeException("boom");
+        }
+    }
+
+    private static final class CountingTool implements Tool {
+        private final AtomicInteger executions;
+
+        private CountingTool(AtomicInteger executions) {
+            this.executions = executions;
+        }
+
+        @Override
+        public String name() {
+            return "count";
+        }
+
+        @Override
+        public ToolResult execute(ToolCall call, AgentContext state) {
+            executions.incrementAndGet();
+            return ToolResult.success("counted");
         }
     }
 }

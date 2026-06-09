@@ -4,19 +4,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.tinyclaw.agent.communication.ChatMessage;
+import io.github.tinyclaw.agent.communication.ChatSession;
+import io.github.tinyclaw.agent.communication.approval.ApprovalManager;
 import io.github.tinyclaw.agent.context.PromptContext;
+import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
+import io.github.tinyclaw.agent.domain.Task;
+import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.NoopRunLogger;
 import io.github.tinyclaw.agent.runtime.RunLogger;
 import io.github.tinyclaw.agent.runtime.WorkingMemoryPolicy;
+import io.github.tinyclaw.agent.tool.ToolRegistry;
+import io.github.tinyclaw.agent.tool.ToolResult;
+import io.github.tinyclaw.agent.tool.permission.ToolPermissionConfig;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -84,6 +95,38 @@ class TelegramAgentWebhookServiceTest {
         } finally {
             first.shutdown();
             second.shutdown();
+        }
+    }
+
+    @Test
+    void mountsPermissionMiddlewareWhenPermissionsEnabled(@TempDir Path workDir) throws Exception {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.permissions.enabled", "true");
+        values.put("agent.permissions.denyPattern.1", "(?i)echo");
+        TelegramAgentWebhookService service = new TelegramAgentWebhookService(
+                new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
+                new LmStudioConfig("http://localhost:1234/v1", "model-1"),
+                workDir,
+                2,
+                false,
+                false,
+                new WorkingMemoryPolicy(),
+                ToolPermissionConfig.from(values),
+                new ApprovalManager(() -> "approval-1"),
+                port -> {
+                    throw new AssertionError("not expected in createEngine test");
+                },
+                new RecordingRegistrarFactory(new ArrayList<String>()));
+        AgentEngine engine = createEngineForTest(service, new ChatMessage("m1", "chat-a", "user-a", "run"),
+                new RecordingSession());
+        try {
+            ToolResult result = registryForTest(engine).execute(new ToolCall("bash", bashArguments("echo hi")),
+                    AgentContext.create(new Task("t1", "run")));
+
+            assertThat(result.success()).isFalse();
+            assertThat(result.errorMessage()).contains("permission_denied");
+        } finally {
+            engine.shutdown();
         }
     }
 
@@ -243,10 +286,28 @@ class TelegramAgentWebhookServiceTest {
 
     private static AgentEngine createEngineForTest(TelegramAgentWebhookService service, ChatMessage message)
             throws Exception {
+        return createEngineForTest(service, message, new RecordingSession());
+    }
+
+    private static AgentEngine createEngineForTest(TelegramAgentWebhookService service, ChatMessage message,
+            ChatSession session)
+            throws Exception {
         Method method = TelegramAgentWebhookService.class.getDeclaredMethod("createEngine", RunLogger.class,
-                ChatMessage.class);
+                ChatMessage.class, ChatSession.class);
         method.setAccessible(true);
-        return (AgentEngine) method.invoke(service, NoopRunLogger.INSTANCE, message);
+        return (AgentEngine) method.invoke(service, NoopRunLogger.INSTANCE, message, session);
+    }
+
+    private static ToolRegistry registryForTest(AgentEngine engine) throws Exception {
+        Field field = AgentEngine.class.getDeclaredField("toolRegistry");
+        field.setAccessible(true);
+        return (ToolRegistry) field.get(engine);
+    }
+
+    private static Map<String, Object> bashArguments(String command) {
+        Map<String, Object> arguments = new LinkedHashMap<String, Object>();
+        arguments.put("command", command);
+        return arguments;
     }
 
     private static String composePromptForTest(AgentEngine engine, Path workDir) throws Exception {
@@ -259,5 +320,19 @@ class TelegramAgentWebhookServiceTest {
 
     private static String stateDir(String chatId) {
         return ".tinyclaw/state/chat/" + chatId;
+    }
+
+    private static final class RecordingSession implements ChatSession {
+        @Override
+        public void sendText(String text) {
+        }
+
+        @Override
+        public void sendStatus(String text) {
+        }
+
+        @Override
+        public void sendError(String text) {
+        }
     }
 }

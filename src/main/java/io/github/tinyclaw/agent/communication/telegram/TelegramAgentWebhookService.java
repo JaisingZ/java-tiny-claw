@@ -1,5 +1,8 @@
 package io.github.tinyclaw.agent.communication.telegram;
 
+import io.github.tinyclaw.agent.communication.ChatSession;
+import io.github.tinyclaw.agent.communication.approval.ApprovalManager;
+import io.github.tinyclaw.agent.communication.approval.ToolApprovalMiddleware;
 import io.github.tinyclaw.agent.communication.ChatAgentService;
 import io.github.tinyclaw.agent.communication.ChatMessage;
 import io.github.tinyclaw.agent.communication.WorkspaceSerialExecutor;
@@ -14,6 +17,8 @@ import io.github.tinyclaw.agent.tool.EditFileTool;
 import io.github.tinyclaw.agent.tool.ReadFileTool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.WriteFileTool;
+import io.github.tinyclaw.agent.tool.permission.ToolPermissionConfig;
+import io.github.tinyclaw.agent.tool.permission.ToolPermissionPolicy;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Objects;
@@ -30,6 +35,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     private final boolean enableThinking;
     private final boolean planMode;
     private final WorkingMemoryPolicy workingMemoryPolicy;
+    private final ToolPermissionConfig toolPermissionConfig;
+    private final ApprovalManager approvalManager;
     private final TunnelFactory tunnelFactory;
     private final RegistrarFactory registrarFactory;
     private WorkspaceSerialExecutor executor;
@@ -39,6 +46,7 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     public TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
             Path workDir, int maxSteps, boolean enableThinking) {
         this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking, false, new WorkingMemoryPolicy(),
+                ToolPermissionConfig.from(null), new ApprovalManager(),
                 TryCloudflareTunnel::start, TelegramWebhookRegistrar::new);
     }
 
@@ -46,13 +54,21 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
             Path workDir, int maxSteps, boolean enableThinking, TunnelFactory tunnelFactory,
             RegistrarFactory registrarFactory) {
         this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking, false, new WorkingMemoryPolicy(),
-                tunnelFactory, registrarFactory);
+                ToolPermissionConfig.from(null), new ApprovalManager(), tunnelFactory, registrarFactory);
     }
 
     TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
             Path workDir, int maxSteps, boolean enableThinking, boolean planMode,
             WorkingMemoryPolicy workingMemoryPolicy,
             TunnelFactory tunnelFactory, RegistrarFactory registrarFactory) {
+        this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking, planMode, workingMemoryPolicy,
+                ToolPermissionConfig.from(null), new ApprovalManager(), tunnelFactory, registrarFactory);
+    }
+
+    TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
+            Path workDir, int maxSteps, boolean enableThinking, boolean planMode,
+            WorkingMemoryPolicy workingMemoryPolicy, ToolPermissionConfig toolPermissionConfig,
+            ApprovalManager approvalManager, TunnelFactory tunnelFactory, RegistrarFactory registrarFactory) {
         this.telegramConfig = Objects.requireNonNull(telegramConfig, "telegramConfig");
         this.lmStudioConfig = Objects.requireNonNull(lmStudioConfig, "lmStudioConfig");
         this.workDir = Objects.requireNonNull(workDir, "workDir");
@@ -60,6 +76,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         this.enableThinking = enableThinking;
         this.planMode = planMode;
         this.workingMemoryPolicy = Objects.requireNonNull(workingMemoryPolicy, "workingMemoryPolicy");
+        this.toolPermissionConfig = Objects.requireNonNull(toolPermissionConfig, "toolPermissionConfig");
+        this.approvalManager = Objects.requireNonNull(approvalManager, "approvalManager");
         this.tunnelFactory = Objects.requireNonNull(tunnelFactory, "tunnelFactory");
         this.registrarFactory = Objects.requireNonNull(registrarFactory, "registrarFactory");
     }
@@ -74,6 +92,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
                 agentConfig.enableThinking(),
                 agentConfig.planMode(),
                 agentConfig.workingMemoryPolicy(),
+                agentConfig.toolPermissionConfig(),
+                new ApprovalManager(),
                 TryCloudflareTunnel::start,
                 TelegramWebhookRegistrar::new);
     }
@@ -84,7 +104,7 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         }
         executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(this::createEngine, TelegramRunLogger::new, executor,
-                new SessionManager(workingMemoryPolicy));
+                new SessionManager(workingMemoryPolicy), permissionsEnabled() ? approvalManager : null);
         if (usesTryCloudflareTunnel()) {
             startWithTryCloudflare(service);
             return;
@@ -156,15 +176,23 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         }
     }
 
-    private AgentEngine createEngine(RunLogger runLogger, ChatMessage message) {
+    private AgentEngine createEngine(RunLogger runLogger, ChatMessage message, ChatSession session) {
         ToolRegistry registry = new ToolRegistry()
                 .register(new ReadFileTool(workDir))
                 .register(new WriteFileTool(workDir))
                 .register(new EditFileTool(workDir))
                 .register(new BashTool(workDir));
+        if (permissionsEnabled()) {
+            registry.use(new ToolApprovalMiddleware(new ToolPermissionPolicy(toolPermissionConfig), approvalManager,
+                    message.chatId(), session, toolPermissionConfig.approvalTimeout()));
+        }
         runLogger.engineStarted(workDir, lmStudioConfig.model(), maxSteps, enableThinking, registry.definitions());
         return new AgentEngine(new LmStudioModelProvider(lmStudioConfig), registry, maxSteps, enableThinking, runLogger,
                 workDir, planMode, stateDir(message));
+    }
+
+    private boolean permissionsEnabled() {
+        return toolPermissionConfig.enabled();
     }
 
     private Path stateDir(ChatMessage message) {

@@ -2,20 +2,28 @@ package io.github.tinyclaw.agent.communication;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.tinyclaw.agent.communication.approval.ApprovalManager;
+import io.github.tinyclaw.agent.communication.approval.ApprovalResult;
 import io.github.tinyclaw.agent.context.DefaultPromptComposer;
 import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
+import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.SessionManager;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
+import java.time.Duration;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -163,6 +171,48 @@ class ChatAgentServiceTest {
         assertThat(provider.prompts()).hasSize(2);
         assertThat(provider.prompts().get(0)).contains(".tinyclaw/state/chat/chat-a");
         assertThat(provider.prompts().get(1)).contains(".tinyclaw/state/chat/chat-b");
+    }
+
+    @Test
+    void resolvesApprovalCommandBeforeSubmittingAgentTask() throws Exception {
+        ApprovalManager approvalManager = new ApprovalManager(() -> "approval-chat");
+        RecordingSession session = new RecordingSession();
+        CompletableFuture<ApprovalResult> approval = CompletableFuture.supplyAsync(
+                () -> approvalManager.requestApproval("chat-a", session, bashCall(), Duration.ofSeconds(2)));
+        waitForSessionMessage(session, "approval-chat");
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        ChatAgentService service = new ChatAgentService(
+                (logger, message) -> {
+                    throw new AssertionError("approval command must not start Agent");
+                },
+                TelegramStyleRunLogger::new,
+                executor,
+                new SessionManager(),
+                approvalManager);
+
+        service.handle(new ChatMessage("m-approve", "chat-a", "user-a", "/approve approval-chat"), session);
+
+        assertThat(approval.get(2, TimeUnit.SECONDS).allowed()).isTrue();
+        assertThat(executor.awaitIdle(200, TimeUnit.MILLISECONDS)).isTrue();
+        executor.close();
+        assertThat(session.messages()).anySatisfy(message -> assertThat(message).contains("已批准：approval-chat"));
+    }
+
+    private static void waitForSessionMessage(RecordingSession session, String text) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (session.messages().stream().anyMatch(message -> message.contains(text))) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Timed out waiting for session message: " + text);
+    }
+
+    private static ToolCall bashCall() {
+        Map<String, Object> arguments = new LinkedHashMap<String, Object>();
+        arguments.put("command", "git push");
+        return new ToolCall("bash", arguments);
     }
 
     private static final class EchoFinishProvider implements ModelProvider {
