@@ -12,6 +12,7 @@ import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
+import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.NoopRunLogger;
 import io.github.tinyclaw.agent.runtime.RunLogger;
@@ -110,6 +111,7 @@ class TelegramAgentWebhookServiceTest {
                 2,
                 false,
                 false,
+                false,
                 new WorkingMemoryPolicy(),
                 ToolPermissionConfig.from(values),
                 new ApprovalManager(() -> "approval-1"),
@@ -125,6 +127,35 @@ class TelegramAgentWebhookServiceTest {
 
             assertThat(result.success()).isFalse();
             assertThat(result.errorMessage()).contains("permission_denied");
+        } finally {
+            engine.shutdown();
+        }
+    }
+
+    @Test
+    void createsProviderWithDebugSinkWhenDebugEnabled(@TempDir Path workDir) throws Exception {
+        TelegramAgentWebhookService service = new TelegramAgentWebhookService(
+                new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
+                new LmStudioConfig("http://localhost:1234/v1", "model-1"),
+                workDir,
+                2,
+                false,
+                false,
+                true,
+                new WorkingMemoryPolicy(),
+                ToolPermissionConfig.from(null),
+                new ApprovalManager(),
+                port -> {
+                    throw new AssertionError("not expected in createEngine test");
+                },
+                new RecordingRegistrarFactory(new ArrayList<String>()));
+        AgentEngine engine = createEngineForTest(service, new ChatMessage("m1", "chat-a", "user-a", "run"),
+                new RecordingSession());
+        try {
+            Object provider = providerForTest(engine);
+
+            assertThat(provider).isInstanceOf(LmStudioModelProvider.class);
+            assertThat(debugSinkForTest(provider)).isNotNull();
         } finally {
             engine.shutdown();
         }
@@ -302,6 +333,18 @@ class TelegramAgentWebhookServiceTest {
         Field field = AgentEngine.class.getDeclaredField("toolRegistry");
         field.setAccessible(true);
         return (ToolRegistry) field.get(engine);
+    }
+
+    private static Object providerForTest(AgentEngine engine) throws Exception {
+        Field field = AgentEngine.class.getDeclaredField("provider");
+        field.setAccessible(true);
+        return field.get(engine);
+    }
+
+    private static Object debugSinkForTest(Object provider) throws Exception {
+        Field field = LmStudioModelProvider.class.getDeclaredField("debugSink");
+        field.setAccessible(true);
+        return field.get(provider);
     }
 
     private static Map<String, Object> bashArguments(String command) {

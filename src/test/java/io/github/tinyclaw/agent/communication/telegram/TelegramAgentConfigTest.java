@@ -24,6 +24,7 @@ class TelegramAgentConfigTest {
         assertThat(config.maxSteps()).isEqualTo(8);
         assertThat(config.enableThinking()).isFalse();
         assertThat(config.planMode()).isFalse();
+        assertThat(config.debug()).isFalse();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(12);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(12_000);
         assertThat(config.toolPermissionConfig().enabled()).isFalse();
@@ -39,6 +40,7 @@ class TelegramAgentConfigTest {
         values.put("agent.maxSteps", "12");
         values.put("agent.enableThinking", "true");
         values.put("agent.planMode", "true");
+        values.put("agent.debug", "true");
         values.put("agent.workingMemory.maxMessages", "5");
         values.put("agent.workingMemory.maxChars", "1000");
         values.put("agent.permissions.enabled", "true");
@@ -52,6 +54,7 @@ class TelegramAgentConfigTest {
         assertThat(config.maxSteps()).isEqualTo(12);
         assertThat(config.enableThinking()).isTrue();
         assertThat(config.planMode()).isTrue();
+        assertThat(config.debug()).isTrue();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(5);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(1000);
         assertThat(config.toolPermissionConfig().enabled()).isTrue();
@@ -67,6 +70,7 @@ class TelegramAgentConfigTest {
                 + "agent.maxSteps=5\n"
                 + "agent.enableThinking=true\n"
                 + "agent.planMode=true\n"
+                + "agent.debug=true\n"
                 + "agent.workingMemory.maxMessages=6\n"
                 + "agent.workingMemory.maxChars=2048\n"
                 + "agent.permissions.enabled=true\n"
@@ -79,6 +83,7 @@ class TelegramAgentConfigTest {
         assertThat(config.maxSteps()).isEqualTo(5);
         assertThat(config.enableThinking()).isTrue();
         assertThat(config.planMode()).isTrue();
+        assertThat(config.debug()).isTrue();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(6);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(2048);
         assertThat(config.toolPermissionConfig().enabled()).isTrue();
@@ -114,6 +119,16 @@ class TelegramAgentConfigTest {
         assertThatThrownBy(() -> TelegramAgentConfig.from(values))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("agent.planMode");
+    }
+
+    @Test
+    void rejectsInvalidDebug() {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.debug", "yes");
+
+        assertThatThrownBy(() -> TelegramAgentConfig.from(values))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("agent.debug");
     }
 
     @Test

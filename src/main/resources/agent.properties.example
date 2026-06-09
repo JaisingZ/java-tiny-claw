@@ -5,6 +5,7 @@ agent.workdir=.
 agent.maxSteps=8
 agent.enableThinking=false
 agent.planMode=false
+agent.debug=false
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 

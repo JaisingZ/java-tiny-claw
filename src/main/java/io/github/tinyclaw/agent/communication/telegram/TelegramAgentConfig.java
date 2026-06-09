@@ -18,20 +18,23 @@ public final class TelegramAgentConfig {
     private static final int DEFAULT_MAX_STEPS = 8;
     private static final boolean DEFAULT_ENABLE_THINKING = false;
     private static final boolean DEFAULT_PLAN_MODE = false;
+    private static final boolean DEFAULT_DEBUG = false;
 
     private final Path workDir;
     private final int maxSteps;
     private final boolean enableThinking;
     private final boolean planMode;
+    private final boolean debug;
     private final WorkingMemoryPolicy workingMemoryPolicy;
     private final ToolPermissionConfig toolPermissionConfig;
 
-    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking, boolean planMode,
+    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking, boolean planMode, boolean debug,
             WorkingMemoryPolicy workingMemoryPolicy, ToolPermissionConfig toolPermissionConfig) {
         this.workDir = workDir;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.planMode = planMode;
+        this.debug = debug;
         this.workingMemoryPolicy = workingMemoryPolicy;
         this.toolPermissionConfig = toolPermissionConfig;
     }
@@ -45,6 +48,8 @@ public final class TelegramAgentConfig {
                         "agent.enableThinking"),
                 parseBoolean(optional(values, "agent.planMode", String.valueOf(DEFAULT_PLAN_MODE)),
                         "agent.planMode"),
+                parseBoolean(optional(values, "agent.debug", String.valueOf(DEFAULT_DEBUG)),
+                        "agent.debug"),
                 new WorkingMemoryPolicy(
                         parsePositiveInt(optional(values, "agent.workingMemory.maxMessages",
                                 String.valueOf(WorkingMemoryPolicy.DEFAULT_MAX_MESSAGES)),
@@ -71,6 +76,7 @@ public final class TelegramAgentConfig {
             if (inputStream == null) {
                 return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING,
                         DEFAULT_PLAN_MODE,
+                        DEFAULT_DEBUG,
                         new WorkingMemoryPolicy(),
                         ToolPermissionConfig.from(new HashMap<String, String>()));
             }
@@ -95,6 +101,10 @@ public final class TelegramAgentConfig {
 
     public boolean planMode() {
         return planMode;
+    }
+
+    public boolean debug() {
+        return debug;
     }
 
     public WorkingMemoryPolicy workingMemoryPolicy() {

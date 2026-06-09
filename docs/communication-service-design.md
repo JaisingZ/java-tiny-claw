@@ -40,7 +40,7 @@
 
 - `TelegramTransport`：使用 JDK `HttpServer` 启动本地 webhook endpoint，接收 Telegram POST update。
 - `TelegramWebhookConfig`：读取 token、公网 webhook URL、本地监听地址、webhook path、secret token、注册延迟和重试等配置。
-- `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数、Thinking 开关、Plan Mode 和工具权限配置。
+- `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数、Thinking 开关、Plan Mode、服务端 debug 和工具权限配置。
 - `TelegramWebhookRegistrar`：调用 Telegram Bot API `setWebhook`，设置 `allowed_updates=["message"]`，可选 `secret_token`。
 - `TryCloudflareTunnel`：本地测试时启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`，解析临时 `trycloudflare.com` HTTPS URL。
 - `TelegramAgentWebhookService`：库式宿主，组装 Telegram transport、trycloudflare 隧道、`ChatAgentService`、LM Studio Provider 和工具注册表。
@@ -71,6 +71,7 @@
 - `agent.maxSteps`：Webhook 模式下 `AgentEngine` 最大步数，默认 `8`。
 - `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
 - `agent.planMode`：Webhook 模式是否开启任务级状态外部化，默认 `false`。
+- `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
 - `agent.permissions.enabled`：是否在 Telegram 模式启用工具审批 Middleware，默认 `false`。
 - `agent.permissions.approvalTimeoutSeconds`：人工审批等待秒数，默认 `1800`。
 - `agent.permissions.tool.<toolName>`：工具级权限动作，取值 `allow`、`ask`、`deny`。
@@ -102,6 +103,7 @@ Telegram POST /telegram/webhook
 - 每条有效文本消息生成独立 `Task`，任务 ID 为 `chat-<messageId>`。
 - `/approve <id>` 和 `/reject <id>` 在 `WorkspaceSerialExecutor.submit` 前处理，避免正在等待审批的 Agent 任务阻塞审批命令。
 - 同工作区通过 `WorkspaceSerialExecutor` 串行执行；`AgentEngine` 内部只读工具并发策略保持不变。
+- `agent.debug=true` 仅影响服务端 Provider 调试日志；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态。
 - 启用权限审批后，`allow` 直接执行，`deny` 返回工具失败，`ask` 向同一 Telegram 会话发送审批 ID 并等待人工处理。
 - 审批超时自动拒绝并清理内存 pending 状态。
 
@@ -125,10 +127,10 @@ Telegram POST /telegram/webhook
 
 - `TelegramTransportTest`：覆盖合法文本、非文本忽略、secret token、malformed JSON、handler 异常仍 ACK。
 - `TelegramWebhookConfigTest`：覆盖 properties 读取、默认值和 token 必填。
-- `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking`、`agent.planMode`、工具权限配置的默认值、properties 读取和非法值。
+- `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking`、`agent.planMode`、`agent.debug`、工具权限配置的默认值、properties 读取和非法值。
 - `TelegramWebhookRegistrarTest`：覆盖 `setWebhook` 请求体、空公网 URL 跳过注册、HTTP 错误、`ok=false`。
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
-- `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、动态 URL 注册、注册重试编排和权限 Middleware 挂载。
+- `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、动态 URL 注册、注册重试编排、权限 Middleware 挂载和 debug Provider 装配。
 - `ApprovalManagerTest`：覆盖 approve、reject、超时清理、跨 chatId 拒绝和未知审批 ID。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、审批命令旁路、串行执行和日志映射覆盖。
 - `AgentApplicationTest`：覆盖无参数缺命令、`telegram` 子命令、`run` 命令与未知命令行为。
@@ -137,6 +139,7 @@ Telegram POST /telegram/webhook
 
 - 不新增 Telegram 启动之外的 CLI 子命令。
 - 不让 `run` 触发 Telegram Webhook 启动。
+- 不支持 `telegram --debug`；Telegram 长驻入口的调试开关统一走 `agent.debug`。
 - 不在通信层解析或维护长程会话记忆；Plan Mode 只把 chat-scoped 状态目录传给 PromptComposer。
 - 不为权限规则做运行时热加载。
 - 不保留 Long Polling / `getUpdates` 路径。
