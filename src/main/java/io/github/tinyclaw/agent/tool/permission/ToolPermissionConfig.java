@@ -1,5 +1,6 @@
 package io.github.tinyclaw.agent.tool.permission;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,18 +18,30 @@ public final class ToolPermissionConfig {
 
     public static final boolean DEFAULT_ENABLED = false;
     public static final int DEFAULT_APPROVAL_TIMEOUT_SECONDS = 1_800;
+    public static final String DEFAULT_PERMISSION_FILE = ".claw/permissions.yaml";
+    public static final boolean DEFAULT_HOT_RELOAD = true;
+    public static final int DEFAULT_RELOAD_INTERVAL_SECONDS = 2;
 
     private final boolean enabled;
     private final Duration approvalTimeout;
     private final Map<String, ToolPermissionAction> toolActions;
     private final List<Pattern> denyPatterns;
+    private final Path permissionFile;
+    private final boolean hotReload;
+    private final Duration reloadInterval;
+    private final boolean legacyConfigured;
 
     private ToolPermissionConfig(boolean enabled, Duration approvalTimeout,
-            Map<String, ToolPermissionAction> toolActions, List<Pattern> denyPatterns) {
+            Map<String, ToolPermissionAction> toolActions, List<Pattern> denyPatterns,
+            Path permissionFile, boolean hotReload, Duration reloadInterval, boolean legacyConfigured) {
         this.enabled = enabled;
         this.approvalTimeout = approvalTimeout;
         this.toolActions = Collections.unmodifiableMap(new LinkedHashMap<String, ToolPermissionAction>(toolActions));
         this.denyPatterns = Collections.unmodifiableList(new ArrayList<Pattern>(denyPatterns));
+        this.permissionFile = permissionFile;
+        this.hotReload = hotReload;
+        this.reloadInterval = reloadInterval;
+        this.legacyConfigured = legacyConfigured;
     }
 
     public static ToolPermissionConfig from(Map<String, String> values) {
@@ -50,7 +63,15 @@ public final class ToolPermissionConfig {
                 actions.put(toolName, ToolPermissionAction.parse(entry.getValue(), key));
             }
         }
-        return new ToolPermissionConfig(enabled, timeout, actions, parseDenyPatterns(source));
+        Path permissionFile = Path.of(optional(source, "agent.permissions.file", DEFAULT_PERMISSION_FILE));
+        boolean hotReload = parseBoolean(optional(source, "agent.permissions.hotReload",
+                String.valueOf(DEFAULT_HOT_RELOAD)), "agent.permissions.hotReload");
+        Duration reloadInterval = Duration.ofSeconds(parsePositiveInt(optional(source,
+                "agent.permissions.reloadIntervalSeconds",
+                String.valueOf(DEFAULT_RELOAD_INTERVAL_SECONDS)),
+                "agent.permissions.reloadIntervalSeconds"));
+        return new ToolPermissionConfig(enabled, timeout, actions, parseDenyPatterns(source),
+                permissionFile, hotReload, reloadInterval, legacyConfigured(source));
     }
 
     public boolean enabled() {
@@ -67,6 +88,34 @@ public final class ToolPermissionConfig {
 
     public List<Pattern> denyPatterns() {
         return denyPatterns;
+    }
+
+    public Path permissionFile() {
+        return permissionFile;
+    }
+
+    public boolean hotReload() {
+        return hotReload;
+    }
+
+    public Duration reloadInterval() {
+        return reloadInterval;
+    }
+
+    public boolean legacyConfigured() {
+        return legacyConfigured;
+    }
+
+    private static boolean legacyConfigured(Map<String, String> values) {
+        for (String key : values.keySet()) {
+            if ("agent.permissions.enabled".equals(key)
+                    || "agent.permissions.approvalTimeoutSeconds".equals(key)
+                    || key.startsWith("agent.permissions.tool.")
+                    || key.startsWith("agent.permissions.denyPattern.")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Map<String, ToolPermissionAction> defaultToolActions() {

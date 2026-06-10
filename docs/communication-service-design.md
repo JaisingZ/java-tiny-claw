@@ -30,7 +30,7 @@
 - `ChatMessageHandler`：消息处理入口。
 - `ChatAgentService`：将文本消息转换为 `Task("chat-" + messageId, text)`，创建带聊天 `RunLogger` 的 `AgentEngine` 并执行。
 - `ApprovalManager`：保存待审批工具调用，处理 `/approve <id>` 和 `/reject <id>`，并限制只能由同一 `chatId` 审批。
-- `ToolApprovalMiddleware`：连接 `ToolPermissionPolicy`、`ApprovalManager` 和 `ToolRegistry` Middleware。
+- `ToolApprovalMiddleware`：连接动态 `PermissionPolicyProvider`、`ApprovalManager` 和 `ToolRegistry` Middleware。
 - `WorkspaceSerialExecutor`：单线程队列，保证同一工作区同一时间只运行一个 Agent 任务。
 - `AbstractChatRunLogger`：聊天平台 `RunLogger` 基类，默认回传最终回答和失败原因。
 
@@ -74,8 +74,36 @@
 - `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
 - `agent.permissions.enabled`：是否在 Telegram 模式启用工具审批 Middleware，默认 `false`。
 - `agent.permissions.approvalTimeoutSeconds`：人工审批等待秒数，默认 `1800`。
-- `agent.permissions.tool.<toolName>`：工具级权限动作，取值 `allow`、`ask`、`deny`。
-- `agent.permissions.denyPattern.<n>`：高危正则；命中后直接 `deny`，优先级高于工具级动作。
+- `agent.permissions.file`：权限 YAML 文件路径，默认 `.claw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
+- `agent.permissions.hotReload`：是否监听权限 YAML 并热更新，默认 `true`。
+- `agent.permissions.reloadIntervalSeconds`：热更新轮询兜底间隔，默认 `2`。
+- `agent.permissions.tool.<toolName>`：兼容 fallback；无 YAML 文件时使用，工具级权限动作取值 `allow`、`ask`、`deny`。
+- `agent.permissions.denyPattern.<n>`：兼容 fallback；无 YAML 文件时使用，高危正则命中后直接 `deny`。
+
+推荐把具体权限规则写入 `.claw/permissions.yaml`：
+
+```yaml
+version: 1
+enabled: true
+defaultAction: ask
+approvalTimeoutSeconds: 1800
+
+rules:
+  - id: allow-read
+    tools: [read_file]
+    action: allow
+
+  - id: deny-dangerous-bash
+    tools: [bash]
+    action: deny
+    arguments:
+      command:
+        regex: "(?i)\\b(rm\\s+-rf|sudo\\b|drop\\s+(database|table)|kubectl\\s+delete)\\b"
+
+  - id: ask-write-tools
+    tools: [write_file, edit_file, bash]
+    action: ask
+```
 
 Provider 配置沿用现有 `LmStudioConfig`、`SiliconFlowConfig` 等配置体系；当前 Telegram Webhook 宿主默认装配 `LmStudioModelProvider`。
 
@@ -106,6 +134,7 @@ Telegram POST /telegram/webhook
 - `agent.debug=true` 仅影响服务端 Provider 调试日志；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态。
 - 启用权限审批后，`allow` 直接执行，`deny` 返回工具失败，`ask` 向同一 Telegram 会话发送审批 ID 并等待人工处理。
 - 审批超时自动拒绝并清理内存 pending 状态。
+- 权限 YAML 热更新失败时保留上一份有效快照；审批中的 pending request 不受 reload 影响。
 
 ## 本地 trycloudflare 真 Webhook 流程
 
@@ -132,6 +161,7 @@ Telegram POST /telegram/webhook
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
 - `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、动态 URL 注册、注册重试编排、权限 Middleware 挂载和 debug Provider 装配。
 - `ApprovalManagerTest`：覆盖 approve、reject、超时清理、跨 chatId 拒绝和未知审批 ID。
+- `PermissionPolicySnapshotTest`、`PermissionPolicyProviderTest`、`PermissionFileWatcherTest`：覆盖 YAML schema、权限优先级、last-known-good 和热更新。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、审批命令旁路、串行执行和日志映射覆盖。
 - `AgentApplicationTest`：覆盖无参数缺命令、`telegram` 子命令、`run` 命令与未知命令行为。
 
@@ -141,7 +171,6 @@ Telegram POST /telegram/webhook
 - 不让 `run` 触发 Telegram Webhook 启动。
 - 不支持 `telegram --debug`；Telegram 长驻入口的调试开关统一走 `agent.debug`。
 - 不在通信层解析或维护长程会话记忆；Plan Mode 只把 chat-scoped 状态目录传给 PromptComposer。
-- 不为权限规则做运行时热加载。
 - 不保留 Long Polling / `getUpdates` 路径。
 - 不把 `deleteWebhook` / `getUpdates` 作为正式 webhook 验收路径。
 - 不新增复杂任务队列、数据库或工作流引擎。

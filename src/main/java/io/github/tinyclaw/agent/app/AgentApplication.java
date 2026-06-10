@@ -6,16 +6,13 @@ import io.github.tinyclaw.agent.communication.telegram.TelegramAgentWebhookServi
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
+import io.github.tinyclaw.agent.runtime.AgentToolRegistries;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.RunLogger;
 import io.github.tinyclaw.agent.runtime.RunResult;
 import io.github.tinyclaw.agent.runtime.Slf4jRunLogger;
-import io.github.tinyclaw.agent.tool.BashTool;
-import io.github.tinyclaw.agent.tool.EditFileTool;
-import io.github.tinyclaw.agent.tool.ReadFileTool;
 import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
-import io.github.tinyclaw.agent.tool.WriteFileTool;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.UUID;
@@ -85,14 +82,11 @@ public final class AgentApplication {
         LmStudioConfig config = LmStudioConfig.loadDefault();
         RunLogger runLogger = new Slf4jRunLogger(options.debug());
         Path workDir = Path.of(".");
-        ToolRegistry registry = new ToolRegistry();
-        registerTool(registry, new ReadFileTool(workDir), runLogger);
-        registerTool(registry, new WriteFileTool(workDir), runLogger);
-        registerTool(registry, new EditFileTool(workDir), runLogger);
-        registerTool(registry, new BashTool(workDir), runLogger);
         LmStudioModelProvider provider = options.debug()
                 ? new LmStudioModelProvider(config, runLogger::writeLine)
                 : new LmStudioModelProvider(config);
+        ToolRegistry registry = AgentToolRegistries.mainRegistry(provider, workDir);
+        logMountedTools(registry, runLogger);
         PromptComposer promptComposer = new DefaultPromptComposer(workDir, options.planMode(), cliStateDir());
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
@@ -104,9 +98,10 @@ public final class AgentApplication {
         writeRunOutput(runLogger, result, options.debug());
     }
 
-    private static void registerTool(ToolRegistry registry, Tool tool, RunLogger runLogger) {
-        registry.register(tool);
-        runLogger.registryMounted(tool.name());
+    private static void logMountedTools(ToolRegistry registry, RunLogger runLogger) {
+        for (Tool tool : registry.snapshot().values()) {
+            runLogger.registryMounted(tool.name());
+        }
     }
 
     private static void writeRunOutput(RunLogger logger, RunResult result, boolean debug) {

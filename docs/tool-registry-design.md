@@ -185,7 +185,6 @@ ToolResult.failure("middleware_error: <message>")
 - 后台进程管理。
 - 动态工具发现。
 - MCP 或插件加载。
-- 权限配置热加载。
 
 ## 安全策略
 
@@ -193,12 +192,37 @@ Tool Registry 是分发层，不是完整安全策略层。当前安全策略按
 
 - `Tool`：校验自身参数和物理边界，例如路径不能逃逸工作区。
 - `ToolRegistry`：统一路由、Middleware 链、未知工具处理和异常包装。
-- `tool.permission`：按配置计算 `allow / ask / deny`，denyPattern 优先于工具级动作。
+- `tool.permission`：按 `.claw/permissions.yaml` 的不可变快照计算 `allow / ask / deny`，支持工具名和参数正则匹配，冲突时 `deny > ask > allow`。
 - `communication.approval`：在聊天入口实现人工审批等待、放行、拒绝和超时清理。
 - `AgentEngine`：基于 `Tool.isSideEffect()` 限制写操作串行执行。
 - `RunLogger`：记录工具执行关键日志，运行结论输出为 `RunResult`。
 
-Telegram Webhook 模式可选择启用审批 Middleware；CLI `run` 默认不启用，保持本地 YOLO 运行语义。权限规则启动时从 `agent.properties` 读取，不做热加载。
+Telegram Webhook 模式可选择启用审批 Middleware；CLI `run` 默认不启用，保持本地 YOLO 运行语义。权限规则默认从工作目录下 `.claw/permissions.yaml` 读取，文件不存在时使用禁用快照并全部放行。热更新成功后只影响新的工具调用；解析失败时保留 last-known-good 快照。旧 `agent.permissions.tool.*` 和 `denyPattern.*` properties 仍作为无 YAML 文件时的兼容 fallback。
+
+示例：
+
+```yaml
+version: 1
+enabled: true
+defaultAction: ask
+approvalTimeoutSeconds: 1800
+
+rules:
+  - id: allow-read
+    tools: [read_file]
+    action: allow
+
+  - id: deny-dangerous-bash
+    tools: [bash]
+    action: deny
+    arguments:
+      command:
+        regex: "(?i)\\b(rm\\s+-rf|sudo\\b|drop\\s+(database|table)|kubectl\\s+delete)\\b"
+
+  - id: ask-write-tools
+    tools: [write_file, edit_file, bash]
+    action: ask
+```
 
 ## 测试要求
 
@@ -209,6 +233,7 @@ Telegram Webhook 模式可选择启用审批 Middleware；CLI `run` 默认不启
 - 未知工具返回失败结果。
 - 工具异常返回失败结果。
 - Middleware 放行、阻断、执行顺序和异常包装。
+- 动态权限 YAML 解析、优先级、非法配置、热更新和 last-known-good 行为。
 - 具体工具的参数校验、成功路径和失败路径。
 - `AgentEngine` 能正确处理工具成功与失败。
 

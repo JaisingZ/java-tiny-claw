@@ -17,6 +17,7 @@ import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
+import io.github.tinyclaw.agent.tool.SubagentTool;
 import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.ToolResult;
@@ -419,6 +420,64 @@ class AgentEngineTest {
                 .containsExactly(
                         SessionMessage.user("first question"),
                         SessionMessage.assistant("first-answer"));
+    }
+
+    @Test
+    void spawnSubagentReturnsOnlySummaryToParentLoop() {
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("spawn_subagent", "task_prompt", "inspect auth"),
+                finish("done"));
+        EngineFixture fixture = fixture().withTools(
+                new SubagentTool(prompt -> ToolResult.success("condensed auth report")));
+
+        RunResult result = fixture.run(provider, "task-subagent-summary", "delegate exploration");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly("【子智能体探索报告】\ncondensed auth report");
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(1).observations())
+                .containsExactly("【子智能体探索报告】\ncondensed auth report");
+    }
+
+    @Test
+    void defaultSubagentRunnerStartsWithCleanWorkingMemory() {
+        RecordingContextProvider provider = new RecordingContextProvider(finish("child summary"));
+        DefaultSubagentRunner runner = new DefaultSubagentRunner(provider, Path.of("."));
+        AgentSession parentSession = new AgentSession("parent-session");
+        parentSession.append(SessionMessage.user("previous parent task"));
+        parentSession.append(SessionMessage.assistant("previous parent answer"));
+
+        ToolResult summary = runner.run("inspect child task");
+
+        assertThat(summary).isEqualTo(ToolResult.success("child summary"));
+        assertThat(provider.contexts()).hasSize(1);
+        assertThat(provider.contexts().get(0).goal()).isEqualTo("inspect child task");
+        assertThat(provider.contexts().get(0).workingMemory()).isEmpty();
+    }
+
+    @Test
+    void defaultSubagentRunnerFailsWhenMaxStepsExceeded() {
+        DefaultSubagentRunner runner = new DefaultSubagentRunner(constantProvider(tool("missing")), Path.of("."));
+
+        ToolResult result = runner.run("never finishes");
+
+        assertThat(result).isEqualTo(ToolResult.failure("max_steps_exceeded"));
+    }
+
+    @Test
+    void runsParallelSpawnSubagentCallsInDeclaredOrder() {
+        SubagentTool tool = new SubagentTool(prompt -> ToolResult.success("summary-" + prompt));
+        EngineFixture fixture = fixture().withTools(tool);
+
+        RunResult result = fixture.run(scriptedProvider(
+                parallel(
+                        call("spawn_subagent", "task_prompt", "a"),
+                        call("spawn_subagent", "task_prompt", "b")),
+                finish("done")), "task-parallel-subagent", "parallel subagents");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly(
+                "【子智能体探索报告】\nsummary-a\n\n【子智能体探索报告】\nsummary-b");
     }
 
     /**

@@ -22,6 +22,7 @@ import io.github.tinyclaw.agent.tool.ToolResult;
 import io.github.tinyclaw.agent.tool.permission.ToolPermissionConfig;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -133,6 +134,52 @@ class TelegramAgentWebhookServiceTest {
     }
 
     @Test
+    void mountsPermissionMiddlewareFromYamlPolicy(@TempDir Path workDir) throws Exception {
+        Path policyFile = workDir.resolve(".claw").resolve("permissions.yaml");
+        Files.createDirectories(policyFile.getParent());
+        Files.writeString(policyFile, """
+                enabled: true
+                defaultAction: allow
+                rules:
+                  - id: deny-echo
+                    tools: [bash]
+                    action: deny
+                    arguments:
+                      command:
+                        regex: '(?i)echo'
+                """);
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.permissions.file", ".claw/permissions.yaml");
+        values.put("agent.permissions.hotReload", "false");
+        TelegramAgentWebhookService service = new TelegramAgentWebhookService(
+                new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
+                new LmStudioConfig("http://localhost:1234/v1", "model-1"),
+                workDir,
+                2,
+                false,
+                false,
+                false,
+                new WorkingMemoryPolicy(),
+                ToolPermissionConfig.from(values),
+                new ApprovalManager(() -> "approval-1"),
+                port -> {
+                    throw new AssertionError("not expected in createEngine test");
+                },
+                new RecordingRegistrarFactory(new ArrayList<String>()));
+        AgentEngine engine = createEngineForTest(service, new ChatMessage("m1", "chat-a", "user-a", "run"),
+                new RecordingSession());
+        try {
+            ToolResult result = registryForTest(engine).execute(new ToolCall("bash", bashArguments("echo hi")),
+                    AgentContext.create(new Task("t1", "run")));
+
+            assertThat(result.success()).isFalse();
+            assertThat(result.errorMessage()).contains("permission_denied");
+        } finally {
+            engine.shutdown();
+        }
+    }
+
+    @Test
     void createsProviderWithDebugSinkWhenDebugEnabled(@TempDir Path workDir) throws Exception {
         TelegramAgentWebhookService service = new TelegramAgentWebhookService(
                 new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
@@ -156,6 +203,32 @@ class TelegramAgentWebhookServiceTest {
 
             assertThat(provider).isInstanceOf(LmStudioModelProvider.class);
             assertThat(debugSinkForTest(provider)).isNotNull();
+        } finally {
+            engine.shutdown();
+        }
+    }
+
+    @Test
+    void createEngineMountsSpawnSubagent(@TempDir Path workDir) throws Exception {
+        TelegramAgentWebhookService service = new TelegramAgentWebhookService(
+                new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
+                new LmStudioConfig("http://localhost:1234/v1", "model-1"),
+                workDir,
+                2,
+                false,
+                false,
+                false,
+                new WorkingMemoryPolicy(),
+                ToolPermissionConfig.from(null),
+                new ApprovalManager(),
+                port -> {
+                    throw new AssertionError("not expected in createEngine test");
+                },
+                new RecordingRegistrarFactory(new ArrayList<String>()));
+        AgentEngine engine = createEngineForTest(service, new ChatMessage("m1", "chat-a", "user-a", "run"),
+                new RecordingSession());
+        try {
+            assertThat(registryForTest(engine).snapshot()).containsKeys("spawn_subagent");
         } finally {
             engine.shutdown();
         }

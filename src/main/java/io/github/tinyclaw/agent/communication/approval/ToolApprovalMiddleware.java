@@ -6,9 +6,9 @@ import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.tool.ToolRegistry.ToolExecution;
 import io.github.tinyclaw.agent.tool.ToolRegistry.ToolMiddleware;
 import io.github.tinyclaw.agent.tool.ToolResult;
+import io.github.tinyclaw.agent.tool.permission.PermissionPolicyProvider;
+import io.github.tinyclaw.agent.tool.permission.PermissionPolicySnapshot;
 import io.github.tinyclaw.agent.tool.permission.ToolPermissionDecision;
-import io.github.tinyclaw.agent.tool.permission.ToolPermissionPolicy;
-import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -16,31 +16,30 @@ import java.util.Objects;
  */
 public final class ToolApprovalMiddleware implements ToolMiddleware {
 
-    private final ToolPermissionPolicy policy;
+    private final PermissionPolicyProvider policyProvider;
     private final ApprovalManager approvalManager;
     private final String chatId;
     private final ChatSession session;
-    private final Duration approvalTimeout;
 
-    public ToolApprovalMiddleware(ToolPermissionPolicy policy, ApprovalManager approvalManager, String chatId,
-            ChatSession session, Duration approvalTimeout) {
-        this.policy = Objects.requireNonNull(policy, "policy");
+    public ToolApprovalMiddleware(PermissionPolicyProvider policyProvider, ApprovalManager approvalManager,
+            String chatId, ChatSession session) {
+        this.policyProvider = Objects.requireNonNull(policyProvider, "policyProvider");
         this.approvalManager = Objects.requireNonNull(approvalManager, "approvalManager");
         this.chatId = chatId;
         this.session = Objects.requireNonNull(session, "session");
-        this.approvalTimeout = Objects.requireNonNull(approvalTimeout, "approvalTimeout");
     }
 
     @Override
     public ToolResult execute(ToolCall call, AgentContext context, ToolExecution next) {
-        ToolPermissionDecision decision = policy.evaluate(call);
+        PermissionPolicySnapshot snapshot = policyProvider.current();
+        ToolPermissionDecision decision = snapshot.evaluate(call);
         if (decision.isAllow()) {
             return next.execute(call, context);
         }
         if (decision.isDeny()) {
             return ToolResult.failure("permission_denied: " + decision.reason());
         }
-        ApprovalResult result = approvalManager.requestApproval(chatId, session, call, approvalTimeout);
+        ApprovalResult result = approvalManager.requestApproval(chatId, session, call, snapshot.approvalTimeout());
         if (result.allowed()) {
             return next.execute(call, context);
         }

@@ -9,16 +9,16 @@ import io.github.tinyclaw.agent.communication.WorkspaceSerialExecutor;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
+import io.github.tinyclaw.agent.runtime.AgentToolRegistries;
 import io.github.tinyclaw.agent.runtime.RunLogger;
 import io.github.tinyclaw.agent.runtime.SessionManager;
 import io.github.tinyclaw.agent.runtime.WorkingMemoryPolicy;
-import io.github.tinyclaw.agent.tool.BashTool;
-import io.github.tinyclaw.agent.tool.EditFileTool;
-import io.github.tinyclaw.agent.tool.ReadFileTool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
-import io.github.tinyclaw.agent.tool.WriteFileTool;
+import io.github.tinyclaw.agent.tool.permission.PermissionFileWatcher;
+import io.github.tinyclaw.agent.tool.permission.PermissionPolicyProvider;
+import io.github.tinyclaw.agent.tool.permission.PermissionPolicySnapshot;
 import io.github.tinyclaw.agent.tool.permission.ToolPermissionConfig;
-import io.github.tinyclaw.agent.tool.permission.ToolPermissionPolicy;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Objects;
@@ -44,9 +44,11 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     private final ApprovalManager approvalManager;
     private final TunnelFactory tunnelFactory;
     private final RegistrarFactory registrarFactory;
+    private final PermissionPolicyProvider permissionPolicyProvider;
     private WorkspaceSerialExecutor executor;
     private TelegramTransport transport;
     private PublicTunnel tunnel;
+    private PermissionFileWatcher permissionFileWatcher;
 
     public TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
             Path workDir, int maxSteps, boolean enableThinking) {
@@ -87,6 +89,7 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         this.approvalManager = Objects.requireNonNull(approvalManager, "approvalManager");
         this.tunnelFactory = Objects.requireNonNull(tunnelFactory, "tunnelFactory");
         this.registrarFactory = Objects.requireNonNull(registrarFactory, "registrarFactory");
+        this.permissionPolicyProvider = createPermissionPolicyProvider(this.workDir, this.toolPermissionConfig);
     }
 
     public static TelegramAgentWebhookService loadDefault() {
@@ -110,9 +113,10 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         if (transport != null) {
             return;
         }
+        startPermissionWatcher();
         executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(this::createEngine, TelegramRunLogger::new, executor,
-                new SessionManager(workingMemoryPolicy), permissionsEnabled() ? approvalManager : null);
+                new SessionManager(workingMemoryPolicy), approvalCommandsEnabled() ? approvalManager : null);
         if (usesTryCloudflareTunnel()) {
             startWithTryCloudflare(service);
             return;
@@ -147,6 +151,10 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         if (executor != null) {
             executor.close();
             executor = null;
+        }
+        if (permissionFileWatcher != null) {
+            permissionFileWatcher.close();
+            permissionFileWatcher = null;
         }
     }
 
@@ -185,17 +193,14 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     }
 
     private AgentEngine createEngine(RunLogger runLogger, ChatMessage message, ChatSession session) {
-        ToolRegistry registry = new ToolRegistry()
-                .register(new ReadFileTool(workDir))
-                .register(new WriteFileTool(workDir))
-                .register(new EditFileTool(workDir))
-                .register(new BashTool(workDir));
+        LmStudioModelProvider provider = createProvider();
+        ToolRegistry registry = AgentToolRegistries.mainRegistry(provider, workDir);
         if (permissionsEnabled()) {
-            registry.use(new ToolApprovalMiddleware(new ToolPermissionPolicy(toolPermissionConfig), approvalManager,
-                    message.chatId(), session, toolPermissionConfig.approvalTimeout()));
+            registry.use(new ToolApprovalMiddleware(permissionPolicyProvider, approvalManager,
+                    message.chatId(), session));
         }
         runLogger.engineStarted(workDir, lmStudioConfig.model(), maxSteps, enableThinking, registry.definitions());
-        return new AgentEngine(createProvider(), registry, maxSteps, enableThinking, runLogger,
+        return new AgentEngine(provider, registry, maxSteps, enableThinking, runLogger,
                 workDir, planMode, stateDir(message));
     }
 
@@ -207,7 +212,23 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     }
 
     private boolean permissionsEnabled() {
-        return toolPermissionConfig.enabled();
+        return permissionPolicyProvider.current().enabled();
+    }
+
+    private boolean approvalCommandsEnabled() {
+        return toolPermissionConfig.hotReload() || permissionsEnabled();
+    }
+
+    private void startPermissionWatcher() {
+        if (!toolPermissionConfig.hotReload()) {
+            permissionPolicyProvider.reload();
+            return;
+        }
+        if (permissionFileWatcher == null) {
+            permissionFileWatcher = new PermissionFileWatcher(permissionPolicyProvider,
+                    toolPermissionConfig.reloadInterval());
+        }
+        permissionFileWatcher.start();
     }
 
     private Path stateDir(ChatMessage message) {
@@ -255,6 +276,27 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for " + context, ex);
         }
+    }
+
+    private static PermissionPolicyProvider createPermissionPolicyProvider(Path workDir, ToolPermissionConfig config) {
+        Path permissionFile = resolvePermissionFile(workDir, config.permissionFile());
+        PermissionPolicyProvider.SnapshotLoader loader = () -> {
+            if (Files.exists(permissionFile)) {
+                return PermissionPolicySnapshot.load(permissionFile);
+            }
+            if (config.legacyConfigured()) {
+                return PermissionPolicySnapshot.fromLegacyConfig(config, permissionFile);
+            }
+            return PermissionPolicySnapshot.disabled(permissionFile);
+        };
+        return new PermissionPolicyProvider(permissionFile, loader.load(), loader);
+    }
+
+    private static Path resolvePermissionFile(Path workDir, Path permissionFile) {
+        if (permissionFile.isAbsolute()) {
+            return permissionFile;
+        }
+        return workDir.resolve(permissionFile).normalize();
     }
 
     interface PublicTunnel extends AutoCloseable {

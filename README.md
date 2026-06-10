@@ -7,12 +7,13 @@
 - Main Loop：支持 `FinishDecision`、`ToolDecision`、`ParallelToolDecision` 和失败收口。
 - Two-stage ReAct：可选开启 `THINKING -> ACTION` 两阶段循环。
 - OpenAI-compatible Provider：默认示例使用本地 OpenAI 兼容 Chat Completions 服务。
-- 工具系统：内置 `read_file`、`write_file`、`edit_file`、`bash`。
+- 工具系统：内置 `read_file`、`write_file`、`edit_file`、`bash`、`spawn_subagent`。
 - 运行时上下文：`AgentContext` 仅在内存中保存当前步进上下文。
 - 错误自愈：工具失败会作为观测写回上下文，并附带可执行恢复建议。
 - 系统防呆：重复无效工具调用会触发 `[SYSTEM REMINDER]` 近因提醒，推动模型换策略或求助。
 - Plan Mode：可选将长程任务状态外部化到 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
 - Telegram 工具审批：Webhook 模式可选启用 `allow / ask / deny` 工具权限和人工审批。
+- Subagent 委派：主 Agent 可通过 `spawn_subagent` 同步拉起只读子 Agent，隔离探索上下文并只接收精炼报告。
 - RunLogger：输出可读运行日志；CLI `--debug` 会额外输出 Provider 摘要，Telegram `agent.debug=true` 只把 Provider 摘要写入服务端日志。
 - RunResult：保留最终决策结果与可读观测。
 
@@ -40,6 +41,16 @@ Telegram Webhook 工作原理见 [docs/telegram-webhook-principles.md](docs/tele
 - `AGENTS.md`（标准文件名，仅支持 `AGENTS.md`，不读取 `AGENT.md`）
 - 当前阶段约束（THINKING/ACTION）与运行约束
 - `SKILL.md` 外挂能力摘要（存在时追加）
+
+## Subagent 委派
+
+`spawn_subagent` 是一个普通工具，不引入复杂 Agent Graph：
+
+- 主 Agent 调用 `spawn_subagent` 并传入 `task_prompt`。
+- Runtime 拉起一次性子 `AgentEngine`，使用干净上下文，不继承父 Session / Working Memory。
+- 子 Agent v1 只挂载 `read_file`，不会获得 `write_file`、`edit_file`、`bash` 或再次委派 `spawn_subagent` 的能力。
+- 子 Agent 最大步数固定为 6，禁用 Thinking；结束后只把纯文本探索报告返回给主 Agent。
+- 多个 `spawn_subagent` 出现在同一轮并行工具调用时，会复用现有只读并发调度，最终观测仍按模型声明顺序聚合。
 
 ## 环境要求
 
@@ -123,6 +134,9 @@ agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 agent.permissions.enabled=false
 agent.permissions.approvalTimeoutSeconds=1800
+agent.permissions.file=.claw/permissions.yaml
+agent.permissions.hotReload=true
+agent.permissions.reloadIntervalSeconds=2
 agent.permissions.tool.read_file=allow
 agent.permissions.tool.write_file=ask
 agent.permissions.tool.edit_file=ask
@@ -162,10 +176,38 @@ Telegram 模式设置 `agent.debug=true` 时，只把 Provider request / respons
 Telegram 模式可选开启工具审批：
 
 - `agent.permissions.enabled=false` 默认关闭；CLI `run` 不挂载审批中间件。
-- 启用后，denyPattern 命中会直接拒绝；`ask` 工具会向同一 Telegram 会话发送审批 ID。
+- 推荐把具体权限规则写入 `agent.permissions.file` 指向的 YAML，默认 `.claw/permissions.yaml`。
+- YAML 支持 `allow`、`ask`、`deny`，规则可按工具名和参数正则匹配，冲突时 `deny > ask > allow`。
+- 启用后，`deny` 直接拒绝；`ask` 工具会向同一 Telegram 会话发送审批 ID。
 - 在同一会话回复 `/approve <id>` 放行，回复 `/reject <id>` 拒绝。
 - 超过 `agent.permissions.approvalTimeoutSeconds` 未处理会自动拒绝并清理内存状态。
-- 权限规则只在启动时读取，不做运行时热加载。
+- `agent.permissions.hotReload=true` 时会监听 YAML 修改，解析成功后新工具调用使用新策略；解析失败时继续使用上一份有效策略。
+- 旧 `agent.permissions.tool.*` 和 `agent.permissions.denyPattern.*` 仍作为无 YAML 文件时的兼容 fallback。
+
+`.claw/permissions.yaml` 示例：
+
+```yaml
+version: 1
+enabled: true
+defaultAction: ask
+approvalTimeoutSeconds: 1800
+
+rules:
+  - id: allow-read
+    tools: [read_file]
+    action: allow
+
+  - id: deny-dangerous-bash
+    tools: [bash]
+    action: deny
+    arguments:
+      command:
+        regex: "(?i)\\b(rm\\s+-rf|sudo\\b|drop\\s+(database|table)|kubectl\\s+delete)\\b"
+
+  - id: ask-write-tools
+    tools: [write_file, edit_file, bash]
+    action: ask
+```
 
 开启可读调试日志：
 
