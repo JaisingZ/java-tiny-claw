@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 只读探索子智能体工具。
+ * 受限探索子智能体工具。
  */
 public final class SubagentTool implements Tool {
 
@@ -28,7 +28,7 @@ public final class SubagentTool implements Tool {
     public ToolDefinition definition() {
         Map<String, Object> promptProperty = new LinkedHashMap<String, Object>();
         promptProperty.put("type", "string");
-        promptProperty.put("description", "Focused exploration task for a read-only subagent");
+        promptProperty.put("description", "Focused exploration task for a restricted subagent");
 
         Map<String, Object> properties = new LinkedHashMap<String, Object>();
         properties.put("task_prompt", promptProperty);
@@ -39,7 +39,7 @@ public final class SubagentTool implements Tool {
         parameters.put("required", Arrays.asList("task_prompt"));
 
         return new ToolDefinition(name(),
-                "Spawn a read-only Subagent for deep exploration and return a concise 探索 report.",
+                "Spawn a restricted Subagent for deep exploration and return a concise 探索 report.",
                 parameters);
     }
 

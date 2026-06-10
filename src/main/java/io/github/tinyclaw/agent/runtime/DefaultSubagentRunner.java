@@ -14,7 +14,7 @@ import java.util.UUID;
 
 /**
  * 默认子智能体运行器。
- * 使用一次性干净上下文和只读 read_file 工具集。
+ * 使用一次性干净上下文和受限探索工具集。
  */
 public final class DefaultSubagentRunner implements SubagentRunner {
 
@@ -22,8 +22,9 @@ public final class DefaultSubagentRunner implements SubagentRunner {
     private static final String SUBAGENT_SYSTEM_SUFFIX = "\n\n# Subagent Constraints\n"
             + "你是 Explorer Subagent，只负责受限探索。\n"
             + "必须基于工具证据回答；没有证据就继续读取相关文件或说明未找到。\n"
+            + "可以请求 read_file 或 bash；bash 只用于搜索、检查、编译或测试等必要探索。\n"
             + "最终输出纯文本报告，交给主 Agent 汇总。\n"
-            + "不要写文件，不要假设，不要请求 write_file、edit_file、bash 或 spawn_subagent。\n";
+            + "不要写文件，不要执行破坏性 shell 命令，不要假设，不要请求 write_file、edit_file 或 spawn_subagent。\n";
 
     private final ModelProvider provider;
     private final Path workDir;

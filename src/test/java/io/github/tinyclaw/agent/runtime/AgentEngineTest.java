@@ -456,6 +456,24 @@ class AgentEngineTest {
     }
 
     @Test
+    void defaultSubagentRunnerExposesReadFileAndBashOnly() {
+        RecordingSubagentPromptProvider provider = new RecordingSubagentPromptProvider();
+        DefaultSubagentRunner runner = new DefaultSubagentRunner(provider, Path.of("."),
+                context -> "base prompt");
+
+        ToolResult summary = runner.run("inspect with shell");
+
+        assertThat(summary).isEqualTo(ToolResult.success("child summary"));
+        assertThat(provider.toolNames()).containsExactly("read_file", "bash");
+        assertThat(provider.prompts()).hasSize(1);
+        assertThat(provider.prompts().get(0))
+                .contains("read_file")
+                .contains("bash")
+                .contains("不要写文件")
+                .doesNotContain("不要请求 write_file、edit_file、bash 或 spawn_subagent");
+    }
+
+    @Test
     void defaultSubagentRunnerFailsWhenMaxStepsExceeded() {
         DefaultSubagentRunner runner = new DefaultSubagentRunner(constantProvider(tool("missing")), Path.of("."));
 
@@ -876,6 +894,29 @@ class AgentEngineTest {
 
         private List<AgentContext> contexts() {
             return contexts;
+        }
+    }
+
+    private static final class RecordingSubagentPromptProvider implements ModelProvider {
+        private final List<String> prompts = new ArrayList<String>();
+        private final List<String> toolNames = new ArrayList<String>();
+
+        @Override
+        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            prompts.add(systemPrompt);
+            for (ToolDefinition tool : availableTools) {
+                toolNames.add(tool.name());
+            }
+            return finish("child summary");
+        }
+
+        private List<String> prompts() {
+            return prompts;
+        }
+
+        private List<String> toolNames() {
+            return toolNames;
         }
     }
 

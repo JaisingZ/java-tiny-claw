@@ -30,8 +30,10 @@ public final class AgentToolRegistries {
     }
 
     public static ToolRegistry subagentRegistry(Path workDir) {
+        Path root = normalize(workDir);
         return new ToolRegistry()
-                .register(new ReadFileTool(normalize(workDir)));
+                .register(new ReadFileTool(root))
+                .register(new BashTool(root));
     }
 
     private static Path normalize(Path workDir) {

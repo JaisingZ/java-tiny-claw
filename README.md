@@ -13,7 +13,7 @@
 - 系统防呆：重复无效工具调用会触发 `[SYSTEM REMINDER]` 近因提醒，推动模型换策略或求助。
 - Plan Mode：可选将长程任务状态外部化到 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
 - Telegram 工具审批：Webhook 模式可选启用 `allow / ask / deny` 工具权限和人工审批。
-- Subagent 委派：主 Agent 可通过 `spawn_subagent` 同步拉起只读子 Agent，隔离探索上下文并只接收精炼报告。
+- Subagent 委派：主 Agent 可通过 `spawn_subagent` 同步拉起受限子 Agent，隔离探索上下文并只接收精炼报告。
 - RunLogger：输出可读运行日志；CLI `--debug` 会额外输出 Provider 摘要，Telegram `agent.debug=true` 只把 Provider 摘要写入服务端日志。
 - RunResult：保留最终决策结果与可读观测。
 
@@ -48,7 +48,7 @@ Telegram Webhook 工作原理见 [docs/telegram-webhook-principles.md](docs/tele
 
 - 主 Agent 调用 `spawn_subagent` 并传入 `task_prompt`。
 - Runtime 拉起一次性子 `AgentEngine`，使用干净上下文，不继承父 Session / Working Memory。
-- 子 Agent v1 只挂载 `read_file`，不会获得 `write_file`、`edit_file`、`bash` 或再次委派 `spawn_subagent` 的能力。
+- 子 Agent v1 只挂载 `read_file` 和 `bash`，不会获得 `write_file`、`edit_file` 或再次委派 `spawn_subagent` 的能力。
 - 子 Agent 最大步数固定为 6，禁用 Thinking；结束后只把纯文本探索报告返回给主 Agent。
 - 多个 `spawn_subagent` 出现在同一轮并行工具调用时，会复用现有只读并发调度，最终观测仍按模型声明顺序聚合。
 

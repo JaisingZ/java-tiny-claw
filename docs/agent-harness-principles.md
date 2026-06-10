@@ -56,7 +56,7 @@
 - `Tool` 自身校验参数和工作区路径边界。
 - `ToolRegistry` 统一路由工具调用，并把未知工具和工具异常包装为失败结果。
 - `AgentEngine` 按 `Tool.isSideEffect()` 处理只读并发和涉写串行。
-- `spawn_subagent` 标记为只读工具；子 Agent v1 只挂载 `read_file`，不提供写工具、`bash` 或递归委派能力。
+- `spawn_subagent` 标记为只读工具；子 Agent v1 只挂载 `read_file` 和 `bash`，不提供写工具或递归委派能力。
 - `RunLogger` 和 `RunResult` 保留人类可读的运行观测。
 
 审批、白名单、黑名单、风险分级等治理能力属于后续扩展方向，不能写成当前已实现。

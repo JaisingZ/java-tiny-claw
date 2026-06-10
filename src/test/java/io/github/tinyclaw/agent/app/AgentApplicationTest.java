@@ -93,10 +93,10 @@ class AgentApplicationTest {
     }
 
     @Test
-    void subagentToolRegistryContainsOnlyReadFile() {
+    void subagentToolRegistryContainsReadFileAndBashOnly() {
         ToolRegistry registry = AgentToolRegistries.subagentRegistry(Path.of("."));
 
-        assertThat(registry.snapshot()).containsOnlyKeys("read_file");
+        assertThat(registry.snapshot()).containsOnlyKeys("read_file", "bash");
     }
 
     @Test
