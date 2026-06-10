@@ -1,3 +1,12 @@
-siliconflow.apiKey=
-siliconflow.baseUrl=https://api.siliconflow.cn/v1
-siliconflow.model=Qwen/Qwen3-8B
+lmstudio.baseUrl=http://localhost:1234/v1
+lmstudio.model=qwen-local
+agent.planMode=false
+agent.permissions.enabled=false
+agent.permissions.approvalTimeoutSeconds=1800
+agent.permissions.file=.claw/permissions.yaml
+agent.permissions.hotReload=true
+agent.permissions.reloadIntervalSeconds=2
+agent.permissions.tool.read_file=allow
+agent.permissions.tool.write_file=ask
+agent.permissions.tool.edit_file=ask
+agent.permissions.tool.bash=ask
