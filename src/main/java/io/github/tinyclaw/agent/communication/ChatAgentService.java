@@ -68,6 +68,10 @@ public final class ChatAgentService implements ChatMessageHandler {
         if (approvalManager != null && approvalManager.resolveCommand(message.chatId(), message.text(), session)) {
             return;
         }
+        if (isUsageCommand(message.text())) {
+            session.sendStatus(usageSummary(sessionManager.getOrCreate(sessionKey(message)).metrics()));
+            return;
+        }
 
         executor.submit(() -> runAgent(message, session));
     }
@@ -100,6 +104,21 @@ public final class ChatAgentService implements ChatMessageHandler {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private boolean isUsageCommand(String text) {
+        return text != null && "/usage".equalsIgnoreCase(text.trim());
+    }
+
+    private String usageSummary(io.github.tinyclaw.agent.runtime.SessionMetrics metrics) {
+        return "当前会话用量\n"
+                + "模型调用: " + metrics.modelCallCount() + "\n"
+                + "Prompt Tokens: " + metrics.promptTokens() + "\n"
+                + "Completion Tokens: " + metrics.completionTokens() + "\n"
+                + "Total Tokens: " + metrics.totalTokens() + "\n"
+                + "模型耗时: " + metrics.modelDurationMillis() + "ms\n"
+                + "工具调用: " + metrics.toolCallCount() + "\n"
+                + "工具耗时: " + metrics.toolDurationMillis() + "ms";
     }
 
     @FunctionalInterface

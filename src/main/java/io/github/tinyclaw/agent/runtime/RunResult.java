@@ -16,16 +16,26 @@ public final class RunResult {
     private final String failureReason;
     private final int stepCount;
     private final List<String> observations;
+    private final RunMetrics metrics;
 
     /**
      * 创建运行结果。
      */
     public RunResult(RunStatus status, String finalAnswer, String failureReason, int stepCount,
             List<String> observations) {
+        this(status, finalAnswer, failureReason, stepCount, observations, RunMetrics.empty());
+    }
+
+    /**
+     * 创建带运行指标的运行结果。
+     */
+    public RunResult(RunStatus status, String finalAnswer, String failureReason, int stepCount,
+            List<String> observations, RunMetrics metrics) {
         this.status = status;
         this.finalAnswer = finalAnswer;
         this.failureReason = failureReason;
         this.stepCount = stepCount;
+        this.metrics = metrics == null ? RunMetrics.empty() : metrics;
         List<String> safeObservations = observations == null
                 ? Collections.<String>emptyList()
                 : observations;
@@ -39,11 +49,19 @@ public final class RunResult {
         return new RunResult(RunStatus.SUCCESS, answer, null, stepCount, observations);
     }
 
+    public static RunResult success(int stepCount, List<String> observations, String answer, RunMetrics metrics) {
+        return new RunResult(RunStatus.SUCCESS, answer, null, stepCount, observations, metrics);
+    }
+
     /**
      * 创建失败结果。
      */
     public static RunResult failed(int stepCount, List<String> observations, String reason) {
         return new RunResult(RunStatus.FAILED, null, reason, stepCount, observations);
+    }
+
+    public static RunResult failed(int stepCount, List<String> observations, String reason, RunMetrics metrics) {
+        return new RunResult(RunStatus.FAILED, null, reason, stepCount, observations, metrics);
     }
 
     /**
@@ -82,6 +100,13 @@ public final class RunResult {
     }
 
     /**
+     * 返回本次运行的可观测指标。
+     */
+    public RunMetrics metrics() {
+        return metrics;
+    }
+
+    /**
      * JavaBean 风格状态 getter。
      */
     public RunStatus getStatus() {
@@ -116,6 +141,10 @@ public final class RunResult {
         return observations;
     }
 
+    public RunMetrics getMetrics() {
+        return metrics();
+    }
+
     /**
      * 按值比较，便于测试断言。
      */
@@ -132,7 +161,8 @@ public final class RunResult {
                 && status == that.status
                 && Objects.equals(finalAnswer, that.finalAnswer)
                 && Objects.equals(failureReason, that.failureReason)
-                && Objects.equals(observations, that.observations);
+                && Objects.equals(observations, that.observations)
+                && Objects.equals(metrics, that.metrics);
     }
 
     /**
@@ -140,6 +170,6 @@ public final class RunResult {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(status, finalAnswer, failureReason, stepCount, observations);
+        return Objects.hash(status, finalAnswer, failureReason, stepCount, observations, metrics);
     }
 }

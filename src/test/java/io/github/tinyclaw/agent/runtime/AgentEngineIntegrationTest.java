@@ -11,6 +11,7 @@ import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
+import io.github.tinyclaw.agent.provider.ModelResponse;
 import io.github.tinyclaw.agent.tool.BashTool;
 import io.github.tinyclaw.agent.tool.EditFileTool;
 import io.github.tinyclaw.agent.tool.Tool;
@@ -88,19 +89,19 @@ class AgentEngineIntegrationTest {
      */
     private static final class WriteThenBashProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             if (state.observations().isEmpty()) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
                 arguments.put("path", "hello.txt");
                 arguments.put("content", "hello");
-                return new ToolDecision(new ToolCall("write_file", arguments));
+                return ModelResponse.of(new ToolDecision(new ToolCall("write_file", arguments)));
             }
             if (state.observations().size() == 1) {
-                return new ToolDecision(new ToolCall("bash",
-                        Collections.<String, Object>singletonMap("command", printFileCommand("hello.txt"))));
+                return ModelResponse.of(new ToolDecision(new ToolCall("bash",
+                        Collections.<String, Object>singletonMap("command", printFileCommand("hello.txt")))));
             }
-            return new FinishDecision("done");
+            return ModelResponse.of(new FinishDecision("done"));
         }
 
         private String printFileCommand(String path) {
@@ -116,13 +117,13 @@ class AgentEngineIntegrationTest {
      */
     private static final class FailingBashThenFinishProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             if (state.observations().isEmpty()) {
-                return new ToolDecision(new ToolCall("bash",
-                        Collections.<String, Object>singletonMap("command", commandThatFails())));
+                return ModelResponse.of(new ToolDecision(new ToolCall("bash",
+                        Collections.<String, Object>singletonMap("command", commandThatFails()))));
             }
-            return new FinishDecision("done");
+            return ModelResponse.of(new FinishDecision("done"));
         }
 
         private String commandThatFails() {
@@ -138,7 +139,7 @@ class AgentEngineIntegrationTest {
      */
     private static final class WriteThenEditProvider implements ModelProvider {
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             if (state.observations().isEmpty()) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
@@ -150,16 +151,16 @@ class AgentEngineIntegrationTest {
                         + "        }\n"
                         + "    }\n"
                         + "}\n");
-                return new ToolDecision(new ToolCall("write_file", arguments));
+                return ModelResponse.of(new ToolDecision(new ToolCall("write_file", arguments)));
             }
             if (state.observations().size() == 1) {
                 java.util.Map<String, Object> arguments = new java.util.LinkedHashMap<String, Object>();
                 arguments.put("path", "Server.java");
                 arguments.put("old_text", "if (user == null) {\nreturn;\n}");
                 arguments.put("new_text", "if (user == null) {\n    throw new IllegalStateException();\n}");
-                return new ToolDecision(new ToolCall("edit_file", arguments));
+                return ModelResponse.of(new ToolDecision(new ToolCall("edit_file", arguments)));
             }
-            return new FinishDecision("done");
+            return ModelResponse.of(new FinishDecision("done"));
         }
     }
 

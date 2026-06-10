@@ -52,7 +52,7 @@ class SiliconFlowModelProviderTest {
                 new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-1", "finish it")),
-                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new FinishDecision("done"));
         assertThat(authorization.get()).isEqualTo("Bearer test-key");
@@ -60,6 +60,57 @@ class SiliconFlowModelProviderTest {
         assertThat(requestBody.get().get("model").asText()).isEqualTo("Qwen/Qwen3-8B");
         assertThat(requestBody.get().has("tools")).isFalse();
         assertSystemPromptContains(requestBody.get(), SYSTEM_PROMPT);
+    }
+
+    @Test
+    void returnsTokenUsageFromOpenAiCompatibleResponse() throws Exception {
+        startServer(200, completionWithMessageAndUsage("{\"content\":\"done\"}", 321, 54, 375),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        ModelResponse response = provider.decide(AgentContext.create(new Task("task-usage", "finish it")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
+
+        assertThat(response.decision()).isEqualTo(new FinishDecision("done"));
+        assertThat(response.model()).isEqualTo("Qwen/Qwen3-8B");
+        assertThat(response.usageAvailable()).isTrue();
+        assertThat(response.usage().promptTokens()).isEqualTo(321);
+        assertThat(response.usage().completionTokens()).isEqualTo(54);
+        assertThat(response.usage().totalTokens()).isEqualTo(375);
+    }
+
+    @Test
+    void marksUsageUnavailableWhenResponseDoesNotContainUsage() throws Exception {
+        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        ModelResponse response = provider.decide(AgentContext.create(new Task("task-no-usage", "finish it")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
+
+        assertThat(response.usageAvailable()).isFalse();
+        assertThat(response.usage().promptTokens()).isZero();
+        assertThat(response.usage().completionTokens()).isZero();
+        assertThat(response.usage().totalTokens()).isZero();
+    }
+
+    @Test
+    void defaultsMissingUsageFieldsToZero() throws Exception {
+        startServer(200, "{\"choices\":[{\"message\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}],"
+                        + "\"usage\":{\"completion_tokens\":19}}",
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        ModelResponse response = provider.decide(AgentContext.create(new Task("task-partial-usage", "finish it")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
+
+        assertThat(response.usageAvailable()).isTrue();
+        assertThat(response.usage().promptTokens()).isZero();
+        assertThat(response.usage().completionTokens()).isEqualTo(19);
+        assertThat(response.usage().totalTokens()).isZero();
     }
 
     @Test
@@ -73,7 +124,7 @@ class SiliconFlowModelProviderTest {
                 Collections.<String, Object>singletonMap("type", "object"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-2", "think")),
-                DecisionPhase.THINKING, Collections.singletonList(tool), SYSTEM_PROMPT);
+                DecisionPhase.THINKING, Collections.singletonList(tool), SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new ThinkingDecision("think first"));
         assertThat(requestBody.get().has("tools")).isFalse();
@@ -92,7 +143,7 @@ class SiliconFlowModelProviderTest {
                 Collections.<String, Object>singletonMap("type", "object"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-3", "echo hello")),
-                DecisionPhase.ACTION, Collections.singletonList(tool), SYSTEM_PROMPT);
+                DecisionPhase.ACTION, Collections.singletonList(tool), SYSTEM_PROMPT).decision();
 
         assertThat(requestBody.get().get("tools")).hasSize(1);
         assertThat(requestBody.get().get("tools").get(0).get("type").asText()).isEqualTo("function");
@@ -117,7 +168,7 @@ class SiliconFlowModelProviderTest {
                 .observe("current observation");
 
         Decision decision = provider.decide(context, DecisionPhase.ACTION,
-                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
+                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new FinishDecision("done"));
         JsonNode messages = requestBody.get().get("messages");
@@ -145,7 +196,7 @@ class SiliconFlowModelProviderTest {
         Decision decision = provider.decide(AgentContext.create(new Task("task-fenced", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
-                SYSTEM_PROMPT);
+                SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -161,7 +212,7 @@ class SiliconFlowModelProviderTest {
         Decision decision = provider.decide(AgentContext.create(new Task("task-escaped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
-                SYSTEM_PROMPT);
+                SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -177,7 +228,7 @@ class SiliconFlowModelProviderTest {
         Decision decision = provider.decide(AgentContext.create(new Task("task-wrapped", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
-                SYSTEM_PROMPT);
+                SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -193,7 +244,7 @@ class SiliconFlowModelProviderTest {
         Decision decision = provider.decide(AgentContext.create(new Task("task-missing-brace", "echo hello")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
-                SYSTEM_PROMPT);
+                SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
@@ -209,7 +260,7 @@ class SiliconFlowModelProviderTest {
         Decision decision = provider.decide(AgentContext.create(new Task("task-string-braces", "echo braces")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>singletonList(new ToolDefinition(
                         "echo", "echo", Collections.<String, Object>singletonMap("type", "object"))),
-                SYSTEM_PROMPT);
+                SYSTEM_PROMPT).decision();
 
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "literal { and } braces"))));
@@ -333,6 +384,14 @@ class SiliconFlowModelProviderTest {
 
     private static String completionWithMessage(String messageJson) {
         return "{\"choices\":[{\"message\":" + messageJson + ",\"finish_reason\":\"stop\"}]}";
+    }
+
+    private static String completionWithMessageAndUsage(String messageJson, int promptTokens,
+            int completionTokens, int totalTokens) {
+        return "{\"choices\":[{\"message\":" + messageJson + ",\"finish_reason\":\"stop\"}],"
+                + "\"usage\":{\"prompt_tokens\":" + promptTokens
+                + ",\"completion_tokens\":" + completionTokens
+                + ",\"total_tokens\":" + totalTokens + "}}";
     }
 
     private void assertSystemPromptContains(JsonNode requestBody, String... expectedTexts) {

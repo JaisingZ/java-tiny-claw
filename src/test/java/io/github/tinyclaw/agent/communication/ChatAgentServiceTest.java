@@ -13,6 +13,8 @@ import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
+import io.github.tinyclaw.agent.provider.ModelResponse;
+import io.github.tinyclaw.agent.provider.ModelUsage;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
 import io.github.tinyclaw.agent.runtime.SessionManager;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -198,6 +201,38 @@ class ChatAgentServiceTest {
         assertThat(session.messages()).anySatisfy(message -> assertThat(message).contains("已批准：approval-chat"));
     }
 
+    @Test
+    void usageCommandReportsCurrentChatSessionMetricsWithoutStartingAgent() throws Exception {
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        SessionManager sessionManager = new SessionManager();
+        AtomicInteger providerCalls = new AtomicInteger();
+        ModelProvider provider = (context, phase, tools, systemPrompt) -> {
+            providerCalls.incrementAndGet();
+            return new ModelResponse(new FinishDecision("answer:" + context.goal()),
+                    new ModelUsage(12, 4, 16), "model-a", true);
+        };
+        ChatAgentService service = new ChatAgentService(
+                logger -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger),
+                TelegramStyleRunLogger::new,
+                executor,
+                sessionManager);
+
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "hello"), session);
+        assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
+        service.handle(new ChatMessage("m2", "chat-a", "user-a", "/usage"), session);
+
+        assertThat(executor.awaitIdle(200, TimeUnit.MILLISECONDS)).isTrue();
+        executor.close();
+        assertThat(providerCalls).hasValue(1);
+        assertThat(session.messages()).anySatisfy(message -> assertThat(message)
+                .contains("当前会话用量")
+                .contains("模型调用: 1")
+                .contains("Prompt Tokens: 12")
+                .contains("Completion Tokens: 4")
+                .contains("Total Tokens: 16"));
+    }
+
     private static void waitForSessionMessage(RecordingSession session, String text) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (System.nanoTime() < deadline) {
@@ -225,11 +260,11 @@ class ChatAgentServiceTest {
         }
 
         @Override
-        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             taskId.set(context.taskId());
             goal.set(context.goal());
-            return new FinishDecision("answer:" + context.goal());
+            return ModelResponse.of(new FinishDecision("answer:" + context.goal()));
         }
     }
 
@@ -237,10 +272,10 @@ class ChatAgentServiceTest {
         private final List<AgentContext> contexts = new ArrayList<AgentContext>();
 
         @Override
-        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             contexts.add(context);
-            return new FinishDecision("answer:" + context.goal());
+            return ModelResponse.of(new FinishDecision("answer:" + context.goal()));
         }
 
         private List<AgentContext> contexts() {
@@ -252,10 +287,10 @@ class ChatAgentServiceTest {
         private final List<String> prompts = new ArrayList<String>();
 
         @Override
-        public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             prompts.add(systemPrompt);
-            return new FinishDecision("answer:" + context.goal());
+            return ModelResponse.of(new FinishDecision("answer:" + context.goal()));
         }
 
         private List<String> prompts() {

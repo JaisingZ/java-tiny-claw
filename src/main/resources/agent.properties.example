@@ -9,6 +9,10 @@ agent.debug=false
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 
+# Observability only records provider-returned usage tokens.
+# If the provider omits usage, tokens are recorded as 0 and marked unavailable.
+# v1 does not calculate model cost.
+
 agent.permissions.enabled=false
 agent.permissions.approvalTimeoutSeconds=1800
 agent.permissions.file=.claw/permissions.yaml

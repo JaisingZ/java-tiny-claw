@@ -108,6 +108,14 @@ public final class AgentApplication {
         logger.writeLine("RESULT status=" + result.status()
                 + " answer=" + result.finalAnswer()
                 + " failure=" + result.failureReason());
+        logger.writeLine("METRICS modelCalls=" + result.metrics().modelCallCount()
+                + " promptTokens=" + result.metrics().promptTokens()
+                + " completionTokens=" + result.metrics().completionTokens()
+                + " totalTokens=" + result.metrics().totalTokens()
+                + " usageUnavailable=" + result.metrics().usageUnavailableCount()
+                + " modelDurationMillis=" + result.metrics().modelDurationMillis()
+                + " toolCalls=" + result.metrics().toolCallCount()
+                + " toolDurationMillis=" + result.metrics().toolDurationMillis());
         if (debug) {
             return;
         }

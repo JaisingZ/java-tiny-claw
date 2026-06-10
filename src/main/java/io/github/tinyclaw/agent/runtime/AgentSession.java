@@ -20,6 +20,8 @@ public final class AgentSession {
     private final WorkingMemoryPolicy workingMemoryPolicy;
     private final Deque<SessionMessage> history;
     private final Object historyLock;
+    private final Object metricsLock;
+    private SessionMetrics metrics;
 
     /**
      * 创建默认策略会话。
@@ -41,6 +43,8 @@ public final class AgentSession {
         this.updatedAt = createdAt;
         this.history = new ArrayDeque<SessionMessage>();
         this.historyLock = new Object();
+        this.metricsLock = new Object();
+        this.metrics = SessionMetrics.empty();
     }
 
     /**
@@ -98,6 +102,29 @@ public final class AgentSession {
             WorkingMemoryPolicy safePolicy = policy == null ? workingMemoryPolicy : policy;
             return safePolicy.apply(new ArrayList<SessionMessage>(history));
         }
+    }
+
+    /**
+     * 累加一次运行的指标到当前会话。
+     */
+    public void record(RunMetrics runMetrics) {
+        synchronized (metricsLock) {
+            metrics = metrics.plus(runMetrics);
+            updatedAt = Instant.now();
+        }
+    }
+
+    /**
+     * 返回当前会话累计指标快照。
+     */
+    public SessionMetrics metrics() {
+        synchronized (metricsLock) {
+            return metrics;
+        }
+    }
+
+    public SessionMetrics getMetrics() {
+        return metrics();
     }
 
     /**

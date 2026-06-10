@@ -11,6 +11,7 @@ import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
+import io.github.tinyclaw.agent.provider.ModelResponse;
 import io.github.tinyclaw.agent.tool.BashTool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.WriteFileTool;
@@ -59,21 +60,21 @@ class MainLoopJavaPrimitiveSmokeTest {
     private static final class WriteCompileRunProvider implements ModelProvider {
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             if (state.observations().isEmpty()) {
                 Map<String, Object> arguments = new LinkedHashMap<String, Object>();
                 arguments.put("path", "HelloFromAgent.java");
                 arguments.put("content", javaSource());
-                return new ToolDecision(new ToolCall("write_file", arguments));
+                return ModelResponse.of(new ToolDecision(new ToolCall("write_file", arguments)));
             }
 
             if (state.observations().size() == 1) {
-                return new ToolDecision(new ToolCall("bash",
-                        Collections.<String, Object>singletonMap("command", compileAndRunCommand())));
+                return ModelResponse.of(new ToolDecision(new ToolCall("bash",
+                        Collections.<String, Object>singletonMap("command", compileAndRunCommand()))));
             }
 
-            return new FinishDecision("java sample executed");
+            return ModelResponse.of(new FinishDecision("java sample executed"));
         }
 
         private static String javaSource() {

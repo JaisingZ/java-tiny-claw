@@ -85,7 +85,7 @@ public final class LmStudioModelProvider implements ModelProvider {
      * 根据当前上下文向 LM Studio 请求下一步决策。
      */
     @Override
-    public Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
+    public ModelResponse decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
             String systemPrompt) {
         ObjectNode requestBody = buildRequestBody(context, phase, availableTools, systemPrompt);
         debugJson(phase, "Request JSON", requestBody);
@@ -109,7 +109,23 @@ public final class LmStudioModelProvider implements ModelProvider {
             }
         }
         debugDecision(phase, decision);
-        return decision;
+        return new ModelResponse(decision, usage(response), config.model(), hasUsage(response));
+    }
+
+    private ModelUsage usage(JsonNode response) {
+        JsonNode usage = response.get("usage");
+        if (usage == null || !usage.isObject()) {
+            return ModelUsage.empty();
+        }
+        return new ModelUsage(
+                usage.path("prompt_tokens").asInt(0),
+                usage.path("completion_tokens").asInt(0),
+                usage.path("total_tokens").asInt(0));
+    }
+
+    private boolean hasUsage(JsonNode response) {
+        JsonNode usage = response.get("usage");
+        return usage != null && usage.isObject();
     }
 
     private ObjectNode buildRequestBody(AgentContext context, DecisionPhase phase,

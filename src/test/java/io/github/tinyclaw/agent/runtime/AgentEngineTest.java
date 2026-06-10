@@ -17,6 +17,8 @@ import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
+import io.github.tinyclaw.agent.provider.ModelResponse;
+import io.github.tinyclaw.agent.provider.ModelUsage;
 import io.github.tinyclaw.agent.tool.SubagentTool;
 import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
@@ -50,6 +52,63 @@ class AgentEngineTest {
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
         assertThat(result.finalAnswer()).isEqualTo("done");
         assertThat(result.observations()).containsExactly("hello");
+    }
+
+    @Test
+    void recordsModelUsageAndToolMetricsForRun() {
+        EngineFixture fixture = fixture().withTools(new EchoTool());
+
+        RunResult result = fixture.run(scriptedProvider(
+                response(tool("echo", "text", "hello"), "model-a", 11, 2, 13),
+                response(finish("done"), "model-a", 17, 5, 22)), "task-metrics", "echo once");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.metrics().modelCalls()).hasSize(2);
+        assertThat(result.metrics().modelCallCount()).isEqualTo(2);
+        assertThat(result.metrics().promptTokens()).isEqualTo(28);
+        assertThat(result.metrics().completionTokens()).isEqualTo(7);
+        assertThat(result.metrics().totalTokens()).isEqualTo(35);
+        assertThat(result.metrics().usageUnavailableCount()).isZero();
+        assertThat(result.metrics().modelDurationMillis()).isGreaterThanOrEqualTo(0L);
+        assertThat(result.metrics().toolCalls()).hasSize(1);
+        assertThat(result.metrics().toolCalls().get(0).toolName()).isEqualTo("echo");
+        assertThat(result.metrics().toolCalls().get(0).success()).isTrue();
+        assertThat(result.metrics().toolCalls().get(0).outputBytes()).isEqualTo(5);
+        assertThat(result.metrics().toolDurationMillis()).isGreaterThanOrEqualTo(0L);
+    }
+
+    @Test
+    void recordsProviderFailureMetric() {
+        EngineFixture fixture = fixture();
+
+        RunResult result = fixture.run((state, phase, tools, systemPrompt) -> {
+            throw new RuntimeException("boom");
+        }, "task-provider-metric", "fail");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.metrics().modelCalls()).hasSize(1);
+        assertThat(result.metrics().modelCalls().get(0).phase()).isEqualTo(DecisionPhase.ACTION);
+        assertThat(result.metrics().modelCalls().get(0).success()).isFalse();
+        assertThat(result.metrics().modelCalls().get(0).failureReason()).isEqualTo("provider_error: boom");
+        assertThat(result.metrics().usageUnavailableCount()).isEqualTo(1);
+    }
+
+    @Test
+    void recordsMetricsIntoAgentSessionAfterRun() {
+        EngineFixture fixture = fixture().withTools(new EchoTool());
+        AgentSession session = new AgentSession("chat-metrics");
+
+        RunResult result = fixture.run(scriptedProvider(
+                response(tool("echo", "text", "hello"), "model-a", 10, 4, 14),
+                response(finish("done"), "model-a", 20, 6, 26)),
+                session, "task-session-metrics", "echo once");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(session.metrics().modelCallCount()).isEqualTo(2);
+        assertThat(session.metrics().promptTokens()).isEqualTo(30);
+        assertThat(session.metrics().completionTokens()).isEqualTo(10);
+        assertThat(session.metrics().totalTokens()).isEqualTo(40);
+        assertThat(session.metrics().toolCallCount()).isEqualTo(1);
     }
 
     /**
@@ -198,7 +257,7 @@ class AgentEngineTest {
             if (phase == DecisionPhase.THINKING) {
                 throw new RuntimeException("boom");
             }
-            return finish("unused");
+            return response(finish("unused"));
         }, "task-6", "think fails");
 
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
@@ -647,24 +706,41 @@ class AgentEngineTest {
         return new EngineFixture();
     }
 
+    private static ModelResponse response(Decision decision, String model, int promptTokens,
+            int completionTokens, int totalTokens) {
+        return new ModelResponse(decision, new ModelUsage(promptTokens, completionTokens, totalTokens), model, true);
+    }
+
+    private static ModelResponse response(Decision decision) {
+        return ModelResponse.of(decision);
+    }
+
     private static ModelProvider scriptedProvider(final Decision... decisions) {
+        ModelResponse[] responses = new ModelResponse[decisions.length];
+        for (int i = 0; i < decisions.length; i++) {
+            responses[i] = response(decisions[i]);
+        }
+        return scriptedProvider(responses);
+    }
+
+    private static ModelProvider scriptedProvider(final ModelResponse... responses) {
         return new ModelProvider() {
             private int index = 0;
 
             @Override
-            public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+            public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                     String systemPrompt) {
                 int current = index;
-                if (current < decisions.length - 1) {
+                if (current < responses.length - 1) {
                     index++;
                 }
-                return decisions[current];
+                return responses[current];
             }
         };
     }
 
     private static ModelProvider constantProvider(final Decision decision) {
-        return (state, phase, availableTools, systemPrompt) -> decision;
+        return (state, phase, availableTools, systemPrompt) -> response(decision);
     }
 
     private static ToolDecision tool(String toolName, Object... arguments) {
@@ -716,20 +792,20 @@ class AgentEngineTest {
         private final List<List<ToolDefinition>> toolsByPhase = new ArrayList<List<ToolDefinition>>();
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             phases.add(phase);
             toolsByPhase.add(availableTools);
             if (phase == DecisionPhase.THINKING) {
                 if (state.observations().isEmpty()) {
-                    return new ThinkingDecision("plan to call echo");
+                    return response(new ThinkingDecision("plan to call echo"));
                 }
-                return new ThinkingDecision("plan to finish");
+                return response(new ThinkingDecision("plan to finish"));
             }
             if (state.observations().isEmpty()) {
-                return tool("echo", "text", "hello");
+                return response(tool("echo", "text", "hello"));
             }
-            return finish("done");
+            return response(finish("done"));
         }
 
         List<DecisionPhase> phases() {
@@ -861,10 +937,10 @@ class AgentEngineTest {
         }
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             prompts.add(systemPrompt);
-            return decision;
+            return response(decision);
         }
 
         private List<String> prompts() {
@@ -882,14 +958,14 @@ class AgentEngineTest {
         }
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             contexts.add(state);
             int current = index;
             if (current < decisions.length - 1) {
                 index++;
             }
-            return decisions[current];
+            return response(decisions[current]);
         }
 
         private List<AgentContext> contexts() {
@@ -902,13 +978,13 @@ class AgentEngineTest {
         private final List<String> toolNames = new ArrayList<String>();
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             prompts.add(systemPrompt);
             for (ToolDefinition tool : availableTools) {
                 toolNames.add(tool.name());
             }
-            return finish("child summary");
+            return response(finish("child summary"));
         }
 
         private List<String> prompts() {
@@ -924,13 +1000,13 @@ class AgentEngineTest {
         private final List<AgentContext> contexts = new ArrayList<AgentContext>();
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             contexts.add(state);
             if (state.observations().isEmpty()) {
-                return tool("fail_tool");
+                return response(tool("fail_tool"));
             }
-            return finish("recovered");
+            return response(finish("recovered"));
         }
 
         private List<AgentContext> contexts() {
@@ -942,13 +1018,13 @@ class AgentEngineTest {
         private final List<AgentContext> contexts = new ArrayList<AgentContext>();
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             contexts.add(state);
             if (containsReminder(state.observations())) {
-                return finish("stopped after reminder");
+                return response(finish("stopped after reminder"));
             }
-            return tool("fail_tool");
+            return response(tool("fail_tool"));
         }
 
         private boolean containsReminder(List<String> observations) {
@@ -970,14 +1046,14 @@ class AgentEngineTest {
         private final List<AgentContext> contexts = new ArrayList<AgentContext>();
 
         @Override
-        public Decision decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
                 String systemPrompt) {
             contexts.add(state);
             phases.add(phase);
             if (phase == DecisionPhase.THINKING) {
-                return new ThinkingDecision("ready");
+                return response(new ThinkingDecision("ready"));
             }
-            return finish("done");
+            return response(finish("done"));
         }
 
         private List<DecisionPhase> phases() {

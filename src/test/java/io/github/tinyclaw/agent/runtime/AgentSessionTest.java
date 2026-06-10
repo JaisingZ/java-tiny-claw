@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import io.github.tinyclaw.agent.domain.SessionMessage;
+import io.github.tinyclaw.agent.domain.DecisionPhase;
+import io.github.tinyclaw.agent.provider.ModelUsage;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -152,6 +155,35 @@ class AgentSessionTest {
 
         assertThat(session.history()).hasSize(threadCount * perThread);
         assertThat(session.workingMemory()).hasSize(policy.maxMessages());
+    }
+
+    @Test
+    void recordsRunMetricsIntoSessionTotals() {
+        AgentSession session = new AgentSession("chat-metrics");
+        RunMetrics first = new RunMetrics(
+                List.of(new ModelCallMetric(DecisionPhase.ACTION, "model-a", 120L, true, null,
+                        new ModelUsage(10, 3, 13), true)),
+                List.of(new ToolCallMetric("read_file", 8L, true, 42, null)));
+        RunMetrics second = new RunMetrics(
+                List.of(new ModelCallMetric(DecisionPhase.THINKING, "model-a", 30L, false, "provider_error",
+                        ModelUsage.empty(), false)),
+                Collections.<ToolCallMetric>emptyList());
+
+        session.record(first);
+        session.record(second);
+
+        SessionMetrics metrics = session.metrics();
+        assertThat(metrics.modelCallCount()).isEqualTo(2);
+        assertThat(metrics.successfulModelCallCount()).isEqualTo(1);
+        assertThat(metrics.failedModelCallCount()).isEqualTo(1);
+        assertThat(metrics.promptTokens()).isEqualTo(10);
+        assertThat(metrics.completionTokens()).isEqualTo(3);
+        assertThat(metrics.totalTokens()).isEqualTo(13);
+        assertThat(metrics.usageUnavailableCount()).isEqualTo(1);
+        assertThat(metrics.modelDurationMillis()).isEqualTo(150L);
+        assertThat(metrics.toolCallCount()).isEqualTo(1);
+        assertThat(metrics.toolDurationMillis()).isEqualTo(8L);
+        assertThat(metrics.toolOutputBytes()).isEqualTo(42);
     }
 
     /**

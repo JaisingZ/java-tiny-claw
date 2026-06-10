@@ -15,9 +15,12 @@ import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
 import io.github.tinyclaw.agent.provider.ModelProvider;
+import io.github.tinyclaw.agent.provider.ModelResponse;
+import io.github.tinyclaw.agent.provider.ModelUsage;
 import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.ToolResult;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -124,7 +127,7 @@ public final class AgentEngine {
      */
     public RunResult run(Task task) {
         AgentContext context = AgentContext.create(task);
-        return runContext(context);
+        return runContext(context, new RunMetricsCollector());
     }
 
     /**
@@ -132,21 +135,22 @@ public final class AgentEngine {
      */
     public RunResult run(AgentSession session, Task task) {
         AgentContext context = AgentContext.create(task, session.workingMemory());
-        RunResult result = runContext(context);
+        RunResult result = runContext(context, new RunMetricsCollector());
         recordSessionResult(session, task, result);
+        session.record(result.metrics());
         return result;
     }
 
-    private RunResult runContext(AgentContext context) {
+    private RunResult runContext(AgentContext context, RunMetricsCollector metrics) {
         SystemReminderInjector systemReminderInjector = new SystemReminderInjector();
         while (context.stepCount() < maxSteps) {
-            TurnResult turn = runTurn(context, systemReminderInjector);
+            TurnResult turn = runTurn(context, systemReminderInjector, metrics);
             if (turn.result() != null) {
                 return turn.result();
             }
             context = turn.context();
         }
-        return fail(context, "max_steps_exceeded");
+        return fail(context, "max_steps_exceeded", metrics);
     }
 
     private void recordSessionResult(AgentSession session, Task task, RunResult result) {
@@ -170,31 +174,32 @@ public final class AgentEngine {
         return Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
     }
 
-    private TurnResult runTurn(AgentContext context, SystemReminderInjector systemReminderInjector) {
+    private TurnResult runTurn(AgentContext context, SystemReminderInjector systemReminderInjector,
+            RunMetricsCollector metrics) {
         int currentStep = context.stepCount() + 1;
         runLogger.turnStarted(currentStep);
 
         if (enableThinking) {
             try {
-                context = runThinkingPhase(context);
+                context = runThinkingPhase(context, metrics);
             } catch (ProviderCallException ex) {
-                return TurnResult.done(fail(context, ex.reason()));
+                return TurnResult.done(fail(context, ex.reason(), metrics));
             }
         }
 
         Decision decision;
         try {
-            decision = requestActionDecision(context);
+            decision = requestActionDecision(context, metrics);
         } catch (ProviderCallException ex) {
-            return TurnResult.done(fail(context, ex.reason()));
+            return TurnResult.done(fail(context, ex.reason(), metrics));
         }
-        return applyDecision(context, decision, systemReminderInjector);
+        return applyDecision(context, decision, systemReminderInjector, metrics);
     }
 
-    private AgentContext runThinkingPhase(AgentContext context) {
+    private AgentContext runThinkingPhase(AgentContext context, RunMetricsCollector metrics) {
         runLogger.thinkingStarted();
         ProviderResponse response = invokeProvider(context, DecisionPhase.THINKING,
-                Collections.<ToolDefinition>emptyList());
+                Collections.<ToolDefinition>emptyList(), metrics);
 
         if (!(response.decision() instanceof ThinkingDecision)) {
             throw new ProviderCallException("unsupported_thinking_decision");
@@ -205,10 +210,10 @@ public final class AgentEngine {
         return context.think(thinking.thought());
     }
 
-    private Decision requestActionDecision(AgentContext context) {
+    private Decision requestActionDecision(AgentContext context, RunMetricsCollector metrics) {
         List<ToolDefinition> toolDefinitions = toolRegistry.definitions();
         runLogger.actionStarted(toolDefinitions);
-        ProviderResponse response = invokeProvider(context, DecisionPhase.ACTION, toolDefinitions);
+        ProviderResponse response = invokeProvider(context, DecisionPhase.ACTION, toolDefinitions, metrics);
 
         if (response.decision() instanceof ToolDecision) {
             runLogger.toolDecision((ToolDecision) response.decision());
@@ -217,41 +222,48 @@ public final class AgentEngine {
     }
 
     private ProviderResponse invokeProvider(AgentContext context, DecisionPhase phase,
-            List<ToolDefinition> availableTools) {
+            List<ToolDefinition> availableTools, RunMetricsCollector metrics) {
         long start = System.nanoTime();
-        Decision decision;
         try {
             String systemPrompt = promptComposer.compose(new PromptContext(workDir, phase, availableTools));
             AgentContext compactedContext = contextCompactor.compact(context);
-            decision = provider.decide(compactedContext, phase, availableTools, systemPrompt);
+            ModelResponse response = provider.decide(compactedContext, phase, availableTools, systemPrompt);
+            long durationMillis = elapsedMillis(start);
+            metrics.modelCalls.add(new ModelCallMetric(phase, response.model(), durationMillis, true, null,
+                    response.usage(), response.usageAvailable()));
+            return new ProviderResponse(response.decision(), durationMillis);
         } catch (RuntimeException ex) {
-            throw new ProviderCallException("provider_error: " + ex.getMessage());
+            String reason = "provider_error: " + ex.getMessage();
+            metrics.modelCalls.add(new ModelCallMetric(phase, "", elapsedMillis(start), false, reason,
+                    ModelUsage.empty(), false));
+            throw new ProviderCallException(reason);
         }
-        return new ProviderResponse(decision, elapsedMillis(start));
     }
 
     private TurnResult applyDecision(AgentContext context, Decision decision,
-            SystemReminderInjector systemReminderInjector) {
+            SystemReminderInjector systemReminderInjector, RunMetricsCollector metrics) {
         if (decision instanceof FinishDecision) {
             FinishDecision finish = (FinishDecision) decision;
             runLogger.finished(finish);
-            return TurnResult.done(RunResult.success(context.stepCount(), context.observations(), finish.answer()));
+            return TurnResult.done(RunResult.success(context.stepCount(), context.observations(), finish.answer(),
+                    metrics.snapshot()));
         }
 
         if (decision instanceof ToolDecision) {
-            return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector);
+            return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector, metrics);
         }
 
         if (decision instanceof ParallelToolDecision) {
-            return handleParallelToolDecision(context, (ParallelToolDecision) decision, systemReminderInjector);
+            return handleParallelToolDecision(context, (ParallelToolDecision) decision, systemReminderInjector,
+                    metrics);
         }
 
-        return TurnResult.done(fail(context, "unsupported_decision"));
+        return TurnResult.done(fail(context, "unsupported_decision", metrics));
     }
 
     private TurnResult handleToolDecision(AgentContext context, ToolCall call,
-            SystemReminderInjector systemReminderInjector) {
-        ToolResult toolResult = executeToolCall(context, call);
+            SystemReminderInjector systemReminderInjector, RunMetricsCollector metrics) {
+        ToolResult toolResult = executeToolCall(context, call, metrics);
         List<String> outputs = new ArrayList<String>();
         outputs.add(observationFor(call, toolResult));
         appendReminder(outputs, systemReminderInjector.afterToolCall(call, toolResult));
@@ -259,7 +271,7 @@ public final class AgentEngine {
     }
 
     private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision,
-            SystemReminderInjector systemReminderInjector) {
+            SystemReminderInjector systemReminderInjector, RunMetricsCollector metrics) {
         List<ToolCall> calls = decision.getCalls();
         if (calls.isEmpty()) {
             return TurnResult.next(context.advance());
@@ -274,7 +286,7 @@ public final class AgentEngine {
             }
             if (!tool.isSideEffect()) {
                 readOnlyResults.put(call,
-                        CompletableFuture.supplyAsync(() -> executeToolCall(context, call), toolExecutor));
+                        CompletableFuture.supplyAsync(() -> executeToolCall(context, call, metrics), toolExecutor));
             }
         }
 
@@ -287,10 +299,10 @@ public final class AgentEngine {
                 try {
                     result = future.get();
                 } catch (Exception ex) {
-                    return TurnResult.done(fail(context, "parallel_execution_failed: " + ex.getMessage()));
+                    return TurnResult.done(fail(context, "parallel_execution_failed: " + ex.getMessage(), metrics));
                 }
             } else {
-                result = executeToolCall(context, call);
+                result = executeToolCall(context, call, metrics);
             }
 
             outputs.add(observationFor(call, result));
@@ -304,11 +316,14 @@ public final class AgentEngine {
         return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
-    private ToolResult executeToolCall(AgentContext context, ToolCall call) {
+    private ToolResult executeToolCall(AgentContext context, ToolCall call, RunMetricsCollector metrics) {
         long toolStart = System.nanoTime();
         runLogger.toolStarted(call);
         ToolResult toolResult = toolRegistry.execute(call, context);
-        runLogger.toolCompleted(call, toolResult, elapsedMillis(toolStart));
+        long durationMillis = elapsedMillis(toolStart);
+        runLogger.toolCompleted(call, toolResult, durationMillis);
+        metrics.toolCalls.add(new ToolCallMetric(call.toolName(), durationMillis, toolResult.success(),
+                outputBytes(toolResult), toolResult.errorMessage()));
         return toolResult;
     }
 
@@ -333,9 +348,9 @@ public final class AgentEngine {
         return nextContext.observe(joinOutputs(outputs));
     }
 
-    private RunResult fail(AgentContext context, String reason) {
+    private RunResult fail(AgentContext context, String reason, RunMetricsCollector metrics) {
         runLogger.failed(reason);
-        return RunResult.failed(context.stepCount(), context.observations(), reason);
+        return RunResult.failed(context.stepCount(), context.observations(), reason, metrics.snapshot());
     }
 
     private String joinOutputs(List<String> outputs) {
@@ -351,6 +366,28 @@ public final class AgentEngine {
 
     private long elapsedMillis(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    private int outputBytes(ToolResult result) {
+        if (result == null || !result.success() || result.output() == null) {
+            return 0;
+        }
+        return result.output().getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static final class RunMetricsCollector {
+        private final List<ModelCallMetric> modelCalls =
+                Collections.synchronizedList(new ArrayList<ModelCallMetric>());
+        private final List<ToolCallMetric> toolCalls =
+                Collections.synchronizedList(new ArrayList<ToolCallMetric>());
+
+        private RunMetrics snapshot() {
+            synchronized (modelCalls) {
+                synchronized (toolCalls) {
+                    return new RunMetrics(modelCalls, toolCalls);
+                }
+            }
+        }
     }
 
     private static final class TurnResult {
