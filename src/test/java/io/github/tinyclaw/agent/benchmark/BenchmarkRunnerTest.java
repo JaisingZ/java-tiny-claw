@@ -82,6 +82,23 @@ class BenchmarkRunnerTest {
         assertThat(report.results().get(0).traceDir()).contains(".tinyclaw");
     }
 
+    @Test
+    void validateScriptCanPassEvenWhenAgentRunFailedAfterChangingWorkspace() throws Exception {
+        RecordingAgentRunner agentRunner = new RecordingAgentRunner(failedResult());
+        ScriptedCommandExecutor commands = new ScriptedCommandExecutor(
+                CommandResult.success("setup ok"),
+                CommandResult.success("validation ok"));
+        BenchmarkRunner runner = new BenchmarkRunner(tempDir, agentRunner, commands);
+
+        BenchmarkReport report = runner.runSuite(Collections.singletonList(caseWithId("validate_after_failure")));
+
+        BenchmarkResult result = report.results().get(0);
+        assertThat(result.passed()).isTrue();
+        assertThat(result.errorMessage()).isEmpty();
+        assertThat(result.validationOutput()).isEqualTo("validation ok");
+        assertThat(result.turnsToSuccess()).isEqualTo(2);
+    }
+
     private BenchmarkCase caseWithId(String id) {
         return new BenchmarkCase(id, "case " + id, "setup", "do task", "validate", 3, false);
     }
@@ -94,6 +111,11 @@ class BenchmarkRunnerTest {
                         new ToolCallMetric("bash", 7L, true, 12, null),
                         new ToolCallMetric("bash", 5L, false, 0, "exitCode=1")));
         return RunResult.success(1, Collections.singletonList("ok"), "done", metrics);
+    }
+
+    private RunResult failedResult() {
+        return RunResult.failed(2, Collections.singletonList("changed workspace"), "provider_error", successResult()
+                .metrics());
     }
 
     private static final class RecordingAgentRunner implements BenchmarkRunner.AgentRunner {

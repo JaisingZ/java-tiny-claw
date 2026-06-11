@@ -97,8 +97,7 @@ public final class BashTool implements Tool {
             return ToolResult.failure("Failed to start command: " + ex.getMessage());
         }
 
-        CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(
-                () -> readOutput(process.getInputStream()));
+        CompletableFuture<String> outputFuture = readOutputAsync(process.getInputStream());
         boolean finished;
         try {
             finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
@@ -145,6 +144,14 @@ public final class BashTool implements Tool {
         } catch (IOException ex) {
             return "Failed to read command output: " + ex.getMessage();
         }
+    }
+
+    private CompletableFuture<String> readOutputAsync(InputStream inputStream) {
+        CompletableFuture<String> future = new CompletableFuture<String>();
+        Thread reader = new Thread(() -> future.complete(readOutput(inputStream)), "bash-output-reader");
+        reader.setDaemon(true);
+        reader.start();
+        return future;
     }
 
     private String formatOutput(String output) {

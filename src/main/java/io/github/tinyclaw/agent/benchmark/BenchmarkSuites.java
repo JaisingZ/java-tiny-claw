@@ -23,7 +23,12 @@ public final class BenchmarkSuites {
                 new BenchmarkCase(
                         "edit_json_version",
                         "Edit config.json version",
-                        "Set-Content -Path config.json -Value '{\"name\":\"tiny-claw\",\"version\":\"v1.0.0\"}'",
+                        "@'\n"
+                                + "{\n"
+                                + "  \"name\": \"tiny-claw\",\n"
+                                + "  \"version\": \"v1.0.0\"\n"
+                                + "}\n"
+                                + "'@ | Set-Content -Path config.json",
                         "当前目录有 config.json。请使用 edit_file 工具把 version 从 v1.0.0 改为 v2.0.0，不要做其他多余操作。",
                         "Select-String -Path config.json -Pattern 'v2.0.0'",
                         6,
@@ -55,7 +60,12 @@ public final class BenchmarkSuites {
                 new BenchmarkCase(
                         "edit_json_version",
                         "Edit config.json version",
-                        "printf '%s\\n' '{\"name\":\"tiny-claw\",\"version\":\"v1.0.0\"}' > config.json",
+                        "cat > config.json <<'EOF'\n"
+                                + "{\n"
+                                + "  \"name\": \"tiny-claw\",\n"
+                                + "  \"version\": \"v1.0.0\"\n"
+                                + "}\n"
+                                + "EOF",
                         "当前目录有 config.json。请使用 edit_file 工具把 version 从 v1.0.0 改为 v2.0.0，不要做其他多余操作。",
                         "grep 'v2.0.0' config.json",
                         6,

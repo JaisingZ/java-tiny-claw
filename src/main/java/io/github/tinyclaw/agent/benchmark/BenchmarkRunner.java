@@ -86,14 +86,14 @@ public final class BenchmarkRunner {
 
         AgentSession session = new AgentSession(benchmarkCase.id());
         RunResult runResult = agentRunner.run(workDir, benchmarkCase, session);
-        if (runResult.status() != RunStatus.SUCCESS) {
-            return result(benchmarkCase, false, "agent failed: " + runResult.failureReason(), startMillis,
-                    runResult.metrics(), traceDir, "", runResult.stepCount());
-        }
 
         CommandResult validation = commandExecutor.execute(workDir, benchmarkCase.validateCommand());
         if (!validation.success()) {
-            return result(benchmarkCase, false, "validation failed: " + trimOutput(validation.output()), startMillis,
+            String errorMessage = "validation failed: " + trimOutput(validation.output());
+            if (runResult.status() != RunStatus.SUCCESS) {
+                errorMessage = "agent failed: " + runResult.failureReason() + "; " + errorMessage;
+            }
+            return result(benchmarkCase, false, errorMessage, startMillis,
                     runResult.metrics(), traceDir, validation.output(), runResult.stepCount());
         }
 
@@ -182,8 +182,7 @@ public final class BenchmarkRunner {
                 return CommandResult.failed(-1, "Failed to start command: " + ex.getMessage());
             }
 
-            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(
-                    () -> readOutput(process.getInputStream()));
+            CompletableFuture<String> outputFuture = readOutputAsync(process.getInputStream());
             boolean finished;
             try {
                 finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
@@ -221,6 +220,15 @@ public final class BenchmarkRunner {
             } catch (IOException ex) {
                 return "Failed to read command output: " + ex.getMessage();
             }
+        }
+
+        private CompletableFuture<String> readOutputAsync(InputStream inputStream) {
+            CompletableFuture<String> future = new CompletableFuture<String>();
+            Thread reader = new Thread(() -> future.complete(readOutput(inputStream)),
+                    "benchmark-command-output-reader");
+            reader.setDaemon(true);
+            reader.start();
+            return future;
         }
     }
 }
