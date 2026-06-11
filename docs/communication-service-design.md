@@ -74,13 +74,13 @@
 - `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
 - `agent.permissions.enabled`：是否在 Telegram 模式启用工具审批 Middleware，默认 `false`。
 - `agent.permissions.approvalTimeoutSeconds`：人工审批等待秒数，默认 `1800`。
-- `agent.permissions.file`：权限 YAML 文件路径，默认 `.claw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
+- `agent.permissions.file`：权限 YAML 文件路径，默认 `.tinyclaw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
 - `agent.permissions.hotReload`：是否监听权限 YAML 并热更新，默认 `true`。
 - `agent.permissions.reloadIntervalSeconds`：热更新轮询兜底间隔，默认 `2`。
 - `agent.permissions.tool.<toolName>`：兼容 fallback；无 YAML 文件时使用，工具级权限动作取值 `allow`、`ask`、`deny`。
 - `agent.permissions.denyPattern.<n>`：兼容 fallback；无 YAML 文件时使用，高危正则命中后直接 `deny`。
 
-推荐把具体权限规则写入 `.claw/permissions.yaml`：
+推荐把具体权限规则写入 `.tinyclaw/permissions.yaml`：
 
 ```yaml
 version: 1

@@ -18,7 +18,7 @@ class PermissionPolicySnapshotTest {
 
     @Test
     void missingFileReturnsDisabledSnapshot() {
-        PermissionPolicySnapshot snapshot = PermissionPolicySnapshot.load(tempDir.resolve(".claw/permissions.yaml"));
+        PermissionPolicySnapshot snapshot = PermissionPolicySnapshot.load(tempDir.resolve(".tinyclaw/permissions.yaml"));
 
         assertThat(snapshot.enabled()).isFalse();
         assertThat(snapshot.evaluate(call("bash", "rm -rf target")).action()).isEqualTo(ToolPermissionAction.ALLOW);

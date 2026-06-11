@@ -135,7 +135,7 @@ class TelegramAgentWebhookServiceTest {
 
     @Test
     void mountsPermissionMiddlewareFromYamlPolicy(@TempDir Path workDir) throws Exception {
-        Path policyFile = workDir.resolve(".claw").resolve("permissions.yaml");
+        Path policyFile = workDir.resolve(".tinyclaw").resolve("permissions.yaml");
         Files.createDirectories(policyFile.getParent());
         Files.writeString(policyFile, """
                 enabled: true
@@ -149,7 +149,7 @@ class TelegramAgentWebhookServiceTest {
                         regex: '(?i)echo'
                 """);
         Map<String, String> values = new HashMap<String, String>();
-        values.put("agent.permissions.file", ".claw/permissions.yaml");
+        values.put("agent.permissions.file", ".tinyclaw/permissions.yaml");
         values.put("agent.permissions.hotReload", "false");
         TelegramAgentWebhookService service = new TelegramAgentWebhookService(
                 new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),

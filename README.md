@@ -127,7 +127,7 @@ agent.debug=false
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 agent.permissions.enabled=false
-agent.permissions.file=.claw/permissions.yaml
+agent.permissions.file=.tinyclaw/permissions.yaml
 
 telegram.bot.token=your-telegram-bot-token
 telegram.webhook.host=127.0.0.1
@@ -141,7 +141,7 @@ telegram.webhook.secret=your-random-secret
 - `telegram` 不支持 `telegram --debug`；服务端 Provider debug 通过 `agent.debug=true` 开启。
 - `telegram.webhook.url` 为空且 `telegram.webhook.tunnel=trycloudflare` 时，会启动 trycloudflare 隧道并注册动态 HTTPS URL。
 - 开启 `agent.planMode=true` 后，每个 chat 使用 `.tinyclaw/state/chat/<chatId>/`。
-- 开启 `agent.permissions.enabled=true` 后，可通过 `.claw/permissions.yaml` 配置 `allow`、`ask`、`deny` 规则；`ask` 规则会在 Telegram 会话中等待 `/approve <id>` 或 `/reject <id>`。
+- 开启 `agent.permissions.enabled=true` 后，可通过 `.tinyclaw/permissions.yaml` 配置 `allow`、`ask`、`deny` 规则；`ask` 规则会在 Telegram 会话中等待 `/approve <id>` 或 `/reject <id>`。
 
 最小权限 YAML 示例：
 

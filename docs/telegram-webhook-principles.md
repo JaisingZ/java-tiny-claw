@@ -71,7 +71,7 @@ Telegram Bot API
 - `agent.workingMemory.maxMessages`：每个 Session 进入模型请求的最大消息数，默认 `12`。
 - `agent.workingMemory.maxChars`：每个 Session 进入模型请求的最大字符数，默认 `12000`。
 - `agent.permissions.enabled`：是否启用 Telegram 工具审批 Middleware，默认 `false`。
-- `agent.permissions.file`：权限 YAML 文件路径，默认 `.claw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
+- `agent.permissions.file`：权限 YAML 文件路径，默认 `.tinyclaw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
 - `agent.permissions.hotReload`：是否监听权限 YAML 并热更新，默认 `true`。
 
 Telegram 长驻入口按 `chatId`、`senderId`、`messageId` 的优先级选择会话标识。Session 只在进程内保存，进程重启后清空；Plan Mode 的 `PLAN.md` / `TODO.md` 是独立的任务级文件状态。

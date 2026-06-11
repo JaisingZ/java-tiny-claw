@@ -31,7 +31,7 @@ class TelegramAgentConfigTest {
         assertThat(config.toolPermissionConfig().approvalTimeout().getSeconds()).isEqualTo(1_800);
         assertThat(config.toolPermissionConfig().toolActions().get("read_file")).isEqualTo(ToolPermissionAction.ALLOW);
         assertThat(config.toolPermissionConfig().toolActions().get("bash")).isEqualTo(ToolPermissionAction.ASK);
-        assertThat(config.toolPermissionConfig().permissionFile()).isEqualTo(Path.of(".claw/permissions.yaml"));
+        assertThat(config.toolPermissionConfig().permissionFile()).isEqualTo(Path.of(".tinyclaw/permissions.yaml"));
         assertThat(config.toolPermissionConfig().hotReload()).isTrue();
         assertThat(config.toolPermissionConfig().reloadInterval().getSeconds()).isEqualTo(2);
     }

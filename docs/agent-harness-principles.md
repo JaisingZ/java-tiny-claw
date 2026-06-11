@@ -48,7 +48,7 @@
 
 - `Tool` 自身校验参数和工作区路径边界。
 - `ToolRegistry` 统一路由工具调用，并把未知工具和工具异常包装为失败结果。
-- `tool.permission` 按 `.claw/permissions.yaml` 的不可变快照计算 `allow / ask / deny`，并支持工具名和参数正则匹配。
+- `tool.permission` 按 `.tinyclaw/permissions.yaml` 的不可变快照计算 `allow / ask / deny`，并支持工具名和参数正则匹配。
 - `communication.approval` 在 Telegram 模式下等待人工 `/approve <id>` 或 `/reject <id>`，并处理超时和同会话约束。
 - `AgentEngine` 按 `Tool.isSideEffect()` 处理只读并发和涉写串行。
 - `spawn_subagent` 标记为只读工具；子 Agent v1 只挂载 `read_file`，不提供写工具、`bash` 或递归委派能力。

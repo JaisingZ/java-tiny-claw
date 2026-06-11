@@ -18,7 +18,7 @@ public final class ToolPermissionConfig {
 
     public static final boolean DEFAULT_ENABLED = false;
     public static final int DEFAULT_APPROVAL_TIMEOUT_SECONDS = 1_800;
-    public static final String DEFAULT_PERMISSION_FILE = ".claw/permissions.yaml";
+    public static final String DEFAULT_PERMISSION_FILE = ".tinyclaw/permissions.yaml";
     public static final boolean DEFAULT_HOT_RELOAD = true;
     public static final int DEFAULT_RELOAD_INTERVAL_SECONDS = 2;
 
