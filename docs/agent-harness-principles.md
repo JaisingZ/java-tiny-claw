@@ -57,13 +57,13 @@
 - `ToolRegistry` 统一路由工具调用，并把未知工具和工具异常包装为失败结果。
 - `AgentEngine` 按 `Tool.isSideEffect()` 处理只读并发和涉写串行。
 - `spawn_subagent` 标记为只读工具；子 Agent v1 只挂载 `read_file` 和 `bash`，不提供写工具或递归委派能力。
-- `RunLogger` 和 `RunResult` 保留人类可读的运行观测。
+- `RunLogger` 和 `RunResult` 保留人类可读的运行观测，`RunMetrics` 保留汇总指标，`TraceRecorder` 保留结构化回放。
 
 审批、白名单、黑名单、风险分级等治理能力属于后续扩展方向，不能写成当前已实现。
 
 ### 3.5 观测优先
 
-- 以可读日志为主，使用 `RunLogger` 输出关键步骤。
+- 以可读日志为主，使用 `RunLogger` 输出关键步骤；需要复盘决策路径时使用 `.tinyclaw/traces` 下的 JSON trace。
 - CLI 非 debug 场景输出 `OBSERVATIONS`，用于闭环判断。
 - 最终输出以 `RunResult` 为准，覆盖成功/失败、步数与观察信息。
 
@@ -133,7 +133,7 @@ Communication 负责把外部消息转换成 Agent 任务。
 ### 4.7 Tracer（历史目标）
 
 - 历史目标：记录结构化 trace、决策链、模型输入输出。
-- 当前 Tiny Agent Harness：不实现 `Tracer`，对应历史分层 `io.github.tinyclaw.agent.trace` 已停用；观测由 `RunLogger` + `RunResult` 覆盖。
+- 当前 Tiny Agent Harness：不恢复历史 `io.github.tinyclaw.agent.trace` 分层；结构化回放由轻量 `TraceRecorder` 输出本地 JSON，观测由 `RunLogger`、`RunResult`、`RunMetrics` 和 `TraceRecorder` 分别承担。
 
 ## 5. 默认实现策略
 

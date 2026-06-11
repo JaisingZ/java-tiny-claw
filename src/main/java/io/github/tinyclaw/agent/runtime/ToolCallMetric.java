@@ -26,20 +26,40 @@ public final class ToolCallMetric {
         return toolName;
     }
 
+    public String getToolName() {
+        return toolName();
+    }
+
     public long durationMillis() {
         return durationMillis;
+    }
+
+    public long getDurationMillis() {
+        return durationMillis();
     }
 
     public boolean success() {
         return success;
     }
 
+    public boolean isSuccess() {
+        return success();
+    }
+
     public int outputBytes() {
         return outputBytes;
     }
 
+    public int getOutputBytes() {
+        return outputBytes();
+    }
+
     public String errorMessage() {
         return errorMessage;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage();
     }
 
     @Override

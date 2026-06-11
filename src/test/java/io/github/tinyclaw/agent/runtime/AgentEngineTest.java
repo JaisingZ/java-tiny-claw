@@ -16,6 +16,8 @@ import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
 import io.github.tinyclaw.agent.domain.ToolDefinition;
+import io.github.tinyclaw.agent.observability.TraceRecorder;
+import io.github.tinyclaw.agent.observability.TraceSpan;
 import io.github.tinyclaw.agent.provider.ModelProvider;
 import io.github.tinyclaw.agent.provider.ModelResponse;
 import io.github.tinyclaw.agent.provider.ModelUsage;
@@ -91,6 +93,95 @@ class AgentEngineTest {
         assertThat(result.metrics().modelCalls().get(0).success()).isFalse();
         assertThat(result.metrics().modelCalls().get(0).failureReason()).isEqualTo("provider_error: boom");
         assertThat(result.metrics().usageUnavailableCount()).isEqualTo(1);
+    }
+
+    @Test
+    void recordsTraceTreeForSuccessfulRun() {
+        List<TraceSpan> exported = new ArrayList<TraceSpan>();
+        EngineFixture fixture = fixture()
+                .withTools(new EchoTool())
+                .withTraceRecorder(TraceRecorder.forSink(exported::add));
+
+        RunResult result = fixture.run(scriptedProvider(
+                response(tool("echo", "text", "hello"), "model-a", 11, 2, 13),
+                response(finish("done"), "model-a", 17, 5, 22)), "task-trace", "echo once");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(exported).hasSize(1);
+        TraceSpan root = exported.get(0);
+        assertThat(root.name()).isEqualTo("agent.run");
+        assertThat(root.endTime()).isNotNull();
+        assertThat(root.durationMillis()).isGreaterThanOrEqualTo(0L);
+        assertThat(root.attributes())
+                .containsEntry("work_dir", ".")
+                .containsEntry("max_steps", 4)
+                .containsEntry("enable_thinking", false)
+                .containsEntry("goal_preview", "echo once")
+                .containsEntry("success", true);
+        assertThat(root.children()).extracting(TraceSpan::name).containsExactly("turn", "turn");
+
+        TraceSpan firstTurn = root.children().get(0);
+        assertThat(firstTurn.attributes()).containsEntry("step", 1);
+        assertThat(firstTurn.children()).extracting(TraceSpan::name)
+                .containsExactly("llm.action", "tool.execute");
+        TraceSpan action = child(firstTurn, "llm.action");
+        assertThat(action.attributes())
+                .containsEntry("phase", "ACTION")
+                .containsEntry("model", "model-a")
+                .containsEntry("success", true)
+                .containsEntry("usage_available", true)
+                .containsEntry("tool_count", 1);
+        TraceSpan tool = child(firstTurn, "tool.execute");
+        assertThat(tool.attributes())
+                .containsEntry("tool_name", "echo")
+                .containsEntry("side_effect", true)
+                .containsEntry("success", true)
+                .containsEntry("output_bytes", 5);
+        assertThat(String.valueOf(tool.attributes().get("arguments_preview"))).contains("hello");
+    }
+
+    @Test
+    void recordsTraceForProviderFailure() {
+        List<TraceSpan> exported = new ArrayList<TraceSpan>();
+        EngineFixture fixture = fixture()
+                .withTraceRecorder(TraceRecorder.forSink(exported::add));
+
+        RunResult result = fixture.run((state, phase, tools, systemPrompt) -> {
+            throw new RuntimeException("boom");
+        }, "task-provider-trace", "fail");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(exported).hasSize(1);
+        TraceSpan root = exported.get(0);
+        assertThat(root.attributes())
+                .containsEntry("success", false)
+                .containsEntry("failure_reason", "provider_error: boom");
+        TraceSpan action = child(root.children().get(0), "llm.action");
+        assertThat(action.attributes())
+                .containsEntry("success", false)
+                .containsEntry("error", "provider_error: boom");
+    }
+
+    @Test
+    void recordsParallelToolTraceAsSiblingSpans() {
+        List<TraceSpan> exported = new ArrayList<TraceSpan>();
+        EngineFixture fixture = fixture()
+                .withTools(new ReadOnlyEchoTool("read1", "hello"), new ReadOnlyEchoTool("read2", "world"))
+                .withTraceRecorder(TraceRecorder.forSink(exported::add));
+
+        RunResult result = fixture.run(scriptedProvider(
+                parallel(call("read1"), call("read2")),
+                finish("done")), "task-parallel-trace", "parallel echo");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        TraceSpan firstTurn = exported.get(0).children().get(0);
+        List<TraceSpan> toolSpans = children(firstTurn, "tool.execute");
+        assertThat(toolSpans).hasSize(2);
+        assertThat(toolSpans).extracting(span -> span.attributes().get("tool_name"))
+                .containsExactlyInAnyOrder("read1", "read2");
+        assertThat(toolSpans).allSatisfy(span -> assertThat(span.attributes())
+                .containsEntry("side_effect", false)
+                .containsEntry("success", true));
     }
 
     @Test
@@ -776,6 +867,22 @@ class AgentEngineTest {
         return count;
     }
 
+    private static TraceSpan child(TraceSpan parent, String name) {
+        List<TraceSpan> children = children(parent, name);
+        assertThat(children).hasSize(1);
+        return children.get(0);
+    }
+
+    private static List<TraceSpan> children(TraceSpan parent, String name) {
+        List<TraceSpan> matches = new ArrayList<TraceSpan>();
+        for (TraceSpan child : parent.children()) {
+            if (name.equals(child.name())) {
+                matches.add(child);
+            }
+        }
+        return matches;
+    }
+
     private static ToolCall call(String toolName, Object... arguments) {
         java.util.Map<String, Object> values = new java.util.LinkedHashMap<String, Object>();
         for (int i = 0; i < arguments.length; i += 2) {
@@ -1191,6 +1298,7 @@ class AgentEngineTest {
         private boolean thinking = false;
         private PromptComposer promptComposer = null;
         private ContextCompactor contextCompactor = null;
+        private TraceRecorder traceRecorder = TraceRecorder.noop();
 
         private EngineFixture withTools(Tool... tools) {
             for (Tool tool : tools) {
@@ -1224,6 +1332,11 @@ class AgentEngineTest {
             return this;
         }
 
+        private EngineFixture withTraceRecorder(TraceRecorder value) {
+            traceRecorder = value;
+            return this;
+        }
+
         private RunResult run(ModelProvider provider, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
             AgentEngine engine = createEngine(provider, executor);
@@ -1250,10 +1363,11 @@ class AgentEngineTest {
                     ? new ContextCompactor()
                     : contextCompactor;
             if (composer == null) {
-                return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor, compactor);
+                return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor, compactor,
+                        traceRecorder);
             }
             return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
-                    composer, Path.of("."), compactor);
+                    composer, Path.of("."), compactor, traceRecorder);
         }
     }
 }

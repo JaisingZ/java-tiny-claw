@@ -6,6 +6,8 @@ import io.github.tinyclaw.agent.communication.approval.ToolApprovalMiddleware;
 import io.github.tinyclaw.agent.communication.ChatAgentService;
 import io.github.tinyclaw.agent.communication.ChatMessage;
 import io.github.tinyclaw.agent.communication.WorkspaceSerialExecutor;
+import io.github.tinyclaw.agent.observability.FileTraceSink;
+import io.github.tinyclaw.agent.observability.TraceRecorder;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentEngine;
@@ -201,7 +203,7 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         }
         runLogger.engineStarted(workDir, lmStudioConfig.model(), maxSteps, enableThinking, registry.definitions());
         return new AgentEngine(provider, registry, maxSteps, enableThinking, runLogger,
-                workDir, planMode, stateDir(message));
+                workDir, planMode, stateDir(message), TraceRecorder.forSink(new FileTraceSink(workDir)));
     }
 
     private LmStudioModelProvider createProvider() {

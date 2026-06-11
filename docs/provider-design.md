@@ -28,7 +28,7 @@ Provider 不负责：
 - 读取 `AGENTS.md` 或扫描 Skills。
 - 拼接 Minimal Core、环境约束或阶段约束。
 
-这些职责分别属于 `Runtime`、`Context`、`ToolRegistry`、`Tool` 和 `RunLogger`；历史中的 `StateStore` 和 `TraceRecorder` 在当前 Tiny Agent Harness 版本不实现。
+这些职责分别属于 `Runtime`、`Context`、`ToolRegistry`、`Tool`、`RunLogger`、`RunMetrics` 和 `TraceRecorder`。其中 `RunLogger` 面向人类可读事件，`RunMetrics` 面向汇总指标，`TraceRecorder` 面向结构化回放；历史中的 `StateStore` 在当前 Tiny Agent Harness 版本不实现。
 
 ## 当前接口基线
 

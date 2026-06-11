@@ -32,28 +32,56 @@ public final class ModelCallMetric {
         return phase;
     }
 
+    public DecisionPhase getPhase() {
+        return phase();
+    }
+
     public String model() {
         return model;
+    }
+
+    public String getModel() {
+        return model();
     }
 
     public long durationMillis() {
         return durationMillis;
     }
 
+    public long getDurationMillis() {
+        return durationMillis();
+    }
+
     public boolean success() {
         return success;
+    }
+
+    public boolean isSuccess() {
+        return success();
     }
 
     public String failureReason() {
         return failureReason;
     }
 
+    public String getFailureReason() {
+        return failureReason();
+    }
+
     public ModelUsage usage() {
         return usage;
     }
 
+    public ModelUsage getUsage() {
+        return usage();
+    }
+
     public boolean usageAvailable() {
         return usageAvailable;
+    }
+
+    public boolean isUsageAvailable() {
+        return usageAvailable();
     }
 
     @Override

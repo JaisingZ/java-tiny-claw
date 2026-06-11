@@ -11,7 +11,7 @@
 3. 执行工具或结束任务
 4. 落日志并返回 `RunResult`
 
-历史上 `StateStore` 与 `TraceRecorder` 是可选扩展。当前版本不实现 Java 侧状态机和结构化 trace 层；长程任务只通过可选 Plan Mode 引导模型维护 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
+历史上 `StateStore` 与 `TraceRecorder` 是可选扩展。当前版本不实现 Java 侧状态机；结构化回放由 `TraceRecorder` 输出本地 JSON trace，长程任务只通过可选 Plan Mode 引导模型维护 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
 
 ## 最小流程
 
@@ -62,6 +62,8 @@ return failed("max_steps_exceeded")
 - `Tool` 负责自身参数校验和物理边界校验。
 - `AgentContext` 只负责本轮运行时上下文（内存）。
 - `RunLogger` 负责可读日志输出。
+- `RunMetrics` 负责模型和工具调用的汇总指标。
+- `TraceRecorder` 负责结构化回放，默认写入 `.tinyclaw/traces/trace-<traceId>.json`。
 - `SystemReminderInjector` 是单次 run 内的局部防呆状态，不跨任务复用。
 - 当前没有独立的执行前拦截包。
 
@@ -90,5 +92,6 @@ return failed("max_steps_exceeded")
 - 能从 `Task` 跑到 `SUCCESS` 或 `FAILED`。
 - 覆盖 `FinishDecision`、`ToolDecision`、`ParallelToolDecision` 和可选 `ThinkingDecision`。
 - 每轮关键步骤都有 `RunLogger` 可读日志。
+- 每次 CLI/Telegram 运行都能生成 Root/Turn/LLM/Tool 层级的本地 JSON trace。
 - `maxSteps` 能截断无限循环。
 - 工具失败不会穿透成主循环崩溃。

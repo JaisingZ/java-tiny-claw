@@ -1,9 +1,17 @@
 package io.github.tinyclaw.agent.app;
 
+import io.github.tinyclaw.agent.benchmark.BenchmarkCase;
+import io.github.tinyclaw.agent.benchmark.BenchmarkReport;
+import io.github.tinyclaw.agent.benchmark.BenchmarkReportWriter;
+import io.github.tinyclaw.agent.benchmark.BenchmarkResult;
+import io.github.tinyclaw.agent.benchmark.BenchmarkRunner;
+import io.github.tinyclaw.agent.benchmark.BenchmarkSuites;
 import io.github.tinyclaw.agent.context.DefaultPromptComposer;
 import io.github.tinyclaw.agent.context.PromptComposer;
 import io.github.tinyclaw.agent.communication.telegram.TelegramAgentWebhookService;
 import io.github.tinyclaw.agent.domain.Task;
+import io.github.tinyclaw.agent.observability.FileTraceSink;
+import io.github.tinyclaw.agent.observability.TraceRecorder;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
 import io.github.tinyclaw.agent.provider.LmStudioModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentToolRegistries;
@@ -14,6 +22,7 @@ import io.github.tinyclaw.agent.runtime.Slf4jRunLogger;
 import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.UUID;
 
@@ -24,6 +33,7 @@ public final class AgentApplication {
 
     private static final String RUN_COMMAND = "run";
     private static final String TELEGRAM_COMMAND = "telegram";
+    private static final String BENCH_COMMAND = "bench";
 
     private AgentApplication() {
     }
@@ -42,19 +52,27 @@ public final class AgentApplication {
             runPrompt(RunOptions.parse(args));
             return;
         }
+        if (mode == StartupMode.BENCHMARK) {
+            runBenchmark();
+            return;
+        }
         startTelegram();
     }
 
     static StartupMode resolveStartupMode(String[] args) {
         if (args.length == 0) {
-            throw new IllegalArgumentException("Missing command: run or telegram");
+            throw new IllegalArgumentException("Missing command: run, telegram, or bench");
         }
         if (RUN_COMMAND.equals(args[0])) {
             return StartupMode.RUN_PROMPT;
         }
         if (TELEGRAM_COMMAND.equals(args[0])) {
-            ensureNoExtraArgs(args);
+            ensureNoExtraArgs(args, TELEGRAM_COMMAND);
             return StartupMode.TELEGRAM;
+        }
+        if (BENCH_COMMAND.equals(args[0])) {
+            ensureNoExtraArgs(args, BENCH_COMMAND);
+            return StartupMode.BENCHMARK;
         }
         throw new IllegalArgumentException("Unknown command: " + args[0]);
     }
@@ -71,10 +89,22 @@ public final class AgentApplication {
         }
     }
 
-    private static void ensureNoExtraArgs(String[] args) {
+    private static void ensureNoExtraArgs(String[] args, String command) {
         if (args.length > 1) {
-            throw new IllegalArgumentException("Unknown telegram option: " + args[1]);
+            throw new IllegalArgumentException("Unknown " + command + " option: " + args[1]);
         }
+    }
+
+    private static void runBenchmark() {
+        LmStudioConfig config = LmStudioConfig.loadDefault();
+        RunLogger runLogger = new Slf4jRunLogger(false);
+        Path projectRoot = Path.of(".");
+        BenchmarkRunner runner = BenchmarkRunner.lmStudio(projectRoot, config, runLogger);
+        List<BenchmarkCase> cases = BenchmarkSuites.defaults();
+        BenchmarkReport report = runner.runSuite(cases);
+        Path reportFile = new BenchmarkReportWriter()
+                .write(projectRoot.resolve(".tinyclaw").resolve("bench").resolve("reports"), report);
+        writeBenchmarkOutput(runLogger, report, reportFile);
     }
 
     private static void runPrompt(RunOptions options) {
@@ -91,7 +121,7 @@ public final class AgentApplication {
         runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
                 registry.definitions());
         AgentEngine engine = new AgentEngine(provider, registry, options.maxSteps(), options.thinking(), runLogger,
-                promptComposer, workDir);
+                promptComposer, workDir, TraceRecorder.forSink(new FileTraceSink(workDir)));
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
 
@@ -123,6 +153,41 @@ public final class AgentApplication {
         for (String observation : result.observations()) {
             logger.writeLine(observation);
         }
+    }
+
+    private static void writeBenchmarkOutput(RunLogger logger, BenchmarkReport report, Path reportFile) {
+        logger.writeLine("BENCHMARK totalCases=" + report.totalCases()
+                + " passedCases=" + report.passedCases()
+                + " successRate=" + String.format(java.util.Locale.ROOT, "%.2f", report.successRate())
+                + " modelCalls=" + report.modelCalls()
+                + " promptTokens=" + report.promptTokens()
+                + " completionTokens=" + report.completionTokens()
+                + " totalTokens=" + report.totalTokens()
+                + " usageUnavailable=" + report.usageUnavailableCount()
+                + " toolCalls=" + report.toolCalls()
+                + " toolFailures=" + report.toolFailureCount()
+                + " turnsToSuccess=" + report.turnsToSuccess());
+        logger.writeLine("BENCHMARK_REPORT " + reportFile.toAbsolutePath().normalize());
+        for (BenchmarkResult result : report.results()) {
+            logger.writeLine("CASE id=" + result.caseId()
+                    + " passed=" + result.passed()
+                    + " durationMillis=" + result.durationMillis()
+                    + " modelCalls=" + result.runMetrics().modelCallCount()
+                    + " toolCalls=" + result.runMetrics().toolCallCount()
+                    + " toolFailures=" + toolFailureCount(result)
+                    + " turnsToSuccess=" + result.turnsToSuccess()
+                    + " error=" + result.errorMessage());
+        }
+    }
+
+    private static int toolFailureCount(BenchmarkResult result) {
+        int count = 0;
+        for (io.github.tinyclaw.agent.runtime.ToolCallMetric metric : result.runMetrics().toolCalls()) {
+            if (!metric.success()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static Path cliStateDir() {

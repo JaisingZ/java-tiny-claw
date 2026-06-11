@@ -15,7 +15,7 @@ class AgentApplicationTest {
     void noArgsRequiresExplicitCommand() {
         assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[0]))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Missing command: run or telegram");
+                .hasMessage("Missing command: run, telegram, or bench");
     }
 
     @Test
@@ -33,6 +33,13 @@ class AgentApplicationTest {
     }
 
     @Test
+    void benchCommandResolvesBenchmark() {
+        StartupMode mode = AgentApplication.resolveStartupMode(new String[] { "bench" });
+
+        assertThat(mode).isEqualTo(StartupMode.BENCHMARK);
+    }
+
+    @Test
     void startupCheckCommandIsUnknown() {
         assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "startup-check" }))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -44,6 +51,13 @@ class AgentApplicationTest {
         assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "telegram", "--debug" }))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Unknown telegram option: --debug");
+    }
+
+    @Test
+    void benchCommandRejectsExtraArgs() {
+        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "bench", "--debug" }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Unknown bench option: --debug");
     }
 
     @Test
