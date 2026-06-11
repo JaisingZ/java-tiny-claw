@@ -15,7 +15,7 @@ agent.workingMemory.maxChars=12000
 
 agent.permissions.enabled=false
 agent.permissions.approvalTimeoutSeconds=1800
-agent.permissions.file=.claw/permissions.yaml
+agent.permissions.file=.tinyclaw/permissions.yaml
 agent.permissions.hotReload=true
 agent.permissions.reloadIntervalSeconds=2
 agent.permissions.tool.read_file=allow

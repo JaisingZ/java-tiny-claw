@@ -2,7 +2,7 @@
 
 ## 目标
 
-`State Externalization` 用于长程任务的断点续跑和人机协同。它不把任务状态做成 Java 内存里的复杂状态机，也不引入 Redis、SQLite、向量库或长期记忆检索。
+`State Externalization` 用于长程任务的断点续跑和人机协同。
 
 当前版本只在 `Plan Mode` 开启时，通过 `PromptComposer` 注入规则，引导模型把任务级状态写入隐藏目录中的 Markdown 文件：
 
@@ -54,27 +54,14 @@ Plan Mode 开启后，ACTION 阶段需要遵守：
 
 Plan Mode 关闭时不注入这些规则，保持当前轻量运行面。
 
-## 与现有内存机制的关系
+## 与现有会话机制的关系
 
-- `AgentSession`：短期会话历史，进程内保存，进程重启后丢失。
-- `WorkingMemoryPolicy`：控制哪些历史消息进入当前请求。
+- `AgentSession`：短期会话记录，进程内保存，进程重启后丢失。
+- `WorkingMemoryPolicy`：控制哪些会话消息进入当前请求。
 - `ContextCompactor`：控制 Provider 请求前的超长 observation。
 - `PLAN.md` / `TODO.md`：任务级状态记忆，跨进程保留，可由人直接编辑。
 
 这四者职责不同。状态外部化不替代 Working Memory，也不改变 Context Compaction。
-
-## 边界
-
-当前版本不做：
-
-- 长期 `MEMORY.md`。
-- 事件日志沉淀池。
-- 向量检索、BM25 或混合检索。
-- 后台 Dreaming / 自动摘要。
-- Java 侧 Markdown 解析和状态机。
-- Telegram 聊天内动态切换 Plan Mode。
-
-后续若要支持跨任务长期记忆，应先新增明确的 Memory Store 和检索工具，不应把长期事实混进当前 `PLAN.md` / `TODO.md`。
 
 ## 验收
 

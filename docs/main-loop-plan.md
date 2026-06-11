@@ -1,17 +1,17 @@
-# Main Loop 规划
+﻿# Main Loop 规划
 
 ## 目标
 
 把 Agent 的最小闭环收敛为一个明确、可测试、可观测的主循环。
 
-当前 Tiny Agent Harness 的实现是精简版：主循环只做四件事：
+当前 Tiny Agent Harness 的主循环只做四件事：
 
 1. 初始化/更新运行时上下文 `AgentContext`
 2. 请求模型决策
 3. 执行工具或结束任务
-4. 落日志并返回 `RunResult`
+4. 落日志、指标、trace 并返回 `RunResult`
 
-历史上 `StateStore` 与 `TraceRecorder` 是可选扩展。当前版本不实现 Java 侧状态机；结构化回放由 `TraceRecorder` 输出本地 JSON trace，长程任务只通过可选 Plan Mode 引导模型维护 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。
+长程任务通过可选 Plan Mode 引导模型维护 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。结构化回放由 `TraceRecorder` 输出本地 JSON trace。
 
 ## 最小流程
 
@@ -65,7 +65,7 @@ return failed("max_steps_exceeded")
 - `RunMetrics` 负责模型和工具调用的汇总指标。
 - `TraceRecorder` 负责结构化回放，默认写入 `.tinyclaw/traces/trace-<traceId>.json`。
 - `SystemReminderInjector` 是单次 run 内的局部防呆状态，不跨任务复用。
-- 当前没有独立的执行前拦截包。
+- 执行前拦截通过 `ToolRegistry` Middleware 接入；当前 Telegram 模式可挂载工具审批，CLI `run` 默认不挂载审批中间件。
 
 ## 失败规则
 

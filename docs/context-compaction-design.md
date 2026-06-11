@@ -6,10 +6,10 @@
 
 当前项目的上下文控制分两层：
 
-- `WorkingMemoryPolicy` 是第一道窗口控制，负责从 `AgentSession.history()` 中选择哪些历史消息进入 `AgentContext.workingMemory()`。
+- `WorkingMemoryPolicy` 是第一道窗口控制，负责从 `AgentSession.history()` 中选择哪些会话消息进入 `AgentContext.workingMemory()`。
 - `ContextCompactor` 是第二道请求前压缩，负责在 `ModelProvider.decide(...)` 前处理已经进入本轮上下文的超长 observation。
 
-两者都不修改 `AgentSession.history()`。Session 历史仍保存真实消息，压缩只影响本次发送给模型的临时上下文。
+两者都不修改 `AgentSession.history()`。Session 记录仍保存真实消息，压缩只影响本次发送给模型的临时上下文。
 
 ## 与 Working Memory 的关系
 
@@ -23,11 +23,11 @@ AgentSession.history()
   -> ModelProvider.decide(...)
 ```
 
-`WorkingMemoryPolicy` 的职责是控制历史窗口大小。它从 Session 历史尾部开始截取消息，并同时受最大消息数和最大字符数约束；如果窗口开头变成孤立的 `OBSERVATION`，会继续丢弃该 observation，避免模型看到没有前置语境的工具结果。
+`WorkingMemoryPolicy` 的职责是控制会话窗口大小。它从 Session 记录尾部开始截取消息，并同时受最大消息数和最大字符数约束；如果窗口开头变成孤立的 `OBSERVATION`，会继续丢弃该 observation，避免模型看到没有前置语境的工具结果。
 
-`ContextCompactor` 的职责是控制 Provider 请求载荷。即使 Working Memory 已经限制了历史窗口，当前轮 `context.observations()` 或窗口内某条 `OBSERVATION` 仍可能过长；这类内容在进入 Provider 前会被 masking 或 head-tail 截断。
+`ContextCompactor` 的职责是控制 Provider 请求载荷。即使 Working Memory 已经限制了会话窗口，当前轮 `context.observations()` 或窗口内某条 `OBSERVATION` 仍可能过长；这类内容在进入 Provider 前会被 masking 或 head-tail 截断。
 
-`WorkingMemoryPolicy.DEFAULT_MAX_CHARS` 和 `ContextCompactionPolicy.maxContextChars` 默认都是 `12_000`，但作用阶段不同：前者决定历史消息是否进入本轮上下文，后者决定本轮上下文是否需要在请求模型前压缩。
+`WorkingMemoryPolicy.DEFAULT_MAX_CHARS` 和 `ContextCompactionPolicy.maxContextChars` 默认都是 `12_000`，但作用阶段不同：前者决定会话消息是否进入本轮上下文，后者决定本轮上下文是否需要在请求模型前压缩。
 
 ## 边界
 
@@ -69,18 +69,6 @@ maskThresholdChars   = 200
 
 这里的远期与近期按 `retainRecentMessages` 从 working memory 尾部计算。当前轮 observations 永远按近期处理，因为它们刚由工具执行产生，模型下一步通常需要知道首尾线索。
 
-## 限制与后续演进
-
-当前版本不做：
-
-- 真实 token 计数。
-- LLM 摘要压缩。
-- 向量检索或 memory paging。
-- 由 ContextCompactor 直接写入文件系统持久化记忆。
-- `read_file` 按行读取参数扩展。
-
-后续若 Provider 能返回 usage，可把固定字符水位线升级为基于真实 prompt tokens 的自适应压缩。若要引入摘要，应在后台或 StateStore/Memory 层做，不应每次 Provider 调用前同步请求另一个模型。
-
 ## 测试方案
 
 单元测试覆盖：
@@ -91,7 +79,7 @@ maskThresholdChars   = 200
 - 近期 `OBSERVATION` 被 head-tail 截断。
 - 当前轮 observations 超长也会截断。
 - `USER` / `ASSISTANT` working memory 默认保留。
-- 原始 `AgentContext` 和 Session 历史不被污染。
+- 原始 `AgentContext` 和 Session 记录不被污染。
 
 主循环测试覆盖：
 
@@ -101,7 +89,7 @@ maskThresholdChars   = 200
 
 验收命令：
 
-```powershell
-mvn -q "-Dtest=ContextCompactionPolicyTest,ContextCompactorTest,AgentEngineTest,AgentSessionTest" test
+```sh
+mvn "-Dtest=ContextCompactionPolicyTest,ContextCompactorTest,AgentEngineTest,AgentSessionTest" test
 mvn test
 ```

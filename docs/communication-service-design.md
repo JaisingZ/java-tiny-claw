@@ -4,7 +4,7 @@
 
 当前 Main Loop 已收敛为 `AgentEngine`：它使用短期 `AgentContext` 推进任务，返回 `RunResult`，并通过 `RunLogger` 暴露面向人的运行过程。通信服务只负责把外部消息转成 `Task`，不把 Telegram 逻辑塞进 Runtime。
 
-文章中的 Reporter 反转，在本项目中对应已有的 `RunLogger`：终端使用 `ConsoleRunLogger`，聊天平台使用平台专用 `RunLogger`。
+运行过程输出统一通过 `RunLogger` 暴露：CLI 默认使用 `Slf4jRunLogger`，聊天平台使用平台专用 `RunLogger`。
 
 ## 架构边界
 
@@ -38,16 +38,16 @@
 
 `io.github.tinyclaw.agent.communication.telegram` 提供以下实现：
 
-- `TelegramTransport`：使用 JDK `HttpServer` 启动本地 webhook endpoint，接收 Telegram POST update。
-- `TelegramWebhookConfig`：读取 token、公网 webhook URL、本地监听地址、webhook path、secret token、注册延迟和重试等配置。
+- `TelegramTransport`：使用 JDK `HttpServer` 启动 webhook endpoint，接收 Telegram POST update。
+- `TelegramWebhookConfig`：读取 token、公网 webhook URL、监听地址、webhook path、secret token、注册延迟和重试等配置。
 - `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数、Thinking 开关、Plan Mode、服务端 debug 和工具权限配置。
 - `TelegramWebhookRegistrar`：调用 Telegram Bot API `setWebhook`，设置 `allowed_updates=["message"]`，可选 `secret_token`。
-- `TryCloudflareTunnel`：本地测试时启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`，解析临时 `trycloudflare.com` HTTPS URL。
+- `TryCloudflareTunnel`：启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`，解析临时 `trycloudflare.com` HTTPS URL。
 - `TelegramAgentWebhookService`：库式宿主，组装 Telegram transport、trycloudflare 隧道、`ChatAgentService`、LM Studio Provider 和工具注册表。
 - `TelegramSession`：调用 Bot API `sendMessage` 回传文本。
 - `TelegramRunLogger`：把 `thinkingStarted`、`toolStarted`、`toolCompleted`、`finished`、`failed` 映射成 Telegram 可读消息。
 
-本地 `HttpServer` 可以监听 HTTP；Telegram 官方注册的 webhook URL 必须是 HTTPS 公网地址。生产部署通常由反向代理、网关或隧道把 HTTPS 公网入口转发到本机 endpoint。
+`HttpServer` 可以监听 HTTP；Telegram 官方注册的 webhook URL 必须是 HTTPS 公网地址。部署环境通常由反向代理、网关或隧道把 HTTPS 公网入口转发到服务 endpoint。
 
 ## 配置
 
@@ -56,12 +56,12 @@
 常用 properties key：
 
 - `telegram.bot.token`：Telegram Bot Token，必填。
-- `telegram.webhook.url`：HTTPS 公网 webhook URL；为空且未启用 trycloudflare 时只启动本地 server，不调用 `setWebhook`。
+- `telegram.webhook.url`：HTTPS 公网 webhook URL；为空且未启用 trycloudflare 时只启动 HTTP server，不调用 `setWebhook`。
 - `telegram.webhook.secret`：可选 secret token，用于校验 `X-Telegram-Bot-Api-Secret-Token`。
-- `telegram.webhook.host`：本地监听地址，默认 `0.0.0.0`。
-- `telegram.webhook.port`：本地监听端口，默认 `8080`。
-- `telegram.webhook.path`：本地 webhook path，默认 `/telegram/webhook`。
-- `telegram.webhook.tunnel`：可选，本地真 webhook 测试可设为 `trycloudflare`。
+- `telegram.webhook.host`：监听地址，默认 `0.0.0.0`。
+- `telegram.webhook.port`：监听端口，默认 `8080`。
+- `telegram.webhook.path`：webhook path，默认 `/telegram/webhook`。
+- `telegram.webhook.tunnel`：可选，设为 `trycloudflare` 时启动临时公网 HTTPS 隧道。
 - `telegram.webhook.dropPendingUpdates`：可选，注册 webhook 时是否丢弃积压 update，默认 `false`。
 - `telegram.webhook.maxConnections`：可选，传给 `setWebhook.max_connections`，默认 `40`。
 - `telegram.webhook.registrationDelaySeconds`：可选，trycloudflare 动态 URL 注册前延迟秒数，默认 `60`。
@@ -74,13 +74,13 @@
 - `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
 - `agent.permissions.enabled`：是否在 Telegram 模式启用工具审批 Middleware，默认 `false`。
 - `agent.permissions.approvalTimeoutSeconds`：人工审批等待秒数，默认 `1800`。
-- `agent.permissions.file`：权限 YAML 文件路径，默认 `.claw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
+- `agent.permissions.file`：权限 YAML 文件路径，默认 `.tinyclaw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
 - `agent.permissions.hotReload`：是否监听权限 YAML 并热更新，默认 `true`。
 - `agent.permissions.reloadIntervalSeconds`：热更新轮询兜底间隔，默认 `2`。
 - `agent.permissions.tool.<toolName>`：兼容 fallback；无 YAML 文件时使用，工具级权限动作取值 `allow`、`ask`、`deny`。
 - `agent.permissions.denyPattern.<n>`：兼容 fallback；无 YAML 文件时使用，高危正则命中后直接 `deny`。
 
-推荐把具体权限规则写入 `.claw/permissions.yaml`：
+推荐把具体权限规则写入 `.tinyclaw/permissions.yaml`：
 
 ```yaml
 version: 1
@@ -136,19 +136,19 @@ Telegram POST /telegram/webhook
 - 审批超时自动拒绝并清理内存 pending 状态。
 - 权限 YAML 热更新失败时保留上一份有效快照；审批中的 pending request 不受 reload 影响。
 
-## 本地 trycloudflare 真 Webhook 流程
+## trycloudflare Webhook 流程
 
-本地验收不使用 `getUpdates` 轮询。推荐流程：
+trycloudflare 模式不使用 `getUpdates` 轮询。流程如下：
 
 1. 确认 `cloudflared --version` 可执行。
 2. 设置 `telegram.webhook.tunnel=trycloudflare`，并保持 `telegram.webhook.url` 为空。
 3. 通过 `telegram` 子命令启动 `TelegramAgentWebhookService`。
-4. 服务先启动本地 `HttpServer`。
+4. 服务先启动 `HttpServer`。
 5. 服务启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`。
 6. 服务解析 `https://*.trycloudflare.com`，拼接 `<publicBaseUrl><webhookPath>`。
 7. 服务可按配置等待 `telegram.webhook.registrationDelaySeconds`，再调用 `setWebhook`。
 8. 注册失败时按 `telegram.webhook.registrationMaxAttempts` 重试，重试间隔为 `telegram.webhook.registrationRetryIntervalSeconds`。
-9. Telegram 客户端发消息后，Telegram 通过 webhook POST 到 trycloudflare URL，再转发到本机。
+9. Telegram 客户端发消息后，Telegram 通过 webhook POST 到 trycloudflare URL，再转发到服务监听端口。
 
 如果显式配置了 `telegram.webhook.url=https://...`，服务不启动 trycloudflare，直接使用该 URL 注册 webhook；当前注册延迟/重试逻辑只在 trycloudflare 动态 URL 分支中执行。
 
@@ -159,18 +159,8 @@ Telegram POST /telegram/webhook
 - `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking`、`agent.planMode`、`agent.debug`、工具权限配置的默认值、properties 读取和非法值。
 - `TelegramWebhookRegistrarTest`：覆盖 `setWebhook` 请求体、空公网 URL 跳过注册、HTTP 错误、`ok=false`。
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
-- `TelegramAgentWebhookServiceTest`：覆盖本地 server、trycloudflare、动态 URL 注册、注册重试编排、权限 Middleware 挂载和 debug Provider 装配。
+- `TelegramAgentWebhookServiceTest`：覆盖 server、trycloudflare、动态 URL 注册、注册重试编排、权限 Middleware 挂载和 debug Provider 装配。
 - `ApprovalManagerTest`：覆盖 approve、reject、超时清理、跨 chatId 拒绝和未知审批 ID。
 - `PermissionPolicySnapshotTest`、`PermissionPolicyProviderTest`、`PermissionFileWatcherTest`：覆盖 YAML schema、权限优先级、last-known-good 和热更新。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、审批命令旁路、串行执行和日志映射覆盖。
 - `AgentApplicationTest`：覆盖无参数缺命令、`telegram` 子命令、`run` 命令与未知命令行为。
-
-## 非目标
-
-- 不新增 Telegram 启动之外的 CLI 子命令。
-- 不让 `run` 触发 Telegram Webhook 启动。
-- 不支持 `telegram --debug`；Telegram 长驻入口的调试开关统一走 `agent.debug`。
-- 不在通信层解析或维护长程会话记忆；Plan Mode 只把 chat-scoped 状态目录传给 PromptComposer。
-- 不保留 Long Polling / `getUpdates` 路径。
-- 不把 `deleteWebhook` / `getUpdates` 作为正式 webhook 验收路径。
-- 不新增复杂任务队列、数据库或工作流引擎。

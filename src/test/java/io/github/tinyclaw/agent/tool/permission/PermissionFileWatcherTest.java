@@ -18,7 +18,7 @@ class PermissionFileWatcherTest {
 
     @Test
     void hotReloadsValidYamlAndKeepsOldSnapshotAfterInvalidYaml() throws Exception {
-        Path policyFile = tempDir.resolve(".claw").resolve("permissions.yaml");
+        Path policyFile = tempDir.resolve(".tinyclaw").resolve("permissions.yaml");
         Files.createDirectories(policyFile.getParent());
         Files.writeString(policyFile, """
                 enabled: true

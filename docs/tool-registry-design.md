@@ -27,9 +27,7 @@ Tool Registry 不负责：
 - 适配模型厂商协议。
 - 自行维护完整审批、白名单、黑名单或风险分级。
 
-这些职责分别属于 `Runtime`、`Provider` 和可选治理层。`ToolRegistry` 只提供 Middleware 挂载点；具体权限策略在 `tool.permission`，聊天审批在 `communication.approval`。
-
-历史上会有 `StateStore` 与 `Tracer` 的完整分层；当前 Tiny Agent Harness 精简实现里不包含这两层。
+这些职责分别属于 `Runtime`、`Provider`、`tool.permission` 和 `communication.approval`。`ToolRegistry` 只提供 Middleware 挂载点。
 
 ## 当前接口基线
 
@@ -173,18 +171,11 @@ ToolResult.failure("middleware_error: <message>")
 约束：
 
 - `command` 不能为空。
-- Windows 下实际执行 `powershell -NoProfile -NonInteractive -Command`。
-- 非 Windows 下执行 `bash -c`。
+- 按运行平台选择可用命令解释器执行。
 - 命令默认 30 秒超时，超时后终止进程并返回提示。
 - 非 0 退出码不作为工具失败，而是返回 `exitCode=<code>` 和输出，让模型自纠错。
 - 空输出返回明确成功消息。
 - 输出超过 `8_000` 字符时截断，并在输出末尾追加截断提示。
-
-当前不实现：
-
-- 后台进程管理。
-- 动态工具发现。
-- MCP 或插件加载。
 
 ## 安全策略
 
@@ -192,12 +183,12 @@ Tool Registry 是分发层，不是完整安全策略层。当前安全策略按
 
 - `Tool`：校验自身参数和物理边界，例如路径不能逃逸工作区。
 - `ToolRegistry`：统一路由、Middleware 链、未知工具处理和异常包装。
-- `tool.permission`：按 `.claw/permissions.yaml` 的不可变快照计算 `allow / ask / deny`，支持工具名和参数正则匹配，冲突时 `deny > ask > allow`。
+- `tool.permission`：按 `.tinyclaw/permissions.yaml` 的不可变快照计算 `allow / ask / deny`，支持工具名和参数正则匹配，冲突时 `deny > ask > allow`。
 - `communication.approval`：在聊天入口实现人工审批等待、放行、拒绝和超时清理。
 - `AgentEngine`：基于 `Tool.isSideEffect()` 限制写操作串行执行。
 - `RunLogger`：记录工具执行关键日志，运行结论输出为 `RunResult`。
 
-Telegram Webhook 模式可选择启用审批 Middleware；CLI `run` 默认不启用，保持本地 YOLO 运行语义。权限规则默认从工作目录下 `.claw/permissions.yaml` 读取，文件不存在时使用禁用快照并全部放行。热更新成功后只影响新的工具调用；解析失败时保留 last-known-good 快照。旧 `agent.permissions.tool.*` 和 `denyPattern.*` properties 仍作为无 YAML 文件时的兼容 fallback。
+Telegram Webhook 模式可选择启用审批 Middleware；CLI `run` 默认不启用，保持命令行运行语义。权限规则默认从工作目录下 `.tinyclaw/permissions.yaml` 读取，文件不存在时使用禁用快照并全部放行。热更新成功后只影响新的工具调用；解析失败时保留 last-known-good 快照。`agent.permissions.tool.*` 和 `agent.permissions.denyPattern.*` properties 可作为无 YAML 文件时的 properties 配置来源。
 
 示例：
 
@@ -246,15 +237,3 @@ rules:
 - `BashToolTest`
 - `AgentEngineTest`
 - `MainLoopJavaPrimitiveSmokeTest`
-
-## 演进方向
-
-后续只在确有需求时扩展：
-
-- 为 `ToolResult` 增加 `errorCode`、`retryable`、`riskLevel`。
-- 为大输出增加 offloading：完整结果写入临时文件，模型只收到首尾预览和引用路径。
-- 为重复失败增加重试预算和熔断。
-- 为 `edit_file` 增加更精细的缩进保留策略。
-- 增加独立治理层，处理审批、白名单、黑名单和风险分级。
-
-不要在当前阶段引入动态类加载、复杂插件系统或外部协议绑定。Registry 应保持小而稳定。

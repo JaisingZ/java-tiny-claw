@@ -1,4 +1,4 @@
-# Provider 设计
+﻿# Provider 设计
 
 ## 目标
 
@@ -6,7 +6,7 @@ Provider 是模型协议适配层，负责隔离不同大模型厂商的 API 差
 
 当前项目的核心原则是：`Runtime` 只维护 Agent 主循环，`Provider` 只负责把模型输入输出翻译成项目内部协议。任何 OpenAI、Claude、DeepSeek 或其它模型协议差异，都不应泄漏到 `AgentEngine`。
 
-当前 Tiny Agent Harness 精简版将历史接口参数从 `AgentState` 迁移到 `AgentContext`，并把系统提示词的组装职责移到 Runtime 的 `context` 层，不再在 Provider 内硬编码 prompt。
+当前 Tiny Agent Harness 以 `AgentContext` 作为 Provider 输入上下文，并把系统提示词的组装职责放在 Runtime 的 `context` 层。
 System Prompt 由 `context` 层组装，Provider 只接收已经组装完成的字符串。
 
 ## 边界
@@ -28,7 +28,7 @@ Provider 不负责：
 - 读取 `AGENTS.md` 或扫描 Skills。
 - 拼接 Minimal Core、环境约束或阶段约束。
 
-这些职责分别属于 `Runtime`、`Context`、`ToolRegistry`、`Tool`、`RunLogger`、`RunMetrics` 和 `TraceRecorder`。其中 `RunLogger` 面向人类可读事件，`RunMetrics` 面向汇总指标，`TraceRecorder` 面向结构化回放；历史中的 `StateStore` 在当前 Tiny Agent Harness 版本不实现。
+这些职责分别属于 `Runtime`、`Context`、`ToolRegistry`、`Tool`、`RunLogger`、`RunMetrics` 和 `TraceRecorder`。
 
 ## 当前接口基线
 
@@ -58,11 +58,12 @@ Provider 只能返回项目内部的 `Decision` 类型：
 共同特征：
 
 - 使用 Java 21 `HttpClient` 调用 `<baseUrl>/chat/completions`。
-- 请求固定为非流式 `stream=false`，流式响应后续单独设计。
+- 请求固定为非流式 `stream=false`。
 - `ACTION` 阶段挂载工具定义，允许模型输出工具调用或最终回答。
 - 多个工具调用会映射为 `ParallelToolDecision`。
 - Provider debug 输出只保留摘要和截断后的 JSON，避免把完整工具 schema 大段刷屏。
 - 第一条 system message 使用调用方传入的 `systemPrompt`，Provider 不自行拼接项目规范。
+- Provider 会读取响应中的 `usage`，并把 Token 信息交给 Runtime 指标层；缺失时按 unavailable 记录。
 
 ## 协议适配策略
 
@@ -73,7 +74,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 - 工具名、参数和调用 ID 收敛为内部 `ToolCall`。
 - 厂商错误统一转换为 Provider 异常，由 `Runtime` 按 `provider_error` 失败规则处理。
 
-`app` 层负责选择并装配具体 Provider；Provider 切换策略后续单独设计。当前命令行和 Telegram Webhook 默认装配 LM Studio。
+`app` 层负责选择并装配具体 Provider；当前命令行和 Telegram Webhook 默认装配 LM Studio。
 
 ## 工具调用策略
 
@@ -84,23 +85,11 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 物理工具执行必须等完整工具调用参数生成并通过 Provider 解析后，才交给 `Runtime`、`ToolRegistry` 和 `Tool`。Provider 不允许边流式生成参数边触发工具执行。
 
-## 扩展策略
-
-不同协议使用独立 Provider 实现：
-
-- `OpenAiCompatibleProvider`
-- `ClaudeProvider`
-- `DeepSeekProvider`
-
-新增 Provider 时只允许扩展 `provider` 层和 `app` 层装配代码，不允许在 `Runtime` 中增加厂商判断。
-
-如果某个模型存在特殊协议要求，例如必须回传 reasoning 字段、工具参数分片格式不同、系统提示位置不同，应在对应 Provider 内处理。
-
 ## 验收标准
 
-后续新增或修改真实 Provider 时至少满足：
+Provider 相关测试至少覆盖：
 
 - `AgentEngine` 不出现厂商 SDK import。
 - `provider` 层不直接执行工具。
-- Provider 单元测试覆盖文本完成、工具调用、空响应和厂商错误。
+- Provider 单元测试覆盖文本完成、工具调用、空响应、usage 解析和厂商错误。
 - 架构测试能阻止 Runtime 依赖具体 Provider 实现或厂商 SDK 类型。
