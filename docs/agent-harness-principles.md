@@ -1,6 +1,6 @@
 # Agent Harness 设计原则
 
-本文档定义 `Tiny Agent Harness` 的项目级架构基线。后续所有设计与实现都以本文档为准；若实现与本文档冲突，先同步文档，再改代码。
+本文档定义 `Tiny Agent Harness` 的项目级架构基线。所有设计与实现都以本文档为准；若实现与本文档冲突，先同步文档，再改代码。
 
 ## 1. 目标
 
@@ -9,21 +9,15 @@
 - 用清晰边界替代黑盒框架，降低上下文失控和边界失控。
 - 用独立 Context 层组装 System Prompt，避免 Provider 内部堆叠面条提示词。
 
-## 2. 非目标
+## 2. 总体原则
 
-- 不追求一开始就做成“大而全”的 Agent 平台。
-- 不先堆叠复杂编排、工作流引擎或多层抽象。
-- 不让控制流分散到业务代码中。
-
-## 3. 总体原则
-
-### 3.1 Harness 优先
+### 2.1 Harness 优先
 
 - 模型负责规划、推理、选择动作。
 - Harness 负责主循环、约束、工具执行、运行时上下文管理与异常处理。
 - 任何复杂能力都必须有明确执行边界。
 
-### 3.2 工具极简
+### 2.2 工具极简
 
 当前真实物理工具集保持最小化：
 
@@ -35,47 +29,48 @@
 
 `spawn_subagent` 是委派工具，不是复杂多智能体编排框架。它同步拉起一次性子 Agent，只返回精炼探索报告。
 
-### 3.3 上下文模型
+### 2.3 上下文模型
 
 当前 Tiny Agent Harness 精简版支持进程内 Session，并通过可选 Plan Mode 做任务级文件状态外部化。
 
 - 运行时只维护内存上下文 `AgentContext`。
 - 每次运行由 CLI 输入或通信入口消息创建新的 `Task`。
-- Telegram/Webhook 等长驻入口通过 `SessionManager` 按来源隔离会话历史。
+- Telegram/Webhook 等长驻入口通过 `SessionManager` 按来源隔离会话记录。
 - 每次请求模型前只截取 Session 的 Working Memory，默认最多 12 条消息、12000 字符。
-- CLI `run --prompt` 保持单次任务语义，不复用 Session 历史。
+- CLI `run --prompt` 保持单次任务语义，不复用 Session 记录。
 - Subagent 使用一次性干净上下文，不继承父 Agent 的 Session 或 Working Memory。
-- 步进信息和 Session 历史不跨 JVM 持久化。
+- 步进信息和 Session 记录只保存在当前 JVM 进程内。
 - `run --plan` 或 `agent.planMode=true` 时，模型可在 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md` 中维护任务级状态。
-- 历史上 `io.github.tinyclaw.agent.state`、`StateStore`、`checkpoint` 可作为 Java 侧恢复方向，但这些能力不在当前实现中。
 
-### 3.4 安全边界
+### 2.4 安全边界
 
-当前没有独立 `middleware` 包，也没有完整审批/授权层。当前安全边界由以下实现承担：
+当前安全边界由工具自身校验、`ToolRegistry` Middleware、Telegram 审批和运行时串行策略共同承担：
 
 - `Tool` 自身校验参数和工作区路径边界。
 - `ToolRegistry` 统一路由工具调用，并把未知工具和工具异常包装为失败结果。
+- `tool.permission` 按 `.claw/permissions.yaml` 的不可变快照计算 `allow / ask / deny`，并支持工具名和参数正则匹配。
+- `communication.approval` 在 Telegram 模式下等待人工 `/approve <id>` 或 `/reject <id>`，并处理超时和同会话约束。
 - `AgentEngine` 按 `Tool.isSideEffect()` 处理只读并发和涉写串行。
 - `spawn_subagent` 标记为只读工具；子 Agent v1 只挂载 `read_file`，不提供写工具、`bash` 或递归委派能力。
 - `RunLogger` 和 `RunResult` 保留人类可读的运行观测。
 
-审批、白名单、黑名单、风险分级等治理能力属于后续扩展方向，不能写成当前已实现。
+CLI `run` 默认不挂载 Telegram 审批 Middleware，保持命令行运行语义。
 
-### 3.5 观测优先
+### 2.5 观测优先
 
 - 以可读日志为主，使用 `RunLogger` 输出关键步骤。
 - CLI 非 debug 场景输出 `OBSERVATIONS`，用于闭环判断。
 - 最终输出以 `RunResult` 为准，覆盖成功/失败、步数与观察信息。
 
-### 3.6 接口分层
+### 2.6 接口分层
 
 - 通过接口隔离 Provider、Tool、Runtime 与通信入口。
 - 实现可替换，边界不能模糊。
 - 不把模型厂商能力泄漏到 Runtime，不把运行时控制放进 Provider。
 
-## 4. 架构边界
+## 3. 架构边界
 
-### 4.1 Runtime
+### 3.1 Runtime
 
 Runtime 负责主循环与控制流。
 
@@ -88,7 +83,7 @@ Runtime 负责主循环与控制流。
 
 Runtime 不负责具体工具实现，也不处理模型厂商协议。
 
-### 4.2 Provider
+### 3.2 Provider
 
 Provider 负责模型协议适配。
 
@@ -99,16 +94,16 @@ Provider 负责模型协议适配。
 Provider 不执行工具、不修改主循环状态。
 Provider 不读取 `AGENTS.md`、不扫描 Skills、不在内部拼接运行时提示词。
 
-### 4.3 Context
+### 3.3 Context
 
 Context 负责上下文工程与 System Prompt 组装。
 
 - `DefaultPromptComposer` 组装 Minimal Core、运行环境约束、阶段约束、工作区规范和 Skill 摘要。
-- `AgentsFileLoader` 只读取标准 `AGENTS.md`；不兼容、不读取 legacy `AGENT.md`。
+- `AgentsFileLoader` 只读取标准 `AGENTS.md`。
 - `SkillLoader` 只扫描 `.tinyclaw/skills/**/SKILL.md` 的 `name` 和 `description` 摘要，不注入正文。
 - Context 不执行工具、不请求模型、不推进主循环。
 
-### 4.4 Tool Registry
+### 3.4 Tool Registry
 
 Tool Registry 负责工具声明与路由执行。
 
@@ -116,34 +111,26 @@ Tool Registry 负责工具声明与路由执行。
 - 按名查找工具。
 - 暴露工具定义给模型。
 - 路由执行并包装统一结果。
+- 按挂载顺序执行 Middleware，例如 Telegram 工具审批。
 
-### 4.5 Communication
+### 3.5 Communication
 
 Communication 负责把外部消息转换成 Agent 任务。
 
 - `communication` 定义统一聊天消息、会话输出和串行调度。
+- `communication.approval` 提供 Telegram 工具审批、放行、拒绝和超时清理。
 - `communication.telegram` 提供 Telegram Webhook 接入、Webhook 注册和消息回复。
 - 通信层不把 Telegram 协议泄漏进 Runtime。
 
-### 4.6 StateStore（历史目标）
+## 4. 默认实现策略
 
-- 历史目标：任务计划、当前步骤、历史摘要、错误信息可持久化，并可恢复。
-- 当前 Tiny Agent Harness：只实现进程内 `SessionManager`、Working Memory 和 Prompt 驱动的文件状态外部化；不实现 Java 侧 `StateStore`，对应历史分层 `io.github.tinyclaw.agent.state` 已停用。
-
-### 4.7 Tracer（历史目标）
-
-- 历史目标：记录结构化 trace、决策链、模型输入输出。
-- 当前 Tiny Agent Harness：不实现 `Tracer`，对应历史分层 `io.github.tinyclaw.agent.trace` 已停用；观测由 `RunLogger` + `RunResult` 覆盖。
-
-## 5. 默认实现策略
-
-### 5.1 当前形态
+### 4.1 当前形态
 
 - 模块化单体。
-- 以 CLI、本地工具任务和 Telegram Webhook 为主要验证入口。
+- 以 CLI、工具任务和 Telegram Webhook 为主要验证入口。
 - 默认 Provider 装配使用 LM Studio OpenAI-compatible 服务。
 
-### 5.2 循环模型
+### 4.2 循环模型
 
 当前主循环采用：
 
@@ -159,7 +146,7 @@ optional thinking -> action decision -> tool/finish -> observe -> decide
 - `observe`：Runtime 记录工具结果并更新 `AgentContext`。
 - `decide`：Runtime 判断继续、失败或结束。
 
-### 5.3 失败处理
+### 4.3 失败处理
 
 - Provider 异常转换为 `provider_error: ...`。
 - 未知工具返回 `Unknown tool: <name>`。
@@ -170,30 +157,32 @@ optional thinking -> action decision -> tool/finish -> observe -> decide
 - 并行工具执行异常返回 `parallel_execution_failed: ...`。
 - 超过最大步数返回 `max_steps_exceeded`。
 
-## 6. 开发约束
+## 5. 开发约束
 
-- 新功能必须明确落在哪一层：Runtime、Provider、Tool Registry、Communication 或 app 装配。
+- 新功能必须明确落在哪一层：Runtime、Provider、Context、Tool Registry、Communication、Middleware、app 装配或可观测增强。
 - 新工具必须先经过 `ToolRegistry` 注册，并由工具自身保留参数和物理边界校验。
 - 新逻辑不能把控制流散落在业务层。
 - 若跨层边界变模糊，优先重构边界再加功能。
 
-## 7. 版本控制原则
+## 6. 版本控制原则
 
 - 本文档是实现前约束；实现发生变化要同步本文档。
 - 未经文档确认，不应进入大规模实现。
 
-## 8. 当前结论
+## 7. 当前结论
 
 当前稳定实现顺序是：
 
 1. Runtime
 2. Provider
-3. Tool Registry
-4. Communication
-5. 可观测增强（RunLogger/RunResult 继续补齐）
-6. 可选治理层（审批、白名单、风险控制）
+3. Context
+4. Tool Registry
+5. Communication
+6. Middleware
+7. app 装配
+8. 可观测增强（RunLogger/RunResult 继续补齐）
 
-## 9. 技术选型
+## 8. 技术选型
 
 - JDK: `Java 21`
 - 构建: `Maven`
@@ -202,7 +191,7 @@ optional thinking -> action decision -> tool/finish -> observe -> decide
 - 序列化: `Jackson`
 - 日志: `SLF4J` + `Logback`
 
-## 10. 代码结构基线
+## 9. 代码结构基线
 
 ```text
 src/main/java/io/github/tinyclaw/agent
@@ -222,12 +211,13 @@ src/test/java/io/github/tinyclaw/agent
 ├── app
 ├── architecture
 ├── communication
+├── context
 ├── provider
 ├── runtime
 └── tool
 ```
 
-## 11. 单元测试基线
+## 10. 单元测试基线
 
 - `runtime`：主循环能处理成功、失败、Thinking、单工具和并行工具。
 - `tool`：工具注册、查找、执行、失败返回统一结果。
