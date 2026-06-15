@@ -1,6 +1,10 @@
 lmstudio.baseUrl=http://localhost:1234/v1
 lmstudio.model=qwen-local
 agent.planMode=false
+agent.intentFilter.enabled=true
+agent.intentFilter.marker.1=/agent
+agent.intentFilter.marker.2=排查
+agent.intentFilter.marker.3=nginx
 agent.permissions.enabled=false
 agent.permissions.approvalTimeoutSeconds=1800
 agent.permissions.file=.tinyclaw/permissions.yaml

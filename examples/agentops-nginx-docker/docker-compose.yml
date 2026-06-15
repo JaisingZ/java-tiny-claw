@@ -1,0 +1,9 @@
+services:
+  agentops-nginx:
+    build: .
+    container_name: tinyclaw-agentops-nginx
+    ports:
+      - "2222:22"
+      - "18080:80"
+    volumes:
+      - ../agentops-nginx-workspace/remote:/workspace

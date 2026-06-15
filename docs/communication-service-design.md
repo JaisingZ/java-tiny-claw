@@ -28,7 +28,8 @@
 - `ChatSession`：统一输出会话，提供 `sendText`、`sendStatus`、`sendError`。
 - `ChatTransport`：平台入口，提供 `start(ChatMessageHandler)` 和 `stop()`。
 - `ChatMessageHandler`：消息处理入口。
-- `ChatAgentService`：将文本消息转换为 `Task("chat-" + messageId, text)`，创建带聊天 `RunLogger` 的 `AgentEngine` 并执行。
+- `ChatIntentFilter`：聊天入口的确定性意图过滤器，规则由 `agent.intentFilter.marker.N` 配置；代码只负责匹配，不内置触发词。
+- `ChatAgentService`：先处理审批和 `/usage` 等控制命令，再用 `ChatIntentFilter` 过滤普通群聊；命中意图后将文本消息转换为 `Task("chat-" + messageId, text)`，创建带聊天 `RunLogger` 的 `AgentEngine` 并执行。
 - `ApprovalManager`：保存待审批工具调用，处理 `/approve <id>` 和 `/reject <id>`，并限制只能由同一 `chatId` 审批。
 - `ToolApprovalMiddleware`：连接动态 `PermissionPolicyProvider`、`ApprovalManager` 和 `ToolRegistry` Middleware。
 - `WorkspaceSerialExecutor`：单线程队列，保证同一工作区同一时间只运行一个 Agent 任务。
@@ -40,7 +41,7 @@
 
 - `TelegramTransport`：使用 JDK `HttpServer` 启动 webhook endpoint，接收 Telegram POST update。
 - `TelegramWebhookConfig`：读取 token、公网 webhook URL、监听地址、webhook path、secret token、注册延迟和重试等配置。
-- `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数、Thinking 开关、Plan Mode、服务端 debug 和工具权限配置。
+- `TelegramAgentConfig`：读取 Telegram Webhook 宿主的 Agent 运行配置，包括工作目录、最大步数、Thinking 开关、Plan Mode、服务端 debug、意图过滤和工具权限配置。
 - `TelegramWebhookRegistrar`：调用 Telegram Bot API `setWebhook`，设置 `allowed_updates=["message"]`，可选 `secret_token`。
 - `TryCloudflareTunnel`：启动 `cloudflared tunnel --url http://127.0.0.1:<port> --no-autoupdate`，解析临时 `trycloudflare.com` HTTPS URL。
 - `TelegramAgentWebhookService`：库式宿主，组装 Telegram transport、trycloudflare 隧道、`ChatAgentService`、LM Studio Provider 和工具注册表。
@@ -72,6 +73,8 @@
 - `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
 - `agent.planMode`：Webhook 模式是否开启任务级状态外部化，默认 `false`。
 - `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
+- `agent.intentFilter.enabled`：是否启用聊天入口意图过滤，默认 `false`；启用时必须配置至少一个 `agent.intentFilter.marker.N`。
+- `agent.intentFilter.marker.N`：意图触发词，按数字后缀升序读取，例如 `/agent`、`@机器人`、`nginx`。
 - `agent.permissions.enabled`：是否在 Telegram 模式启用工具审批 Middleware，默认 `false`。
 - `agent.permissions.approvalTimeoutSeconds`：人工审批等待秒数，默认 `1800`。
 - `agent.permissions.file`：权限 YAML 文件路径，默认 `.tinyclaw/permissions.yaml`；相对路径按 `agent.workdir` 解析。
@@ -115,6 +118,8 @@ Telegram POST /telegram/webhook
   -> ChatMessage
   -> ChatAgentService.handle
   -> approval command? ApprovalManager.resolveCommand
+  -> usage command? SessionMetrics summary
+  -> intent filter? ignore unrelated chat
   -> WorkspaceSerialExecutor.submit
   -> AgentEngine.run(Task)
   -> ToolRegistry Middleware
@@ -130,6 +135,8 @@ Telegram POST /telegram/webhook
 - handler 抛异常时通过 `TelegramSession` 回传 `消息处理失败：...`，HTTP 仍返回 200。
 - 每条有效文本消息生成独立 `Task`，任务 ID 为 `chat-<messageId>`。
 - `/approve <id>` 和 `/reject <id>` 在 `WorkspaceSerialExecutor.submit` 前处理，避免正在等待审批的 Agent 任务阻塞审批命令。
+- `/usage` 在 `WorkspaceSerialExecutor.submit` 前处理，用于查看当前会话累计用量。
+- `agent.intentFilter.enabled=true` 时，普通闲聊不会提交到 `WorkspaceSerialExecutor`，只有命中配置触发词的消息才唤醒 Main Loop。
 - 同工作区通过 `WorkspaceSerialExecutor` 串行执行；`AgentEngine` 内部只读工具并发策略保持不变。
 - `agent.debug=true` 仅影响服务端 Provider 调试日志；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态。
 - 启用权限审批后，`allow` 直接执行，`deny` 返回工具失败，`ask` 向同一 Telegram 会话发送审批 ID 并等待人工处理。
@@ -156,11 +163,11 @@ trycloudflare 模式不使用 `getUpdates` 轮询。流程如下：
 
 - `TelegramTransportTest`：覆盖合法文本、非文本忽略、secret token、malformed JSON、handler 异常仍 ACK。
 - `TelegramWebhookConfigTest`：覆盖 properties 读取、默认值和 token 必填。
-- `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking`、`agent.planMode`、`agent.debug`、工具权限配置的默认值、properties 读取和非法值。
+- `TelegramAgentConfigTest`：覆盖 `agent.workdir`、`agent.maxSteps`、`agent.enableThinking`、`agent.planMode`、`agent.debug`、`agent.intentFilter.enabled`、工具权限配置的默认值、properties 读取和非法值。
 - `TelegramWebhookRegistrarTest`：覆盖 `setWebhook` 请求体、空公网 URL 跳过注册、HTTP 错误、`ok=false`。
 - `TryCloudflareTunnelTest`：覆盖 trycloudflare URL 解析和进程关闭。
 - `TelegramAgentWebhookServiceTest`：覆盖 server、trycloudflare、动态 URL 注册、注册重试编排、权限 Middleware 挂载和 debug Provider 装配。
 - `ApprovalManagerTest`：覆盖 approve、reject、超时清理、跨 chatId 拒绝和未知审批 ID。
 - `PermissionPolicySnapshotTest`、`PermissionPolicyProviderTest`、`PermissionFileWatcherTest`：覆盖 YAML schema、权限优先级、last-known-good 和热更新。
-- `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、审批命令旁路、串行执行和日志映射覆盖。
+- `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、意图过滤、审批命令旁路、串行执行和日志映射覆盖。
 - `AgentApplicationTest`：覆盖无参数缺命令、`telegram` 子命令、`run` 命令与未知命令行为。

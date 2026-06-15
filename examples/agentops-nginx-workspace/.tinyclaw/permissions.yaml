@@ -1,0 +1,38 @@
+version: 1
+enabled: true
+defaultAction: ask
+approvalTimeoutSeconds: 1800
+
+rules:
+  - id: allow-read-file
+    tools: [read_file]
+    action: allow
+
+  - id: ask-workspace-edits
+    tools: [write_file, edit_file]
+    action: ask
+
+  - id: deny-destructive-bash
+    tools: [bash]
+    action: deny
+    arguments:
+      command:
+        regex: "(?i)\\b(rm\\s+-rf|sudo\\b|systemctl\\b|kill\\b|drop\\s+(database|table))\\b"
+
+  - id: ask-nginx-reload
+    tools: [bash]
+    action: ask
+    arguments:
+      command:
+        regex: "(?i)\\bnginx\\s+-s\\s+reload\\b"
+
+  - id: allow-nginx-readonly-checks
+    tools: [bash]
+    action: allow
+    arguments:
+      command:
+        regex: "(?i)\\b(ssh|tail|cat|grep|nginx\\s+-t)\\b"
+
+  - id: ask-other-bash
+    tools: [bash]
+    action: ask

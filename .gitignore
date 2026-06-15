@@ -32,3 +32,8 @@ target/
 agent.properties
 src/main/resources/agent.properties
 src/test/resources/agent.properties
+
+# AgentOps demo fixtures
+!examples/agentops-nginx-workspace/remote/error.log
+examples/agentops-nginx-workspace/remote/ssh/id_ed25519*
+examples/agentops-nginx-workspace/remote/ssh/authorized_keys

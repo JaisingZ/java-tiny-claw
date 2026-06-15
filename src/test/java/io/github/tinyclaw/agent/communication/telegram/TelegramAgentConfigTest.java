@@ -25,6 +25,8 @@ class TelegramAgentConfigTest {
         assertThat(config.enableThinking()).isFalse();
         assertThat(config.planMode()).isFalse();
         assertThat(config.debug()).isFalse();
+        assertThat(config.intentFilterEnabled()).isFalse();
+        assertThat(config.intentFilterMarkers()).isEmpty();
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(12);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(12_000);
         assertThat(config.toolPermissionConfig().enabled()).isFalse();
@@ -44,6 +46,9 @@ class TelegramAgentConfigTest {
         values.put("agent.enableThinking", "true");
         values.put("agent.planMode", "true");
         values.put("agent.debug", "true");
+        values.put("agent.intentFilter.enabled", "true");
+        values.put("agent.intentFilter.marker.2", "排查");
+        values.put("agent.intentFilter.marker.1", "/agent");
         values.put("agent.workingMemory.maxMessages", "5");
         values.put("agent.workingMemory.maxChars", "1000");
         values.put("agent.permissions.enabled", "true");
@@ -61,6 +66,8 @@ class TelegramAgentConfigTest {
         assertThat(config.enableThinking()).isTrue();
         assertThat(config.planMode()).isTrue();
         assertThat(config.debug()).isTrue();
+        assertThat(config.intentFilterEnabled()).isTrue();
+        assertThat(config.intentFilterMarkers()).containsExactly("/agent", "排查");
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(5);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(1000);
         assertThat(config.toolPermissionConfig().enabled()).isTrue();
@@ -80,6 +87,9 @@ class TelegramAgentConfigTest {
                 + "agent.enableThinking=true\n"
                 + "agent.planMode=true\n"
                 + "agent.debug=true\n"
+                + "agent.intentFilter.enabled=true\n"
+                + "agent.intentFilter.marker.1=/agent\n"
+                + "agent.intentFilter.marker.2=nginx\n"
                 + "agent.workingMemory.maxMessages=6\n"
                 + "agent.workingMemory.maxChars=2048\n"
                 + "agent.permissions.enabled=true\n"
@@ -96,6 +106,8 @@ class TelegramAgentConfigTest {
         assertThat(config.enableThinking()).isTrue();
         assertThat(config.planMode()).isTrue();
         assertThat(config.debug()).isTrue();
+        assertThat(config.intentFilterEnabled()).isTrue();
+        assertThat(config.intentFilterMarkers()).containsExactly("/agent", "nginx");
         assertThat(config.workingMemoryPolicy().maxMessages()).isEqualTo(6);
         assertThat(config.workingMemoryPolicy().maxChars()).isEqualTo(2048);
         assertThat(config.toolPermissionConfig().enabled()).isTrue();
@@ -144,6 +156,26 @@ class TelegramAgentConfigTest {
         assertThatThrownBy(() -> TelegramAgentConfig.from(values))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("agent.debug");
+    }
+
+    @Test
+    void rejectsInvalidIntentFilterEnabled() {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.intentFilter.enabled", "yes");
+
+        assertThatThrownBy(() -> TelegramAgentConfig.from(values))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("agent.intentFilter.enabled");
+    }
+
+    @Test
+    void rejectsEnabledIntentFilterWithoutMarkers() {
+        Map<String, String> values = new HashMap<String, String>();
+        values.put("agent.intentFilter.enabled", "true");
+
+        assertThatThrownBy(() -> TelegramAgentConfig.from(values))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("agent.intentFilter.marker");
     }
 
     @Test

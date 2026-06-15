@@ -50,13 +50,13 @@ class ChatAgentServiceTest {
                 TelegramStyleRunLogger::new,
                 executor);
 
-        service.handle(new ChatMessage("m1", "chat-a", "user-a", "summarize README"), session);
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "/agent summarize README"), session);
 
         assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
         executor.close();
         assertThat(taskId.get()).isEqualTo("chat-m1");
-        assertThat(goal.get()).isEqualTo("summarize README");
-        assertThat(session.messages()).containsExactly("answer:summarize README");
+        assertThat(goal.get()).isEqualTo("/agent summarize README");
+        assertThat(session.messages()).containsExactly("answer:/agent summarize README");
     }
 
     /**
@@ -94,7 +94,7 @@ class ChatAgentServiceTest {
                 TelegramStyleRunLogger::new,
                 executor);
 
-        service.handle(new ChatMessage("m3", "chat-a", "user-a", "hello"), session);
+        service.handle(new ChatMessage("m3", "chat-a", "user-a", "排查 nginx"), session);
 
         assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
         executor.close();
@@ -115,8 +115,8 @@ class ChatAgentServiceTest {
                 executor,
                 new SessionManager());
 
-        service.handle(new ChatMessage("m1", "chat-a", "user-a", "first"), session);
-        service.handle(new ChatMessage("m2", "chat-a", "user-a", "second"), session);
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "/agent first"), session);
+        service.handle(new ChatMessage("m2", "chat-a", "user-a", "/agent second"), session);
 
         assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
         executor.close();
@@ -124,8 +124,8 @@ class ChatAgentServiceTest {
         assertThat(provider.contexts().get(0).workingMemory()).isEmpty();
         assertThat(provider.contexts().get(1).workingMemory())
                 .containsExactly(
-                        SessionMessage.user("first"),
-                        SessionMessage.assistant("answer:first"));
+                        SessionMessage.user("/agent first"),
+                        SessionMessage.assistant("answer:/agent first"));
     }
 
     /**
@@ -142,8 +142,8 @@ class ChatAgentServiceTest {
                 executor,
                 new SessionManager());
 
-        service.handle(new ChatMessage("m1", "chat-a", "user-a", "first"), session);
-        service.handle(new ChatMessage("m2", "chat-b", "user-a", "second"), session);
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "/agent first"), session);
+        service.handle(new ChatMessage("m2", "chat-b", "user-a", "/agent second"), session);
 
         assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
         executor.close();
@@ -166,8 +166,8 @@ class ChatAgentServiceTest {
                 executor,
                 new SessionManager());
 
-        service.handle(new ChatMessage("m1", "chat-a", "user-a", "first"), session);
-        service.handle(new ChatMessage("m2", "chat-b", "user-a", "second"), session);
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "/agent first"), session);
+        service.handle(new ChatMessage("m2", "chat-b", "user-a", "/agent second"), session);
 
         assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
         executor.close();
@@ -202,6 +202,57 @@ class ChatAgentServiceTest {
     }
 
     @Test
+    void ignoresUnrelatedChatMessageWithoutStartingAgent() throws Exception {
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        AtomicInteger providerCalls = new AtomicInteger();
+        ChatAgentService service = new ChatAgentService(
+                (logger, message) -> {
+                    providerCalls.incrementAndGet();
+                    return new AgentEngine(new EchoFinishProvider(new AtomicReference<String>(),
+                            new AtomicReference<String>()), new ToolRegistry(), 2, false, logger);
+                },
+                TelegramStyleRunLogger::new,
+                executor,
+                new SessionManager(),
+                null,
+                ChatIntentFilter.of(true, List.of("/agent", "排查", "nginx")));
+
+        service.handle(new ChatMessage("m-idle", "chat-a", "user-a", "今天中午吃什么"), session);
+
+        assertThat(executor.awaitIdle(200, TimeUnit.MILLISECONDS)).isTrue();
+        executor.close();
+        assertThat(providerCalls).hasValue(0);
+        assertThat(session.messages()).isEmpty();
+        assertThat(session.errors()).isEmpty();
+    }
+
+    @Test
+    void startsAgentForOperationalIntent() throws Exception {
+        RecordingSession session = new RecordingSession();
+        WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
+        AtomicInteger providerCalls = new AtomicInteger();
+        ChatAgentService service = new ChatAgentService(
+                (logger, message) -> {
+                    providerCalls.incrementAndGet();
+                    return new AgentEngine(new EchoFinishProvider(new AtomicReference<String>(),
+                            new AtomicReference<String>()), new ToolRegistry(), 2, false, logger);
+                },
+                TelegramStyleRunLogger::new,
+                executor,
+                new SessionManager(),
+                null,
+                ChatIntentFilter.of(true, List.of("/agent", "排查", "nginx")));
+
+        service.handle(new ChatMessage("m-ops", "chat-a", "user-a", "帮我排查 nginx 502"), session);
+
+        assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
+        executor.close();
+        assertThat(providerCalls).hasValue(1);
+        assertThat(session.messages()).containsExactly("answer:帮我排查 nginx 502");
+    }
+
+    @Test
     void usageCommandReportsCurrentChatSessionMetricsWithoutStartingAgent() throws Exception {
         RecordingSession session = new RecordingSession();
         WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
@@ -218,7 +269,7 @@ class ChatAgentServiceTest {
                 executor,
                 sessionManager);
 
-        service.handle(new ChatMessage("m1", "chat-a", "user-a", "hello"), session);
+        service.handle(new ChatMessage("m1", "chat-a", "user-a", "/agent hello"), session);
         assertThat(executor.awaitIdle(2, TimeUnit.SECONDS)).isTrue();
         service.handle(new ChatMessage("m2", "chat-a", "user-a", "/usage"), session);
 

@@ -1,11 +1,12 @@
 package io.github.tinyclaw.agent.communication.telegram;
 
-import io.github.tinyclaw.agent.communication.ChatSession;
-import io.github.tinyclaw.agent.communication.approval.ApprovalManager;
-import io.github.tinyclaw.agent.communication.approval.ToolApprovalMiddleware;
+import io.github.tinyclaw.agent.communication.ChatIntentFilter;
 import io.github.tinyclaw.agent.communication.ChatAgentService;
 import io.github.tinyclaw.agent.communication.ChatMessage;
+import io.github.tinyclaw.agent.communication.ChatSession;
 import io.github.tinyclaw.agent.communication.WorkspaceSerialExecutor;
+import io.github.tinyclaw.agent.communication.approval.ApprovalManager;
+import io.github.tinyclaw.agent.communication.approval.ToolApprovalMiddleware;
 import io.github.tinyclaw.agent.observability.FileTraceSink;
 import io.github.tinyclaw.agent.observability.TraceRecorder;
 import io.github.tinyclaw.agent.provider.LmStudioConfig;
@@ -22,6 +23,8 @@ import io.github.tinyclaw.agent.tool.permission.PermissionPolicySnapshot;
 import io.github.tinyclaw.agent.tool.permission.ToolPermissionConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -41,6 +44,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     private final boolean enableThinking;
     private final boolean planMode;
     private final boolean debug;
+    private final boolean intentFilterEnabled;
+    private final List<String> intentFilterMarkers;
     private final WorkingMemoryPolicy workingMemoryPolicy;
     private final ToolPermissionConfig toolPermissionConfig;
     private final ApprovalManager approvalManager;
@@ -79,6 +84,16 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
             boolean debug,
             WorkingMemoryPolicy workingMemoryPolicy, ToolPermissionConfig toolPermissionConfig,
             ApprovalManager approvalManager, TunnelFactory tunnelFactory, RegistrarFactory registrarFactory) {
+        this(telegramConfig, lmStudioConfig, workDir, maxSteps, enableThinking, planMode, debug, false,
+                Collections.emptyList(),
+                workingMemoryPolicy, toolPermissionConfig, approvalManager, tunnelFactory, registrarFactory);
+    }
+
+    TelegramAgentWebhookService(TelegramWebhookConfig telegramConfig, LmStudioConfig lmStudioConfig,
+            Path workDir, int maxSteps, boolean enableThinking, boolean planMode,
+            boolean debug, boolean intentFilterEnabled, List<String> intentFilterMarkers,
+            WorkingMemoryPolicy workingMemoryPolicy, ToolPermissionConfig toolPermissionConfig,
+            ApprovalManager approvalManager, TunnelFactory tunnelFactory, RegistrarFactory registrarFactory) {
         this.telegramConfig = Objects.requireNonNull(telegramConfig, "telegramConfig");
         this.lmStudioConfig = Objects.requireNonNull(lmStudioConfig, "lmStudioConfig");
         this.workDir = Objects.requireNonNull(workDir, "workDir");
@@ -86,6 +101,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         this.enableThinking = enableThinking;
         this.planMode = planMode;
         this.debug = debug;
+        this.intentFilterEnabled = intentFilterEnabled;
+        this.intentFilterMarkers = List.copyOf(intentFilterMarkers);
         this.workingMemoryPolicy = Objects.requireNonNull(workingMemoryPolicy, "workingMemoryPolicy");
         this.toolPermissionConfig = Objects.requireNonNull(toolPermissionConfig, "toolPermissionConfig");
         this.approvalManager = Objects.requireNonNull(approvalManager, "approvalManager");
@@ -104,6 +121,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
                 agentConfig.enableThinking(),
                 agentConfig.planMode(),
                 agentConfig.debug(),
+                agentConfig.intentFilterEnabled(),
+                agentConfig.intentFilterMarkers(),
                 agentConfig.workingMemoryPolicy(),
                 agentConfig.toolPermissionConfig(),
                 new ApprovalManager(),
@@ -118,7 +137,8 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
         startPermissionWatcher();
         executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(this::createEngine, TelegramRunLogger::new, executor,
-                new SessionManager(workingMemoryPolicy), approvalCommandsEnabled() ? approvalManager : null);
+                new SessionManager(workingMemoryPolicy), approvalCommandsEnabled() ? approvalManager : null,
+                ChatIntentFilter.of(intentFilterEnabled, intentFilterMarkers));
         if (usesTryCloudflareTunnel()) {
             startWithTryCloudflare(service);
             return;

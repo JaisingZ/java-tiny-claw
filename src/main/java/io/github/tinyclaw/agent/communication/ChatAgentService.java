@@ -19,6 +19,7 @@ public final class ChatAgentService implements ChatMessageHandler {
     private final WorkspaceSerialExecutor executor;
     private final SessionManager sessionManager;
     private final ApprovalManager approvalManager;
+    private final ChatIntentFilter intentFilter;
 
     public ChatAgentService(Function<RunLogger, AgentEngine> engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor) {
@@ -40,21 +41,35 @@ public final class ChatAgentService implements ChatMessageHandler {
     public ChatAgentService(EngineFactory engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
             SessionManager sessionManager, ApprovalManager approvalManager) {
+        this(engineFactory, runLoggerFactory, executor, sessionManager, approvalManager, ChatIntentFilter.disabled());
+    }
+
+    public ChatAgentService(EngineFactory engineFactory,
+            Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
+            SessionManager sessionManager, ApprovalManager approvalManager, ChatIntentFilter intentFilter) {
         this.engineFactory = (runLogger, message, session) -> engineFactory.create(runLogger, message);
         this.runLoggerFactory = Objects.requireNonNull(runLoggerFactory, "runLoggerFactory");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager");
         this.approvalManager = approvalManager;
+        this.intentFilter = Objects.requireNonNull(intentFilter, "intentFilter");
     }
 
     public ChatAgentService(SessionEngineFactory engineFactory,
             Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
             SessionManager sessionManager, ApprovalManager approvalManager) {
+        this(engineFactory, runLoggerFactory, executor, sessionManager, approvalManager, ChatIntentFilter.disabled());
+    }
+
+    public ChatAgentService(SessionEngineFactory engineFactory,
+            Function<ChatSession, RunLogger> runLoggerFactory, WorkspaceSerialExecutor executor,
+            SessionManager sessionManager, ApprovalManager approvalManager, ChatIntentFilter intentFilter) {
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
         this.runLoggerFactory = Objects.requireNonNull(runLoggerFactory, "runLoggerFactory");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager");
         this.approvalManager = approvalManager;
+        this.intentFilter = Objects.requireNonNull(intentFilter, "intentFilter");
     }
 
     @Override
@@ -70,6 +85,9 @@ public final class ChatAgentService implements ChatMessageHandler {
         }
         if (isUsageCommand(message.text())) {
             session.sendStatus(usageSummary(sessionManager.getOrCreate(sessionKey(message)).metrics()));
+            return;
+        }
+        if (!intentFilter.shouldStartAgent(message.text())) {
             return;
         }
 

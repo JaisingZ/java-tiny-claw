@@ -1,0 +1,4 @@
+2026/06/15 20:58:00 [info] 100#100: *1 client 192.168.1.10 connected
+2026/06/15 20:58:01 [info] 100#100: *2 client 192.168.1.11 connected
+2026/06/15 20:59:12 [emerg] 100#100: unknown directive "locat" in /workspace/nginx.conf:8
+2026/06/15 20:59:59 [emerg] 100#100: configuration file /workspace/nginx.conf test failed

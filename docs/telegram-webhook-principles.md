@@ -18,6 +18,7 @@ Telegram Bot 有两种常见收消息方式：
 | Webhook 接收 | `TelegramTransport` | 使用 JDK `HttpServer` 监听 `telegram.webhook.path`，接收 Telegram POST update。 |
 | Secret token 校验 | `TelegramTransport` | 校验 `X-Telegram-Bot-Api-Secret-Token` 是否等于 `telegram.webhook.secret`。 |
 | Update 解析 | `TelegramTransport` | 只处理文本消息，转换为 `ChatMessage(messageId, chatId, senderId, text)`；非文本 update 返回 200 并忽略。 |
+| 意图过滤 | `ChatIntentFilter` | 可选过滤普通群聊，触发词由 `agent.intentFilter.marker.N` 配置，代码不内置业务规则。 |
 | 工作区串行执行 | `WorkspaceSerialExecutor` | 单线程串行执行同一工作区的 Agent 任务，避免并发写工作区。 |
 | Agent 调度 | `ChatAgentService` | 将消息转换为 `Task("chat-" + messageId, text)`，创建带聊天日志的 `AgentEngine` 并提交执行。 |
 | Agent Runtime | `AgentEngine` | 推进 Main Loop，处理模型决策、工具调用和最终结果。 |
@@ -36,6 +37,7 @@ Telegram Bot API
   -> TelegramTransport
   -> ChatMessage
   -> ChatAgentService
+  -> ChatIntentFilter
   -> WorkspaceSerialExecutor
   -> AgentEngine
   -> TelegramRunLogger / TelegramSession
@@ -68,6 +70,8 @@ Telegram Bot API
 - `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
 - `agent.planMode`：Webhook 模式是否开启任务级状态外部化，默认 `false`。
 - `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
+- `agent.intentFilter.enabled`：是否启用聊天入口意图过滤，默认 `false`；关闭后每条有效文本都会进入 Main Loop。
+- `agent.intentFilter.marker.N`：意图触发词，启用过滤时必填，按数字后缀升序读取。
 - `agent.workingMemory.maxMessages`：每个 Session 进入模型请求的最大消息数，默认 `12`。
 - `agent.workingMemory.maxChars`：每个 Session 进入模型请求的最大字符数，默认 `12000`。
 - `agent.permissions.enabled`：是否启用 Telegram 工具审批 Middleware，默认 `false`。
@@ -75,3 +79,16 @@ Telegram Bot API
 - `agent.permissions.hotReload`：是否监听权限 YAML 并热更新，默认 `true`。
 
 Telegram 长驻入口按 `chatId`、`senderId`、`messageId` 的优先级选择会话标识。Session 只在进程内保存，进程重启后清空；Plan Mode 的 `PLAN.md` / `TODO.md` 是独立的任务级文件状态。
+
+## AgentOps nginx 本地验证
+
+`examples/agentops-nginx-workspace` 提供 Telegram AgentOps 演示工作区，内含 `AGENTS.md`、运维 SOP Skill 和权限 YAML。配套的 `examples/agentops-nginx-docker` 用 Docker 暴露一个可 SSH 的 nginx 故障现场，便于从 Telegram 发起“排查 nginx 起不来并尝试修复”的完整链路。
+
+推荐验证路径：
+
+1. 启动 Docker 场景，确认本机可通过 `ssh 127.0.0.1:2222` 进入模拟远端。
+2. 设置 `agent.workdir=examples/agentops-nginx-workspace`、`agent.permissions.enabled=true`、`agent.intentFilter.enabled=true`，并配置 `agent.intentFilter.marker.1=/agent`。
+3. 启动 `mvn exec:java -Dexec.args="telegram"`。
+4. 在 Telegram 发送 `/agent 帮我排查 nginx 起不来并尝试修复`。
+5. 对配置修改或 `nginx -s reload` 审批请求回复 `/approve <id>` 或 `/reject <id>`。
+6. 查看 `.tinyclaw/traces/` 下的 JSON trace，复盘工具调用和审批结果。

@@ -139,6 +139,14 @@ agent.maxSteps=8
 agent.enableThinking=false
 agent.planMode=false
 agent.debug=false
+agent.intentFilter.enabled=true
+agent.intentFilter.marker.1=/agent
+agent.intentFilter.marker.2=@机器人
+agent.intentFilter.marker.3=排查
+agent.intentFilter.marker.4=修复
+agent.intentFilter.marker.5=nginx
+agent.intentFilter.marker.6=ssh
+agent.intentFilter.marker.7=执行
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 agent.permissions.enabled=false
@@ -157,6 +165,7 @@ telegram.webhook.secret=your-random-secret
 - `telegram.webhook.url` 为空且 `telegram.webhook.tunnel=trycloudflare` 时，会启动 trycloudflare 隧道并注册动态 HTTPS URL。
 - 同一个 `chatId` 复用同一段进程内会话记录，不同 `chatId` 彼此隔离。
 - 发送 `/usage` 可查看当前会话累计模型调用、Token、模型耗时、工具调用和工具耗时。
+- `agent.intentFilter.enabled=true` 时，普通群聊不会唤醒 Agent；触发词由 `agent.intentFilter.marker.N` 配置，示例配置包含 `/agent`、`@机器人`、排查、修复、nginx、ssh、执行。
 - 开启 `agent.planMode=true` 后，每个 chat 使用 `.tinyclaw/state/chat/<chatId>/`。
 - 开启 `agent.permissions.enabled=true` 后，可通过 `.tinyclaw/permissions.yaml` 配置 `allow`、`ask`、`deny` 规则；`ask` 规则会在 Telegram 会话中等待 `/approve <id>` 或 `/reject <id>`。
 
@@ -184,6 +193,22 @@ rules:
     tools: [write_file, edit_file, bash]
     action: ask
 ```
+
+### AgentOps nginx 本地演示
+
+仓库包含一个 Telegram AgentOps 演示场景，用 Docker 模拟可 SSH 的 nginx 故障现场：
+
+```sh
+powershell -File scripts/verify-agentops-nginx-smoke.ps1
+```
+
+脚本会检查 Docker、启动 `examples/agentops-nginx-docker`、验证 SSH 入口，并提示如何把 `agent.workdir` 指向 `examples/agentops-nginx-workspace`。真实闭环仍需要配置 Telegram Bot Token 和可用模型服务，然后在 Telegram 发送：
+
+```text
+/agent 帮我排查 nginx 起不来并尝试修复
+```
+
+配置修改和 `nginx -s reload` 会按 `.tinyclaw/permissions.yaml` 在 Telegram 中等待 `/approve <id>` 或 `/reject <id>`，执行回放写入工作区 `.tinyclaw/traces/`。
 
 ## Provider
 

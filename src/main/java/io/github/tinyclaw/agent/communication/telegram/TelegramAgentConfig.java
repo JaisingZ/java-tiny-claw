@@ -6,9 +6,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 
 /**
  * Telegram Webhook 宿主的应用配置。
@@ -19,27 +23,39 @@ public final class TelegramAgentConfig {
     private static final boolean DEFAULT_ENABLE_THINKING = false;
     private static final boolean DEFAULT_PLAN_MODE = false;
     private static final boolean DEFAULT_DEBUG = false;
+    private static final boolean DEFAULT_INTENT_FILTER_ENABLED = false;
 
     private final Path workDir;
     private final int maxSteps;
     private final boolean enableThinking;
     private final boolean planMode;
     private final boolean debug;
+    private final boolean intentFilterEnabled;
+    private final List<String> intentFilterMarkers;
     private final WorkingMemoryPolicy workingMemoryPolicy;
     private final ToolPermissionConfig toolPermissionConfig;
 
     private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking, boolean planMode, boolean debug,
-            WorkingMemoryPolicy workingMemoryPolicy, ToolPermissionConfig toolPermissionConfig) {
+            boolean intentFilterEnabled, List<String> intentFilterMarkers, WorkingMemoryPolicy workingMemoryPolicy,
+            ToolPermissionConfig toolPermissionConfig) {
         this.workDir = workDir;
         this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.planMode = planMode;
         this.debug = debug;
+        this.intentFilterEnabled = intentFilterEnabled;
+        this.intentFilterMarkers = Collections.unmodifiableList(new ArrayList<String>(intentFilterMarkers));
         this.workingMemoryPolicy = workingMemoryPolicy;
         this.toolPermissionConfig = toolPermissionConfig;
     }
 
     public static TelegramAgentConfig from(Map<String, String> values) {
+        boolean intentFilterEnabled = parseBoolean(optional(values, "agent.intentFilter.enabled",
+                String.valueOf(DEFAULT_INTENT_FILTER_ENABLED)), "agent.intentFilter.enabled");
+        List<String> intentFilterMarkers = parseIntentFilterMarkers(values);
+        if (intentFilterEnabled && intentFilterMarkers.isEmpty()) {
+            throw new IllegalStateException("agent.intentFilter.marker.* must be configured when intent filter is enabled");
+        }
         return new TelegramAgentConfig(
                 Path.of(optional(values, "agent.workdir", ".")),
                 parsePositiveInt(optional(values, "agent.maxSteps", String.valueOf(DEFAULT_MAX_STEPS)),
@@ -50,6 +66,8 @@ public final class TelegramAgentConfig {
                         "agent.planMode"),
                 parseBoolean(optional(values, "agent.debug", String.valueOf(DEFAULT_DEBUG)),
                         "agent.debug"),
+                intentFilterEnabled,
+                intentFilterMarkers,
                 new WorkingMemoryPolicy(
                         parsePositiveInt(optional(values, "agent.workingMemory.maxMessages",
                                 String.valueOf(WorkingMemoryPolicy.DEFAULT_MAX_MESSAGES)),
@@ -77,6 +95,8 @@ public final class TelegramAgentConfig {
                 return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING,
                         DEFAULT_PLAN_MODE,
                         DEFAULT_DEBUG,
+                        DEFAULT_INTENT_FILTER_ENABLED,
+                        Collections.emptyList(),
                         new WorkingMemoryPolicy(),
                         ToolPermissionConfig.from(new HashMap<String, String>()));
             }
@@ -105,6 +125,14 @@ public final class TelegramAgentConfig {
 
     public boolean debug() {
         return debug;
+    }
+
+    public boolean intentFilterEnabled() {
+        return intentFilterEnabled;
+    }
+
+    public List<String> intentFilterMarkers() {
+        return intentFilterMarkers;
     }
 
     public WorkingMemoryPolicy workingMemoryPolicy() {
@@ -165,5 +193,29 @@ public final class TelegramAgentConfig {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private static List<String> parseIntentFilterMarkers(Map<String, String> values) {
+        TreeMap<Integer, String> markers = new TreeMap<Integer, String>();
+        for (String key : values.keySet()) {
+            if (!key.startsWith("agent.intentFilter.marker.")) {
+                continue;
+            }
+            String suffix = key.substring("agent.intentFilter.marker.".length());
+            try {
+                int index = Integer.parseInt(suffix);
+                if (index <= 0) {
+                    throw new IllegalStateException("agent.intentFilter.marker index must be positive: " + key);
+                }
+                String marker = values.get(key);
+                if (!hasText(marker)) {
+                    throw new IllegalStateException(key + " must not be blank");
+                }
+                markers.put(index, marker.trim());
+            } catch (NumberFormatException ex) {
+                throw new IllegalStateException("Invalid intent filter marker key: " + key, ex);
+            }
+        }
+        return List.copyOf(markers.values());
     }
 }
