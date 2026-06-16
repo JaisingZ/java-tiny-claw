@@ -153,14 +153,14 @@ class LmStudioModelProviderTest {
                         + "\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"hello\\\"}\"}}]}"),
                 new AtomicReference<String>(), requestBody);
         LmStudioModelProvider provider = new LmStudioModelProvider(
-                new LmStudioConfig(baseUrl(), "qwen-local"));
+                new LmStudioConfig(baseUrl(), "qwen-local", 256, 4096));
         ToolDefinition tool = new ToolDefinition("echo", "回显文本",
                 Collections.<String, Object>singletonMap("type", "object"));
 
         Decision decision = provider.decide(AgentContext.create(new Task("task-3", "echo hello")),
                 DecisionPhase.ACTION, Collections.singletonList(tool), SYSTEM_PROMPT).decision();
 
-        assertThat(requestBody.get().get("max_tokens").asInt()).isEqualTo(1024);
+        assertThat(requestBody.get().get("max_tokens").asInt()).isEqualTo(4096);
         assertThat(requestBody.get().get("tools")).hasSize(1);
         assertThat(requestBody.get().get("tools").get(0).get("type").asText()).isEqualTo("function");
         assertThat(requestBody.get().get("tools").get(0).get("function").get("name").asText()).isEqualTo("echo");

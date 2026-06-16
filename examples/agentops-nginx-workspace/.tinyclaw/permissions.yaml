@@ -31,7 +31,7 @@ rules:
     action: allow
     arguments:
       command:
-        regex: "(?i)\\b(ssh|tail|cat|grep|nginx\\s+-t)\\b"
+        regex: "(?i)\\b(tail|cat|grep|docker\\s+exec\\s+tinyclaw-agentops-nginx\\s+nginx\\s+-t|nginx\\s+-t)\\b"
 
   - id: ask-other-bash
     tools: [bash]

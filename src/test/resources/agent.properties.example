@@ -1,5 +1,7 @@
 lmstudio.baseUrl=http://localhost:1234/v1
 lmstudio.model=qwen-local
+lmstudio.thinkingMaxTokens=256
+lmstudio.actionMaxTokens=4096
 agent.planMode=false
 agent.intentFilter.enabled=true
 agent.intentFilter.marker.1=/agent

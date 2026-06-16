@@ -175,7 +175,7 @@ public final class AgentEngine {
     }
 
     /**
-     * 在指定 Session 中执行任务，并把本轮输入、观测和成功回答写回 Session。
+     * 在指定 Session 中执行任务，并把成功轮次的输入、观测和回答写回 Session。
      */
     public RunResult run(AgentSession session, Task task) {
         AgentContext context = AgentContext.create(task, session.workingMemory());
@@ -216,6 +216,9 @@ public final class AgentEngine {
     }
 
     private void recordSessionResult(AgentSession session, Task task, RunResult result) {
+        if (result.status() != RunStatus.SUCCESS) {
+            return;
+        }
         session.append(SessionMessage.user(task.goal()));
         for (String observation : result.observations()) {
             session.append(SessionMessage.observation(observation));
@@ -445,7 +448,20 @@ public final class AgentEngine {
         if (outputs.isEmpty()) {
             return nextContext;
         }
-        return nextContext.observe(joinOutputs(outputs));
+        String observation = joinOutputs(outputs);
+        if (shouldSkipDuplicateObservation(context, observation)) {
+            return nextContext;
+        }
+        return nextContext.observe(observation);
+    }
+
+    private boolean shouldSkipDuplicateObservation(AgentContext context, String observation) {
+        if (observation.startsWith("Error executing ")
+                || observation.contains("\n\nError executing ")
+                || observation.contains("[SYSTEM REMINDER]")) {
+            return false;
+        }
+        return context.observations().contains(observation);
     }
 
     private RunResult fail(AgentContext context, String reason, RunMetricsCollector metrics) {

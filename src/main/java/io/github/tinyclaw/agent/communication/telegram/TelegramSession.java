@@ -17,6 +17,8 @@ public final class TelegramSession implements ChatSession {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int MAX_MESSAGE_LENGTH = 4096;
+    private static final int MAX_SEND_ATTEMPTS = 3;
+    private static final long RETRY_BACKOFF_MILLIS = 300L;
 
     private final String token;
     private final String chatId;
@@ -58,6 +60,24 @@ public final class TelegramSession implements ChatSession {
     }
 
     private void sendMessageChunk(String text) {
+        IOException lastIoException = null;
+        for (int attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+            try {
+                sendMessageChunkOnce(text);
+                return;
+            } catch (IOException ex) {
+                lastIoException = ex;
+                if (attempt == MAX_SEND_ATTEMPTS) {
+                    break;
+                }
+                sleepBeforeRetry();
+            }
+        }
+        throw new IllegalStateException("Telegram sendMessage failed: " + lastIoException.getMessage(),
+                lastIoException);
+    }
+
+    private void sendMessageChunkOnce(String text) throws IOException {
         try {
             Map<String, String> payload = new LinkedHashMap<String, String>();
             payload.put("chat_id", chatId);
@@ -77,7 +97,16 @@ public final class TelegramSession implements ChatSession {
                 throw new IllegalStateException("Telegram sendMessage failed: " + telegramDescription(response.body()));
             }
         } catch (IOException ex) {
-            throw new IllegalStateException("Telegram sendMessage failed: " + ex.getMessage(), ex);
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Telegram sendMessage interrupted", ex);
+        }
+    }
+
+    private void sleepBeforeRetry() {
+        try {
+            Thread.sleep(RETRY_BACKOFF_MILLIS);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Telegram sendMessage interrupted", ex);

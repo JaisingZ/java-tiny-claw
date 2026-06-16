@@ -113,7 +113,11 @@ public final class TelegramTransport implements ChatTransport {
         try {
             handler.handle(message, session);
         } catch (RuntimeException ex) {
-            session.sendError("消息处理失败：" + ex.getMessage());
+            try {
+                session.sendError("消息处理失败：" + ex.getMessage());
+            } catch (RuntimeException ignored) {
+                // Webhook must still be acknowledged, otherwise Telegram retries the same update.
+            }
         }
         sendResponse(exchange, 200, "ok");
     }

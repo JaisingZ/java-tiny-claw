@@ -202,6 +202,39 @@ class AgentEngineTest {
         assertThat(session.metrics().toolCallCount()).isEqualTo(1);
     }
 
+    @Test
+    void failedRunWithSessionDoesNotPersistNoisyObservations() {
+        EngineFixture fixture = fixture()
+                .withTools(new EchoTool())
+                .withMaxSteps(1);
+        AgentSession session = new AgentSession("chat-failed");
+
+        RunResult result = fixture.run(constantProvider(tool("echo", "text", "noisy")),
+                session, "task-session-failed", "repeat noisy failure");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.observations()).containsExactly("noisy");
+        assertThat(session.history()).isEmpty();
+        assertThat(session.metrics().modelCallCount()).isEqualTo(1);
+        assertThat(session.metrics().toolCallCount()).isEqualTo(1);
+    }
+
+    @Test
+    void skipsDuplicateObservationWithinSameRun() {
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("echo", "text", "same-output"),
+                tool("echo", "text", "same-output"),
+                finish("done"));
+        EngineFixture fixture = fixture().withTools(new EchoTool());
+
+        RunResult result = fixture.run(provider, "task-dedupe-observation", "repeat read");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).containsExactly("same-output");
+        assertThat(provider.contexts()).hasSize(3);
+        assertThat(provider.contexts().get(2).observations()).containsExactly("same-output");
+    }
+
     /**
      * 关闭慢思考时保持单阶段循环
      */

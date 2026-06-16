@@ -145,8 +145,7 @@ agent.intentFilter.marker.2=@机器人
 agent.intentFilter.marker.3=排查
 agent.intentFilter.marker.4=修复
 agent.intentFilter.marker.5=nginx
-agent.intentFilter.marker.6=ssh
-agent.intentFilter.marker.7=执行
+agent.intentFilter.marker.6=执行
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 agent.permissions.enabled=false
@@ -196,13 +195,22 @@ rules:
 
 ### AgentOps nginx 本地演示
 
-仓库包含一个 Telegram AgentOps 演示场景，用 Docker 模拟可 SSH 的 nginx 故障现场：
+仓库包含一个 Telegram AgentOps 演示场景，用 Docker 模拟 nginx 故障现场：
 
 ```sh
 powershell -File scripts/verify-agentops-nginx-smoke.ps1
 ```
 
-脚本会检查 Docker、启动 `examples/agentops-nginx-docker`、验证 SSH 入口，并提示如何把 `agent.workdir` 指向 `examples/agentops-nginx-workspace`。真实闭环仍需要配置 Telegram Bot Token 和可用模型服务，然后在 Telegram 发送：
+脚本会检查 Docker、启动 `examples/agentops-nginx-docker`、并说明如何把 `agent.workdir` 指向 `examples/agentops-nginx-workspace`。本地 smoke 建议通过容器主路径执行验证：`tinyclaw-agentops-nginx` 容器内用 `docker exec` 执行 nginx 校验和 reload。
+
+示例命令：
+
+```sh
+docker exec tinyclaw-agentops-nginx nginx -t -c /workspace/nginx.conf
+docker exec tinyclaw-agentops-nginx nginx -s reload
+```
+
+真实远端环境可继续扩展为 SSH 路径，当前本地主路径仍以 docker exec 为准。真实闭环仍需要配置 Telegram Bot Token 和可用模型服务，然后在 Telegram 发送：
 
 ```text
 /agent 帮我排查 nginx 起不来并尝试修复

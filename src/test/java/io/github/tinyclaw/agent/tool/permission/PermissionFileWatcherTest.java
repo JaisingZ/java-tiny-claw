@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -49,6 +50,27 @@ class PermissionFileWatcherTest {
 
             assertThat(provider.current().evaluate(call("bash", "kubectl delete pod p1")).action())
                     .isEqualTo(ToolPermissionAction.DENY);
+        }
+    }
+
+    @Test
+    void doesNotReloadOnEveryIntervalWhenWatchServiceIsActive() throws Exception {
+        Path policyFile = tempDir.resolve("permissions.yaml");
+        Files.writeString(policyFile, "enabled: true\ndefaultAction: allow\n");
+        AtomicInteger reloads = new AtomicInteger();
+        PermissionPolicySnapshot snapshot = PermissionPolicySnapshot.load(policyFile);
+        PermissionPolicyProvider provider = new PermissionPolicyProvider(policyFile, snapshot, () -> {
+            reloads.incrementAndGet();
+            return PermissionPolicySnapshot.load(policyFile);
+        });
+
+        try (PermissionFileWatcher watcher = new PermissionFileWatcher(provider, Duration.ofMillis(50))) {
+            watcher.start();
+            Thread.sleep(220L);
+            assertThat(reloads.get()).isLessThanOrEqualTo(1);
+
+            Files.writeString(policyFile, "enabled: true\ndefaultAction: deny\n");
+            waitUntil(() -> reloads.get() >= 2);
         }
     }
 

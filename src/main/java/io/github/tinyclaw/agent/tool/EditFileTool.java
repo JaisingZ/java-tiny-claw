@@ -18,13 +18,13 @@ import java.util.Map;
  */
 public final class EditFileTool implements Tool {
 
-    private final Path workDir;
+    private final WorkspacePathResolver pathResolver;
 
     /**
      * 创建限定在指定工作区内的 edit_file 工具。
      */
     public EditFileTool(Path workDir) {
-        this.workDir = workDir.toAbsolutePath().normalize();
+        this.pathResolver = new WorkspacePathResolver(workDir);
     }
 
     /**
@@ -85,16 +85,27 @@ public final class EditFileTool implements Tool {
             return ToolResult.failure("Missing required argument: new_text");
         }
 
-        Path target = workDir.resolve((String) rawPath).normalize();
-        if (!target.startsWith(workDir)) {
+        Path target = pathResolver.resolveRaw((String) rawPath);
+        if (!pathResolver.isInsideWorkspace(target)) {
             return ToolResult.failure("Path escapes workspace: " + rawPath);
         }
 
+        String outputPath = String.valueOf(rawPath);
         String content;
         try {
             content = Files.readString(target);
         } catch (NoSuchFileException ex) {
-            return ToolResult.failure("File not found: " + rawPath);
+            Path resolvedTarget = pathResolver.resolveUniqueFilename((String) rawPath).orElse(null);
+            if (resolvedTarget == null) {
+                return ToolResult.failure("File not found: " + rawPath);
+            }
+            target = resolvedTarget;
+            outputPath = pathResolver.relativeUnix(target) + " (resolved from " + rawPath + ")";
+            try {
+                content = Files.readString(target);
+            } catch (IOException readResolvedEx) {
+                return ToolResult.failure("Failed to read file: " + readResolvedEx.getMessage());
+            }
         } catch (IOException ex) {
             return ToolResult.failure("Failed to read file: " + ex.getMessage());
         }
@@ -110,7 +121,7 @@ public final class EditFileTool implements Tool {
             return ToolResult.failure("Failed to write file: " + ex.getMessage());
         }
 
-        return ToolResult.success("Edited file: " + rawPath + " (strategy=" + replacement.strategy() + ")");
+        return ToolResult.success("Edited file: " + outputPath + " (strategy=" + replacement.strategy() + ")");
     }
 
     private Replacement replace(String content, String oldText, String newText) {

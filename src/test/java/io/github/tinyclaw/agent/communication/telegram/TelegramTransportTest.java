@@ -122,6 +122,21 @@ class TelegramTransportTest {
         assertThat(session.errors()).containsExactly("消息处理失败：boom");
     }
 
+    @Test
+    void acknowledgesWebhookWhenErrorReplyFails() throws Exception {
+        FailingErrorSession session = new FailingErrorSession();
+        TelegramTransport transport = transport("", session);
+        transport.start((message, chatSession) -> {
+            throw new IllegalStateException("boom");
+        });
+
+        HttpResponse<String> response = post(transport, textUpdate(), null);
+
+        transport.stop();
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(session.errorAttempts()).isEqualTo(1);
+    }
+
     /**
      * 注册 webhook 前本地 HTTP server 必须已经可连接。
      */
@@ -189,6 +204,28 @@ class TelegramTransportTest {
 
         private List<String> errors() {
             return errors;
+        }
+    }
+
+    private static final class FailingErrorSession implements ChatSession {
+        private int errorAttempts;
+
+        @Override
+        public void sendText(String text) {
+        }
+
+        @Override
+        public void sendStatus(String text) {
+        }
+
+        @Override
+        public void sendError(String text) {
+            errorAttempts++;
+            throw new IllegalStateException("send failed");
+        }
+
+        private int errorAttempts() {
+            return errorAttempts;
         }
     }
 

@@ -82,13 +82,22 @@ Telegram 长驻入口按 `chatId`、`senderId`、`messageId` 的优先级选择�
 
 ## AgentOps nginx 本地验证
 
-`examples/agentops-nginx-workspace` 提供 Telegram AgentOps 演示工作区，内含 `AGENTS.md`、运维 SOP Skill 和权限 YAML。配套的 `examples/agentops-nginx-docker` 用 Docker 暴露一个可 SSH 的 nginx 故障现场，便于从 Telegram 发起“排查 nginx 起不来并尝试修复”的完整链路。
+`examples/agentops-nginx-workspace` 提供 Telegram AgentOps 演示工作区，内含 `AGENTS.md`、运维 SOP Skill 和权限 YAML。配套的 `examples/agentops-nginx-docker` 提供容器化 nginx 故障现场，便于从 Telegram 发起“排查 nginx 起不来并尝试修复”的完整链路。容器名称默认为 `tinyclaw-agentops-nginx`。
 
 推荐验证路径：
 
-1. 启动 Docker 场景，确认本机可通过 `ssh 127.0.0.1:2222` 进入模拟远端。
-2. 设置 `agent.workdir=examples/agentops-nginx-workspace`、`agent.permissions.enabled=true`、`agent.intentFilter.enabled=true`，并配置 `agent.intentFilter.marker.1=/agent`。
-3. 启动 `mvn exec:java -Dexec.args="telegram"`。
-4. 在 Telegram 发送 `/agent 帮我排查 nginx 起不来并尝试修复`。
-5. 对配置修改或 `nginx -s reload` 审批请求回复 `/approve <id>` 或 `/reject <id>`。
-6. 查看 `.tinyclaw/traces/` 下的 JSON trace，复盘工具调用和审批结果。
+1. 启动 Docker 场景，确认 `tinyclaw-agentops-nginx` 可运行。
+2. 建议先手工在容器内验证 nginx 诊断/重载命令：
+
+   ```sh
+   docker exec tinyclaw-agentops-nginx nginx -t -c /workspace/nginx.conf
+   docker exec tinyclaw-agentops-nginx nginx -s reload
+   ```
+
+3. 设置 `agent.workdir=examples/agentops-nginx-workspace`、`agent.permissions.enabled=true`、`agent.intentFilter.enabled=true`，并配置 `agent.intentFilter.marker.1=/agent`。
+4. 启动 `mvn exec:java -Dexec.args="telegram"`。
+5. 在 Telegram 发送 `/agent 帮我排查 nginx 起不来并尝试修复`。
+6. 对配置修改或 `nginx -s reload` 审批请求回复 `/approve <id>` 或 `/reject <id>`。
+7. 查看 `.tinyclaw/traces/` 下的 JSON trace，复盘工具调用和审批结果。
+
+> 说明：本地 smoke 以 docker exec 主路径为主。真实远端仍可扩展为 SSH 方式执行同类检查。

@@ -61,6 +61,17 @@ class TelegramSessionTest {
                 .hasMessageContaining("bad text");
     }
 
+    @Test
+    void retriesWhenTelegramSendHasTransientIOException() {
+        RecordingHttpClient httpClient = new RecordingHttpClient();
+        httpClient.failuresBeforeSuccess = 1;
+        TelegramSession session = new TelegramSession("token-1", "chat-1", httpClient);
+
+        session.sendText("hello");
+
+        assertThat(httpClient.requests).hasSize(2);
+    }
+
     private static String bodyOf(HttpRequest request) throws Exception {
         HttpRequest.BodyPublisher publisher = request.bodyPublisher().orElseThrow();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -102,6 +113,7 @@ class TelegramSessionTest {
         private final List<HttpRequest> requests = new ArrayList<HttpRequest>();
         private final int statusCode;
         private final String responseBody;
+        private int failuresBeforeSuccess;
 
         private RecordingHttpClient() {
             this(200, "{\"ok\":true}");
@@ -159,8 +171,13 @@ class TelegramSessionTest {
 
         @Override
         @SuppressWarnings("unchecked")
-        public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) {
+        public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler)
+                throws IOException {
             requests.add(request);
+            if (failuresBeforeSuccess > 0) {
+                failuresBeforeSuccess--;
+                throw new IOException("Remote host terminated the handshake");
+            }
             return (HttpResponse<T>) new SimpleResponse(statusCode, responseBody);
         }
 

@@ -42,8 +42,6 @@ public final class LmStudioModelProvider implements ModelProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(LmStudioModelProvider.class);
     private static final int MAX_DEBUG_TEXT_LENGTH = 240;
-    private static final int THINKING_MAX_TOKENS = 256;
-    private static final int ACTION_MAX_TOKENS = 1024;
     private static final int MAX_THINKING_TEXT_LENGTH = 400;
 
     private static final TypeReference<Map<String, Object>> ARGUMENTS_TYPE =
@@ -133,7 +131,9 @@ public final class LmStudioModelProvider implements ModelProvider {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", config.model());
         root.put("stream", false);
-        root.put("max_tokens", phase == DecisionPhase.THINKING ? THINKING_MAX_TOKENS : ACTION_MAX_TOKENS);
+        root.put("max_tokens", phase == DecisionPhase.THINKING
+                ? config.thinkingMaxTokens()
+                : config.actionMaxTokens());
 
         ArrayNode messages = root.putArray("messages");
         addMessage(messages, "system", systemPrompt);

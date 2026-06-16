@@ -50,6 +50,19 @@ class ReadFileToolTest {
     }
 
     @Test
+    void resolvesUniqueMatchingFilenameWhenFileIsMissing() throws Exception {
+        Path remote = Files.createDirectory(workDir.resolve("remote"));
+        Files.writeString(remote.resolve("nginx.conf"), "events {}");
+        ReadFileTool tool = new ReadFileTool(workDir);
+
+        ToolResult result = tool.execute(call("nginx.conf"), state());
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.output()).contains("[Resolved path: remote/nginx.conf]")
+                .contains("events {}");
+    }
+
+    @Test
     void truncatesLongFileOutput() throws Exception {
         Files.writeString(workDir.resolve("long.txt"), "a".repeat(8_100));
         ReadFileTool tool = new ReadFileTool(workDir);

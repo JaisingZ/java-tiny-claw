@@ -1,6 +1,7 @@
 package io.github.tinyclaw.agent.tool.permission;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
@@ -37,7 +38,6 @@ public final class PermissionFileWatcher implements AutoCloseable {
             return;
         }
         running = true;
-        provider.reload();
         thread.start();
     }
 
@@ -60,11 +60,20 @@ public final class PermissionFileWatcher implements AutoCloseable {
             LOGGER.warn("Permission WatchService unavailable, polling only: {}", ex.getMessage());
         }
 
+        FileFingerprint lastFingerprint = fileFingerprint(sourcePath);
+        reload();
         while (running) {
-            if (pollWatchService(fileName)) {
-                debounce();
+            boolean changed = pollWatchService(fileName);
+            FileFingerprint currentFingerprint = fileFingerprint(sourcePath);
+            if (!currentFingerprint.equals(lastFingerprint)) {
+                changed = true;
+                lastFingerprint = currentFingerprint;
             }
-            reload();
+            if (changed) {
+                debounce();
+                reload();
+                lastFingerprint = fileFingerprint(sourcePath);
+            }
             sleep(interval);
         }
     }
@@ -96,6 +105,27 @@ public final class PermissionFileWatcher implements AutoCloseable {
         } else {
             LOGGER.warn("Permission policy reload failed, keeping last known good snapshot: path={}",
                     current.sourcePath());
+        }
+    }
+
+    private FileFingerprint fileFingerprint(Path sourcePath) {
+        if (sourcePath == null) {
+            return FileFingerprint.missing();
+        }
+        try {
+            if (!Files.exists(sourcePath)) {
+                return FileFingerprint.missing();
+            }
+            return new FileFingerprint(Files.getLastModifiedTime(sourcePath).toMillis(), Files.size(sourcePath));
+        } catch (IOException | RuntimeException ex) {
+            return FileFingerprint.missing();
+        }
+    }
+
+    private record FileFingerprint(long lastModifiedMillis, long size) {
+
+        private static FileFingerprint missing() {
+            return new FileFingerprint(-1L, -1L);
         }
     }
 

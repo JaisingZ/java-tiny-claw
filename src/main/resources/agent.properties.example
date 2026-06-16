@@ -1,5 +1,7 @@
 lmstudio.baseUrl=http://localhost:1234/v1
 lmstudio.model=qwen-local
+lmstudio.thinkingMaxTokens=256
+lmstudio.actionMaxTokens=4096
 
 agent.workdir=.
 agent.maxSteps=8
@@ -12,8 +14,7 @@ agent.intentFilter.marker.2=@机器人
 agent.intentFilter.marker.3=排查
 agent.intentFilter.marker.4=修复
 agent.intentFilter.marker.5=nginx
-agent.intentFilter.marker.6=ssh
-agent.intentFilter.marker.7=执行
+agent.intentFilter.marker.6=执行
 agent.workingMemory.maxMessages=12
 agent.workingMemory.maxChars=12000
 

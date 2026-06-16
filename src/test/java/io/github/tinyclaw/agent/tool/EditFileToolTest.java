@@ -125,6 +125,19 @@ class EditFileToolTest {
     }
 
     @Test
+    void resolvesUniqueMatchingFilenameWhenEditingMissingRelativePath() throws Exception {
+        Path remote = Files.createDirectory(workDir.resolve("remote"));
+        Files.writeString(remote.resolve("nginx.conf"), "locat / {\n    return 200;\n}\n");
+        EditFileTool tool = new EditFileTool(workDir);
+
+        ToolResult result = tool.execute(call("nginx.conf", "locat / {", "location / {"), state());
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.output()).contains("remote/nginx.conf", "resolved from nginx.conf");
+        assertThat(Files.readString(remote.resolve("nginx.conf"))).contains("location / {");
+    }
+
+    @Test
     void returnsFailureWhenTextIsNotFound() throws Exception {
         Files.writeString(workDir.resolve("hello.txt"), "hello");
         EditFileTool tool = new EditFileTool(workDir);
