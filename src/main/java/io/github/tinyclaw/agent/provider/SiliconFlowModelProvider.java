@@ -41,7 +41,6 @@ import java.util.function.Consumer;
 public final class SiliconFlowModelProvider implements ModelProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(SiliconFlowModelProvider.class);
-    private static final int MAX_DEBUG_TEXT_LENGTH = 240;
 
     private static final TypeReference<Map<String, Object>> ARGUMENTS_TYPE =
             new TypeReference<Map<String, Object>>() {
@@ -85,9 +84,9 @@ public final class SiliconFlowModelProvider implements ModelProvider {
     public ModelResponse decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> availableTools,
             String systemPrompt) {
         ObjectNode requestBody = buildRequestBody(context, phase, availableTools, systemPrompt);
-        debugJson(phase, "Request JSON", requestBody);
+        emitDebugBlock(phase, "Request Summary", ProviderDebugSummary.request(config.model(), requestBody));
         JsonNode response = send(requestBody);
-        debugJson(phase, "Response JSON", response);
+        emitDebugBlock(phase, "Response Summary", ProviderDebugSummary.response(response));
         JsonNode message = firstMessage(response);
 
         Decision decision;
@@ -426,14 +425,8 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         return node.asText("");
     }
 
-    private void debugJson(DecisionPhase phase, String title, JsonNode node) {
-        String pretty = prettyJson(toDebugJson(title, node));
-        emitDebugBlock(phase, title, pretty);
-    }
-
     private void debugDecision(DecisionPhase phase, Decision decision) {
-        String summary = decisionSummary(decision);
-        emitDebugBlock(phase, "Parsed Decision", summary);
+        emitDebugBlock(phase, "Parsed Decision", ProviderDebugSummary.decision(decision));
     }
 
     private void emitDebugBlock(DecisionPhase phase, String title, String body) {
@@ -442,96 +435,6 @@ public final class SiliconFlowModelProvider implements ModelProvider {
         }
         debugSink.accept("========== [Provider][" + phase + "] " + title + " ==========");
         debugSink.accept(body);
-    }
-
-    private String prettyJson(JsonNode node) {
-        try {
-            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(node);
-        } catch (JsonProcessingException ex) {
-            return node.toString();
-        }
-    }
-
-    private JsonNode toDebugJson(String title, JsonNode node) {
-        if (node == null) {
-            return null;
-        }
-
-        JsonNode copy = node.deepCopy();
-        if ("Request JSON".equals(title) && copy instanceof ObjectNode) {
-            summarizeRequestJson((ObjectNode) copy);
-        }
-        truncateLargeText(copy);
-        return copy;
-    }
-
-    private void summarizeRequestJson(ObjectNode request) {
-        JsonNode tools = request.get("tools");
-        if (tools != null && tools.isArray()) {
-            ObjectNode summary = request.putObject("tools_summary");
-            summary.put("count", tools.size());
-            ArrayNode names = summary.putArray("names");
-            for (JsonNode tool : tools) {
-                names.add(text(tool.path("function").path("name")));
-            }
-            request.remove("tools");
-        }
-    }
-
-    private void truncateLargeText(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return;
-        }
-        if (node instanceof ObjectNode) {
-            ObjectNode object = (ObjectNode) node;
-            List<String> fieldNames = new ArrayList<String>();
-            object.fieldNames().forEachRemaining(fieldNames::add);
-            for (String fieldName : fieldNames) {
-                JsonNode value = object.get(fieldName);
-                if (value != null && value.isTextual()) {
-                    object.put(fieldName, truncateText(value.asText("")));
-                } else {
-                    truncateLargeText(value);
-                }
-            }
-            return;
-        }
-        if (node instanceof ArrayNode) {
-            ArrayNode array = (ArrayNode) node;
-            for (int index = 0; index < array.size(); index++) {
-                JsonNode value = array.get(index);
-                if (value != null && value.isTextual()) {
-                    array.set(index, objectMapper.getNodeFactory().textNode(truncateText(value.asText(""))));
-                } else {
-                    truncateLargeText(value);
-                }
-            }
-        }
-    }
-
-    private String truncateText(String value) {
-        if (!hasText(value) || value.length() <= MAX_DEBUG_TEXT_LENGTH) {
-            return value;
-        }
-        return value.substring(0, MAX_DEBUG_TEXT_LENGTH)
-                + "...(truncated " + (value.length() - MAX_DEBUG_TEXT_LENGTH) + " chars)";
-    }
-
-    private String decisionSummary(Decision decision) {
-        if (decision instanceof ThinkingDecision) {
-            return "ThinkingDecision thought=" + ((ThinkingDecision) decision).thought();
-        }
-        if (decision instanceof FinishDecision) {
-            return "FinishDecision answer=" + ((FinishDecision) decision).answer();
-        }
-        if (decision instanceof ToolDecision) {
-            ToolCall call = ((ToolDecision) decision).call();
-            return "ToolDecision tool=" + call.toolName() + " args=" + call.arguments();
-        }
-        if (decision instanceof ParallelToolDecision) {
-            return "ParallelToolDecision calls=" + ((ParallelToolDecision) decision).getCalls();
-        }
-        return decision.getClass().getSimpleName();
     }
 
     private boolean hasText(String value) {

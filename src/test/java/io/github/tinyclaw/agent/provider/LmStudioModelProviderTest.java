@@ -316,14 +316,52 @@ class LmStudioModelProviderTest {
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
 
         assertThat(debugOutput.toString())
-                .contains("========== [Provider][ACTION] Request JSON ==========")
-                .contains("\"model\" : \"qwen-local\"")
-                .contains("\"content\" : \"debug it\"")
-                .contains("========== [Provider][ACTION] Response JSON ==========")
-                .contains("\"content\" : \"done\"")
+                .contains("========== [Provider][ACTION] Request Summary ==========")
+                .contains("model=qwen-local")
+                .contains("messageCount=2")
+                .contains("toolCount=0")
+                .contains("maxTokens=1024")
+                .contains("lastUserMessageLength=8")
+                .contains("========== [Provider][ACTION] Response Summary ==========")
+                .contains("finishReason=stop")
+                .contains("contentLength=4")
+                .contains("usageAvailable=false")
                 .contains("========== [Provider][ACTION] Parsed Decision ==========")
-                .contains("FinishDecision answer=done")
+                .contains("FinishDecision answerLength=4")
+                .doesNotContain("\"messages\"")
+                .doesNotContain("\"content\"")
+                .doesNotContain("debug it")
+                .doesNotContain("done")
                 .doesNotContain("Authorization");
+    }
+
+    @Test
+    void debugOutputSummarizesToolsWithoutToolSchemaOrArguments() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"hello\\\"}\"}}]}"),
+                new AtomicReference<String>(), requestBody);
+        StringBuilder debugOutput = new StringBuilder();
+        LmStudioModelProvider provider = new LmStudioModelProvider(
+                new LmStudioConfig(baseUrl(), "qwen-local", 256, 4096),
+                line -> debugOutput.append(line).append('\n'));
+        ToolDefinition readFile = new ToolDefinition("read_file", "read file",
+                Collections.<String, Object>singletonMap("type", "object"));
+        ToolDefinition writeFile = new ToolDefinition("write_file", "write file",
+                Collections.<String, Object>singletonMap("type", "object"));
+
+        provider.decide(AgentContext.create(new Task("task-debug-tools", "use tool")),
+                DecisionPhase.ACTION, java.util.List.of(readFile, writeFile), SYSTEM_PROMPT);
+
+        assertThat(debugOutput.toString())
+                .contains("toolCount=2")
+                .contains("toolNames=[read_file, write_file]")
+                .contains("maxTokens=4096")
+                .contains("toolCallNames=[echo]")
+                .contains("ToolDecision tool=echo argumentKeys=[text]")
+                .doesNotContain("\"tools\"")
+                .doesNotContain("\"parameters\"")
+                .doesNotContain("hello");
     }
 
     @Test

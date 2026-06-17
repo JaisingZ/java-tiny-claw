@@ -17,7 +17,7 @@
 ## CLI 启动行为
 
 - 无参数启动：缺少正式命令，提示使用 `run` 或 `telegram`。
-- `telegram` 子命令：直接启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务。
+- `telegram` 子命令：直接启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务；`telegram --debug` 为本次进程开启 Provider debug 摘要。
 - `run`：只走命令行运行，不启动 Telegram Webhook。
 
 ## 核心抽象
@@ -138,7 +138,7 @@ Telegram POST /telegram/webhook
 - `/usage` 在 `WorkspaceSerialExecutor.submit` 前处理，用于查看当前会话累计用量。
 - `agent.intentFilter.enabled=true` 时，普通闲聊不会提交到 `WorkspaceSerialExecutor`，只有命中配置触发词的消息才唤醒 Main Loop。
 - 同工作区通过 `WorkspaceSerialExecutor` 串行执行；`AgentEngine` 内部只读工具并发策略保持不变。
-- `agent.debug=true` 仅影响服务端 Provider 调试日志；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态。
+- `agent.debug=true` 或启动参数 `telegram --debug` 仅影响服务端 Provider 调试摘要；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态，工具状态只包含参数 key。
 - 启用权限审批后，`allow` 直接执行，`deny` 返回工具失败，`ask` 向同一 Telegram 会话发送审批 ID 并等待人工处理。
 - 审批超时自动拒绝并清理内存 pending 状态。
 - 权限 YAML 热更新失败时保留上一份有效快照；审批中的 pending request 不受 reload 影响。
@@ -170,4 +170,4 @@ trycloudflare 模式不使用 `getUpdates` 轮询。流程如下：
 - `ApprovalManagerTest`：覆盖 approve、reject、超时清理、跨 chatId 拒绝和未知审批 ID。
 - `PermissionPolicySnapshotTest`、`PermissionPolicyProviderTest`、`PermissionFileWatcherTest`：覆盖 YAML schema、权限优先级、last-known-good 和热更新。
 - `ChatAgentServiceTest`、`WorkspaceSerialExecutorTest`、`TelegramRunLoggerTest`：保持通信调度、意图过滤、审批命令旁路、串行执行和日志映射覆盖。
-- `AgentApplicationTest`：覆盖无参数缺命令、`telegram` 子命令、`run` 命令与未知命令行为。
+- `AgentApplicationTest`：覆盖无参数缺命令、`telegram` / `telegram --debug` 子命令、`run` 命令与未知命令行为。

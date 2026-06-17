@@ -52,14 +52,16 @@ class SiliconFlowModelProviderLiveTest {
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
         assertThat(providerExchange.toString())
-                .contains("========== [Provider][THINKING] Request JSON ==========")
-                .contains("========== [Provider][THINKING] Response JSON ==========")
+                .contains("========== [Provider][THINKING] Request Summary ==========")
+                .contains("========== [Provider][THINKING] Response Summary ==========")
                 .contains("========== [Provider][THINKING] Parsed Decision ==========")
-                .contains("========== [Provider][ACTION] Request JSON ==========")
-                .contains("========== [Provider][ACTION] Response JSON ==========")
+                .contains("========== [Provider][ACTION] Request Summary ==========")
+                .contains("========== [Provider][ACTION] Response Summary ==========")
                 .contains("========== [Provider][ACTION] Parsed Decision ==========")
-                .contains("\"messages\"")
-                .contains("\"choices\"")
+                .contains("messageCount=")
+                .contains("finishReason=")
+                .doesNotContain("\"messages\"")
+                .doesNotContain("\"choices\"")
                 .doesNotContain("Bearer ");
     }
 

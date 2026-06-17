@@ -13,7 +13,7 @@ Tiny Agent Harness is a compact Java project for exploring Agent Harness runtime
 - Working Memory：Telegram 长驻入口按会话保留进程内短期记录，默认 12 条消息 / 12000 字符。
 - Context Compaction：Provider 请求前压缩超长 observation，不污染真实工具输出或 Session 记录。
 - Plan Mode：可选把长程任务状态外部化到 `.tinyclaw/state/.../PLAN.md` 和 `TODO.md`。
-- Telegram Webhook：支持 `telegram` 子命令、trycloudflare、Webhook 接收、工具审批和服务端 debug 日志。
+- Telegram Webhook：支持 `telegram` / `telegram --debug` 子命令、trycloudflare、Webhook 接收、工具审批和服务端 debug 摘要。
 - Subagent：`spawn_subagent` 同步拉起受限子 Agent，用于隔离探索上下文并返回精炼报告。
 - Benchmark：`bench` 子命令会创建独立靶场、运行 Agent、执行验证命令并输出 JSON 报告。
 - Observability：`RunLogger`、`RunResult`、`RunMetrics` 和 `TraceRecorder` 分别承担可读日志、最终结果、汇总指标和 JSON trace。
@@ -160,7 +160,7 @@ telegram.webhook.url=
 telegram.webhook.secret=your-random-secret
 ```
 
-- `telegram` 不支持 `telegram --debug`；服务端 Provider debug 通过 `agent.debug=true` 开启。
+- `telegram --debug` 可为本次长驻进程开启服务端 Provider debug 摘要；也可通过 `agent.debug=true` 持久开启。
 - `telegram.webhook.url` 为空且 `telegram.webhook.tunnel=trycloudflare` 时，会启动 trycloudflare 隧道并注册动态 HTTPS URL。
 - 同一个 `chatId` 复用同一段进程内会话记录，不同 `chatId` 彼此隔离。
 - 发送 `/usage` 可查看当前会话累计模型调用、Token、模型耗时、工具调用和工具耗时。

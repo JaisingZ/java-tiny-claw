@@ -56,7 +56,7 @@ public final class AgentApplication {
             runBenchmark();
             return;
         }
-        startTelegram();
+        startTelegram(TelegramOptions.parse(args));
     }
 
     static StartupMode resolveStartupMode(String[] args) {
@@ -67,7 +67,7 @@ public final class AgentApplication {
             return StartupMode.RUN_PROMPT;
         }
         if (TELEGRAM_COMMAND.equals(args[0])) {
-            ensureNoExtraArgs(args, TELEGRAM_COMMAND);
+            TelegramOptions.parse(args);
             return StartupMode.TELEGRAM;
         }
         if (BENCH_COMMAND.equals(args[0])) {
@@ -77,9 +77,9 @@ public final class AgentApplication {
         throw new IllegalArgumentException("Unknown command: " + args[0]);
     }
 
-    private static void startTelegram() throws InterruptedException {
+    private static void startTelegram(TelegramOptions options) throws InterruptedException {
         // Webhook 服务是长驻进程；这里主动阻塞，直到 JVM 收到外部停止信号。
-        TelegramAgentWebhookService service = TelegramAgentWebhookService.loadDefault();
+        TelegramAgentWebhookService service = TelegramAgentWebhookService.loadDefault(options.debug());
         Runtime.getRuntime().addShutdownHook(new Thread(service::stop, "telegram-webhook-shutdown"));
         try {
             service.start();

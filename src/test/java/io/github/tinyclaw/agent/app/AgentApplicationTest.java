@@ -26,6 +26,13 @@ class AgentApplicationTest {
     }
 
     @Test
+    void telegramOptionsAcceptsDebugFlag() {
+        TelegramOptions options = TelegramOptions.parse(new String[] { "telegram", "--debug" });
+
+        assertThat(options.debug()).isTrue();
+    }
+
+    @Test
     void runCommandResolvesRunPrompt() {
         StartupMode mode = AgentApplication.resolveStartupMode(new String[] { "run", "--prompt", "hello" });
 
@@ -47,10 +54,10 @@ class AgentApplicationTest {
     }
 
     @Test
-    void telegramCommandRejectsExtraArgs() {
-        assertThatThrownBy(() -> AgentApplication.resolveStartupMode(new String[] { "telegram", "--debug" }))
+    void telegramCommandRejectsUnknownOptions() {
+        assertThatThrownBy(() -> TelegramOptions.parse(new String[] { "telegram", "--bad" }))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Unknown telegram option: --debug");
+                .hasMessage("Unknown telegram option: --bad");
     }
 
     @Test

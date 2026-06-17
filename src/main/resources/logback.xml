@@ -17,7 +17,4 @@
         <appender-ref ref="STDOUT" />
         <appender-ref ref="FILE" />
     </root>
-
-    <!-- 可根据需要调整特定包的日志级别 -->
-    <logger name="io.github.tinyclaw.agent.provider" level="DEBUG" />
 </configuration>

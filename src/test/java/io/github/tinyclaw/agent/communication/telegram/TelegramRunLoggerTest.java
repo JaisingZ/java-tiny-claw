@@ -36,7 +36,7 @@ class TelegramRunLoggerTest {
         assertThat(session.statuses()).containsExactly(
                 "模型正在慢思考...",
                 "慢思考完成，耗时 12ms。",
-                "准备执行工具 read_file，参数 {path=README.md}",
+                "准备执行工具 read_file，参数 keys [path]。",
                 "工具 read_file 执行成功，耗时 8ms。");
         assertThat(session.messages()).containsExactly("done");
         assertThat(session.errors()).containsExactly("Agent 运行失败：boom");

@@ -280,20 +280,30 @@ class SiliconFlowModelProviderTest {
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT);
 
         assertThat(debugOutput.toString())
-                .contains("========== [Provider][ACTION] Request JSON ==========")
-                .contains("\"model\" : \"Qwen/Qwen3-8B\"")
-                .contains("\"content\" : \"debug it\"")
-                .contains("========== [Provider][ACTION] Response JSON ==========")
-                .contains("\"content\" : \"done\"")
+                .contains("========== [Provider][ACTION] Request Summary ==========")
+                .contains("model=Qwen/Qwen3-8B")
+                .contains("messageCount=2")
+                .contains("toolCount=0")
+                .contains("maxTokens=n/a")
+                .contains("lastUserMessageLength=8")
+                .contains("========== [Provider][ACTION] Response Summary ==========")
+                .contains("finishReason=stop")
+                .contains("contentLength=4")
+                .contains("usageAvailable=false")
                 .contains("========== [Provider][ACTION] Parsed Decision ==========")
-                .contains("FinishDecision answer=done")
+                .contains("FinishDecision answerLength=4")
+                .doesNotContain("\"messages\"")
+                .doesNotContain("\"content\"")
+                .doesNotContain("debug it")
+                .doesNotContain("done")
                 .doesNotContain("Bearer test-key");
     }
 
     @Test
-    void debugOutputSummarizesToolsAndTruncatesLongRequestText() throws Exception {
+    void debugOutputSummarizesToolsWithoutToolSchemaOrArguments() throws Exception {
         AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
-        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+        startServer(200, completionWithMessage("{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"hello\\\"}\"}}]}"),
                 new AtomicReference<String>(), requestBody);
         StringBuilder debugOutput = new StringBuilder();
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
@@ -304,16 +314,18 @@ class SiliconFlowModelProviderTest {
         ToolDefinition writeFile = new ToolDefinition("write_file", "write file",
                 Collections.<String, Object>singletonMap("type", "object"));
 
-        provider.decide(AgentContext.create(new Task("task-debug-long",
-                        "请直接回答：" + "A".repeat(400))),
+        provider.decide(AgentContext.create(new Task("task-debug-tools", "use tool")),
                 DecisionPhase.ACTION, java.util.List.of(readFile, writeFile), SYSTEM_PROMPT);
 
         assertThat(debugOutput.toString())
-                .contains("\"tools_summary\"")
-                .contains("\"count\" : 2")
-                .contains("\"names\" : [ \"read_file\", \"write_file\" ]")
-                .contains("...(truncated ")
-                .doesNotContain("\"parameters\"");
+                .contains("toolCount=2")
+                .contains("toolNames=[read_file, write_file]")
+                .contains("maxTokens=n/a")
+                .contains("toolCallNames=[echo]")
+                .contains("ToolDecision tool=echo argumentKeys=[text]")
+                .doesNotContain("\"tools\"")
+                .doesNotContain("\"parameters\"")
+                .doesNotContain("hello");
     }
 
     @Test

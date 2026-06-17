@@ -112,6 +112,10 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
     }
 
     public static TelegramAgentWebhookService loadDefault() {
+        return loadDefault(false);
+    }
+
+    public static TelegramAgentWebhookService loadDefault(boolean debugOverride) {
         TelegramAgentConfig agentConfig = TelegramAgentConfig.loadDefault();
         return new TelegramAgentWebhookService(
                 TelegramWebhookConfig.loadDefault(),
@@ -120,7 +124,7 @@ public final class TelegramAgentWebhookService implements AutoCloseable {
                 agentConfig.maxSteps(),
                 agentConfig.enableThinking(),
                 agentConfig.planMode(),
-                agentConfig.debug(),
+                agentConfig.debug() || debugOverride,
                 agentConfig.intentFilterEnabled(),
                 agentConfig.intentFilterMarkers(),
                 agentConfig.workingMemoryPolicy(),

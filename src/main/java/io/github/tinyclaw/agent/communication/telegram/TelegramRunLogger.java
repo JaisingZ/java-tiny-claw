@@ -5,6 +5,8 @@ import io.github.tinyclaw.agent.communication.ChatSession;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.tool.ToolResult;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Telegram 消息运行日志。
@@ -27,7 +29,7 @@ public final class TelegramRunLogger extends AbstractChatRunLogger {
 
     @Override
     public void toolStarted(ToolCall call) {
-        session().sendStatus("准备执行工具 " + call.toolName() + "，参数 " + call.arguments());
+        session().sendStatus("准备执行工具 " + call.toolName() + "，参数 keys " + argumentKeys(call) + "。");
     }
 
     @Override
@@ -37,5 +39,9 @@ public final class TelegramRunLogger extends AbstractChatRunLogger {
             return;
         }
         session().sendError("工具 " + call.toolName() + " 执行失败：" + result.errorMessage());
+    }
+
+    private List<String> argumentKeys(ToolCall call) {
+        return new ArrayList<String>(call.arguments().keySet());
     }
 }
