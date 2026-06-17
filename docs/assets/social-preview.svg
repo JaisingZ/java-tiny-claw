@@ -1,0 +1,31 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Tiny Agent Harness social preview</title>
+  <desc id="desc">A GitHub social preview graphic for Tiny Agent Harness.</desc>
+  <rect width="1280" height="640" fill="#0B1020"/>
+  <rect x="72" y="72" width="1136" height="496" rx="28" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <circle cx="138" cy="138" r="12" fill="#EF4444"/>
+  <circle cx="178" cy="138" r="12" fill="#F59E0B"/>
+  <circle cx="218" cy="138" r="12" fill="#10B981"/>
+  <text x="96" y="242" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="60" font-weight="800">Tiny Agent Harness</text>
+  <text x="100" y="306" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="32" font-weight="500">Model decides. Harness controls.</text>
+  <g transform="translate(100 390)">
+    <rect x="0" y="0" width="132" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
+    <text x="24" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Java 21</text>
+    <rect x="154" y="0" width="132" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
+    <text x="184" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Maven</text>
+    <rect x="308" y="0" width="280" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
+    <text x="332" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">OpenAI-compatible</text>
+    <rect x="610" y="0" width="184" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
+    <text x="634" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Experimental</text>
+  </g>
+  <g transform="translate(888 162)">
+    <rect x="0" y="0" width="252" height="64" rx="16" fill="#0F766E"/>
+    <text x="36" y="41" fill="#ECFEFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Runtime loop</text>
+    <path d="M126 66V104" stroke="#94A3B8" stroke-width="4" stroke-linecap="round"/>
+    <rect x="-18" y="106" width="288" height="64" rx="16" fill="#1D4ED8"/>
+    <text x="36" y="147" fill="#EFF6FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Tool execution</text>
+    <path d="M126 172V318" stroke="#94A3B8" stroke-width="4" stroke-linecap="round"/>
+    <rect x="0" y="320" width="252" height="64" rx="16" fill="#7C3AED"/>
+    <text x="36" y="361" fill="#F5F3FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Trace replay</text>
+  </g>
+</svg>

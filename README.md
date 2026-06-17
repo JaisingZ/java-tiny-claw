@@ -6,8 +6,11 @@
 
 ![Java 21](https://img.shields.io/badge/Java-21-blue)
 ![Maven](https://img.shields.io/badge/Build-Maven-cc0000)
+![CI](https://github.com/JaisingZ/java-tiny-claw/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-Apache--2.0-green)
 ![Status](https://img.shields.io/badge/Status-Experimental-orange)
+
+![Tiny Agent Harness social preview](docs/assets/social-preview.png)
 
 Tiny Agent Harness keeps the model responsible for decisions, while the harness owns the loop, tool execution, context boundaries, safety checks, and observability.
 

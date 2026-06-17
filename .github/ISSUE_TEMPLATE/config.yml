@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Design principles
+    url: https://github.com/JaisingZ/java-tiny-claw/blob/main/docs/agent-harness-principles.md
+    about: Read the project architecture baseline before proposing large runtime changes.
