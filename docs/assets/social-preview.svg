@@ -1,31 +1,49 @@
 <svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Tiny Agent Harness social preview</title>
-  <desc id="desc">A GitHub social preview graphic for Tiny Agent Harness.</desc>
+  <desc id="desc">Tiny Agent Harness, a Java runtime layer beneath agents. Model decides, Harness owns execution.</desc>
+
   <rect width="1280" height="640" fill="#0B1020"/>
-  <rect x="72" y="72" width="1136" height="496" rx="28" fill="#111827" stroke="#334155" stroke-width="2"/>
-  <circle cx="138" cy="138" r="12" fill="#EF4444"/>
-  <circle cx="178" cy="138" r="12" fill="#F59E0B"/>
-  <circle cx="218" cy="138" r="12" fill="#10B981"/>
-  <text x="96" y="242" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="60" font-weight="800">Tiny Agent Harness</text>
-  <text x="100" y="306" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="32" font-weight="500">Model decides. Harness controls.</text>
-  <g transform="translate(100 390)">
-    <rect x="0" y="0" width="132" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
-    <text x="24" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Java 21</text>
-    <rect x="154" y="0" width="132" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
-    <text x="184" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Maven</text>
-    <rect x="308" y="0" width="280" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
-    <text x="332" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">OpenAI-compatible</text>
-    <rect x="610" y="0" width="184" height="54" rx="12" fill="#1E293B" stroke="#475569"/>
-    <text x="634" y="36" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Experimental</text>
-  </g>
-  <g transform="translate(888 162)">
-    <rect x="0" y="0" width="252" height="64" rx="16" fill="#0F766E"/>
-    <text x="36" y="41" fill="#ECFEFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Runtime loop</text>
-    <path d="M126 66V104" stroke="#94A3B8" stroke-width="4" stroke-linecap="round"/>
-    <rect x="-18" y="106" width="288" height="64" rx="16" fill="#1D4ED8"/>
-    <text x="36" y="147" fill="#EFF6FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Tool execution</text>
-    <path d="M126 172V318" stroke="#94A3B8" stroke-width="4" stroke-linecap="round"/>
-    <rect x="0" y="320" width="252" height="64" rx="16" fill="#7C3AED"/>
-    <text x="36" y="361" fill="#F5F3FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Trace replay</text>
+  <rect x="64" y="64" width="1152" height="512" rx="32" fill="#111827" stroke="#263244" stroke-width="2"/>
+
+  <text x="104" y="190" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="68" font-weight="800">Tiny Agent</text>
+  <text x="104" y="268" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="68" font-weight="800">Harness</text>
+  <text x="108" y="328" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="29" font-weight="600">Build the runtime layer</text>
+  <text x="108" y="366" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="29" font-weight="600">beneath agents.</text>
+  <text x="108" y="426" fill="#94A3B8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="500">Model decides. Harness owns execution.</text>
+
+  <rect x="108" y="468" width="118" height="42" rx="10" fill="#1E293B" stroke="#475569"/>
+  <text x="132" y="496" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">Java 21</text>
+  <rect x="246" y="468" width="112" height="42" rx="10" fill="#1E293B" stroke="#475569"/>
+  <text x="276" y="496" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">Maven</text>
+  <rect x="378" y="468" width="172" height="42" rx="10" fill="#1E293B" stroke="#475569"/>
+  <text x="402" y="496" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">Experimental</text>
+
+  <g transform="translate(668 104)">
+    <rect x="72" y="0" width="352" height="88" rx="16" fill="#1E293B" stroke="#475569"/>
+    <text x="108" y="39" fill="#E2E8F0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="23" font-weight="800">Agent / Model</text>
+    <text x="108" y="68" fill="#94A3B8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">decision output</text>
+
+    <path d="M248 98V126" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+
+    <rect x="0" y="136" width="496" height="144" rx="24" fill="#0F766E"/>
+    <text x="40" y="194" fill="#ECFEFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="36" font-weight="900">Harness Core</text>
+    <text x="40" y="236" fill="#CCFBF1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="600">runtime control layer</text>
+
+    <path d="M248 290V318" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+
+    <rect x="0" y="328" width="78" height="70" rx="14" fill="#1D4ED8"/>
+    <text x="21" y="370" fill="#EFF6FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="800">Loop</text>
+
+    <rect x="88" y="328" width="118" height="70" rx="14" fill="#2563EB"/>
+    <text x="112" y="370" fill="#EFF6FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="800">Context</text>
+
+    <rect x="216" y="328" width="78" height="70" rx="14" fill="#4F46E5"/>
+    <text x="236" y="370" fill="#EEF2FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="800">Tools</text>
+
+    <rect x="304" y="328" width="88" height="70" rx="14" fill="#7C3AED"/>
+    <text x="326" y="370" fill="#F5F3FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="800">Safety</text>
+
+    <rect x="402" y="328" width="94" height="70" rx="14" fill="#9333EA"/>
+    <text x="429" y="370" fill="#FAF5FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="800">Trace</text>
   </g>
 </svg>
