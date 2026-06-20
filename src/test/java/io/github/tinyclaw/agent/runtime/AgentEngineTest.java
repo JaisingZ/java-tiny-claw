@@ -524,6 +524,47 @@ class AgentEngineTest {
                 .contains("[SYSTEM REMINDER]");
     }
 
+    @Test
+    void injectsValidationReminderAfterSuccessfulWriteWhenTaskRequiresValidation() {
+        EngineFixture fixture = fixture().withTools(new WriteLikeTool("edit_file")).withMaxSteps(3);
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("edit_file", "path", "src/App.java"),
+                finish("validated"));
+
+        RunResult result = fixture.run(provider, "task-validation-reminder",
+                "修复代码后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0))
+                .contains("edited")
+                .contains("[SYSTEM REMINDER]")
+                .contains("validation");
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(1).observations().get(0)).contains("validation");
+    }
+
+    @Test
+    void injectsRepeatedReadReminderAfterReadingSamePathMoreThanTwice() {
+        EngineFixture fixture = fixture().withTools(new ReadFileLikeTool()).withMaxSteps(5);
+        RecordingContextProvider provider = new RecordingContextProvider(
+                tool("read_file", "path", "src/App.java"),
+                tool("read_file", "path", "./src/App.java"),
+                tool("read_file", "path", "src\\App.java"),
+                finish("done"));
+
+        RunResult result = fixture.run(provider, "task-repeated-read", "inspect file");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.observations()).hasSize(2);
+        assertThat(result.observations().get(0)).startsWith("[read_file path=src/App.java]");
+        assertThat(result.observations().get(1))
+                .contains("[read_file path=src/App.java]")
+                .contains("[SYSTEM REMINDER]")
+                .contains("same read_file path")
+                .contains("modify, validate, test, or finish");
+    }
+
     /**
      * 空并行决策也会推进一步
      */
@@ -966,6 +1007,41 @@ class AgentEngineTest {
         @Override
         public ToolResult execute(ToolCall call, AgentContext state) {
             return ToolResult.success(String.valueOf(call.arguments().get("text")));
+        }
+    }
+
+    private static final class ReadFileLikeTool implements Tool {
+        @Override
+        public String name() {
+            return "read_file";
+        }
+
+        @Override
+        public ToolResult execute(ToolCall call, AgentContext state) {
+            return ToolResult.success("class App {}\n");
+        }
+
+        @Override
+        public boolean isSideEffect() {
+            return false;
+        }
+    }
+
+    private static final class WriteLikeTool implements Tool {
+        private final String name;
+
+        private WriteLikeTool(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public ToolResult execute(ToolCall call, AgentContext state) {
+            return ToolResult.success("edited");
         }
     }
 

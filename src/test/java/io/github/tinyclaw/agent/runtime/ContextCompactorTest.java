@@ -56,6 +56,48 @@ class ContextCompactorTest {
     }
 
     @Test
+    void deduplicatesRepeatedReadFileObservationsByPathKeepingLatestFullContent() {
+        ContextCompactor compactor = new ContextCompactor(new ContextCompactionPolicy(1_000, 6, 200, 40, 40, 80));
+        String first = "[read_file path=src/App.java]\nold-content";
+        String latest = "[read_file path=src/App.java]\nlatest-content";
+        AgentContext input = new AgentContext(
+                new Task("task-id", "goal"),
+                0,
+                List.of(first, latest),
+                null,
+                List.of());
+
+        AgentContext output = compactor.compact(input);
+
+        assertThat(output).isNotSameAs(input);
+        assertThat(output.observations()).hasSize(2);
+        assertThat(output.observations().get(0))
+                .contains("重复读取已压缩")
+                .contains("src/App.java")
+                .doesNotContain("old-content");
+        assertThat(output.observations().get(1)).isEqualTo(latest);
+    }
+
+    @Test
+    void keepsDifferentReadFilePathsAndErrorObservations() {
+        ContextCompactor compactor = new ContextCompactor(new ContextCompactionPolicy(1_000, 6, 200, 40, 40, 80));
+        String first = "[read_file path=src/App.java]\napp";
+        String second = "[read_file path=src/Other.java]\nother";
+        String error = "Error executing read_file: File not found: src/App.java";
+        AgentContext input = new AgentContext(
+                new Task("task-id", "goal"),
+                0,
+                List.of(first, second, error),
+                null,
+                List.of());
+
+        AgentContext output = compactor.compact(input);
+
+        assertThat(output).isSameAs(input);
+        assertThat(output.observations()).containsExactly(first, second, error);
+    }
+
+    @Test
     void masksRemoteObservationInWorkingMemory() {
         ContextCompactionPolicy policy = new ContextCompactionPolicy(20, 2, 9, 3, 3, 6);
         ContextCompactor compactor = new ContextCompactor(policy);

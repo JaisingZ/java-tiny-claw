@@ -5,7 +5,9 @@ import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.SessionMessageKind;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -15,6 +17,7 @@ public final class ContextCompactor {
 
     private static final String OBSERVATION_TRUNCATED_TOKEN = "内容过长";
     private static final String OBSERVATION_MASKED_TOKEN = "早期工具输出已被压缩";
+    private static final String READ_FILE_PREFIX = "[read_file path=";
 
     private final ContextCompactionPolicy policy;
 
@@ -38,7 +41,7 @@ public final class ContextCompactor {
     public AgentContext compact(AgentContext context) {
         Objects.requireNonNull(context, "context");
 
-        if (withinContextLimit(context)) {
+        if (withinContextLimit(context) && !hasRepeatedReadFileObservation(context.observations())) {
             return context;
         }
 
@@ -120,11 +123,20 @@ public final class ContextCompactor {
             return source;
         }
 
+        Map<String, Integer> latestReadByPath = latestReadFileObservationIndexes(source);
         List<String> compacted = new ArrayList<String>(source.size());
         boolean changed = false;
 
-        for (String observation : source) {
-            String compactedObservation = compactObservation(observation);
+        for (int i = 0; i < source.size(); i++) {
+            String observation = source.get(i);
+            String path = readFilePath(observation);
+            String compactedObservation = observation;
+            if (path != null && !isErrorObservation(observation)
+                    && latestReadByPath.getOrDefault(path, Integer.valueOf(i)).intValue() != i) {
+                compactedObservation = "重复读取已压缩：" + path + "（原始长度：" + lengthOf(observation) + "）";
+            } else {
+                compactedObservation = compactObservation(observation);
+            }
             if (compactedObservation == observation) {
                 compacted.add(observation);
             } else {
@@ -134,6 +146,57 @@ public final class ContextCompactor {
         }
 
         return changed ? List.copyOf(compacted) : source;
+    }
+
+    private boolean hasRepeatedReadFileObservation(List<String> observations) {
+        Map<String, Integer> counts = new HashMap<String, Integer>();
+        for (String observation : observations) {
+            if (isErrorObservation(observation)) {
+                continue;
+            }
+            String path = readFilePath(observation);
+            if (path == null) {
+                continue;
+            }
+            int count = counts.getOrDefault(path, 0) + 1;
+            if (count > 1) {
+                return true;
+            }
+            counts.put(path, count);
+        }
+        return false;
+    }
+
+    private Map<String, Integer> latestReadFileObservationIndexes(List<String> observations) {
+        Map<String, Integer> latestByPath = new HashMap<String, Integer>();
+        for (int i = 0; i < observations.size(); i++) {
+            String observation = observations.get(i);
+            if (isErrorObservation(observation)) {
+                continue;
+            }
+            String path = readFilePath(observation);
+            if (path != null) {
+                latestByPath.put(path, Integer.valueOf(i));
+            }
+        }
+        return latestByPath;
+    }
+
+    private String readFilePath(String observation) {
+        if (observation == null || !observation.startsWith(READ_FILE_PREFIX)) {
+            return null;
+        }
+        int end = observation.indexOf(']');
+        if (end <= READ_FILE_PREFIX.length()) {
+            return null;
+        }
+        String path = observation.substring(READ_FILE_PREFIX.length(), end).trim();
+        return path.isEmpty() ? null : path;
+    }
+
+    private boolean isErrorObservation(String observation) {
+        return observation != null && (observation.startsWith("Error executing ")
+                || observation.contains("\n\nError executing "));
     }
 
     private String compactObservation(String content) {

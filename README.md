@@ -217,6 +217,21 @@ CLI `run` prints `METRICS` at the end, including model calls, token usage, model
 
 CLI `run` 结束时输出 `METRICS`，包含模型调用、Token、模型耗时、工具调用和工具耗时。CLI Plan Mode 状态目录为 `.tinyclaw/state/cli/default/`。
 
+Example: prepare a small Java concurrency counter workspace, then let the Agent explore, fix, and validate it:
+
+示例：准备一个 Java 并发计数器靶场，让 Agent 自行探索、修复并验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\prepare-concurrency-counter-workspace.ps1
+mvn exec:java "-Dexec.args=run --thinking --plan --max-steps 12 --prompt 请在 target/concurrency-counter-workspace 中自行探索，找到并发安全问题，分析原因，修复并执行正确性验证。"
+Set-Location target\concurrency-counter-workspace
+powershell -File .\validation.ps1
+```
+
+Do not rely only on the final answer. Check `RESULT`, `OBSERVATIONS`, `METRICS`, `.tinyclaw/traces/trace-*.json`, the validation output, and the actual files in the workspace.
+
+不要只看最终回答；同时检查 `RESULT`、`OBSERVATIONS`、`METRICS`、`.tinyclaw/traces/trace-*.json`、验证命令输出和工作区真实文件改动。
+
 ## Benchmark / 基准验证
 
 Run the built-in benchmark:

@@ -100,6 +100,9 @@ public final class LmStudioModelProvider implements ModelProvider {
             } else {
                 String content = text(message.get("content"));
                 if (!hasText(sanitizeFinishText(content))) {
+                    if (isLengthLimited(response)) {
+                        throw new RuntimeException("LM Studio action response truncated before content or tool calls");
+                    }
                     throw new RuntimeException("LM Studio action response missing content or tool calls");
                 }
                 decision = new FinishDecision(sanitizeFinishText(content));
@@ -237,6 +240,14 @@ public final class LmStudioModelProvider implements ModelProvider {
     private boolean hasToolCalls(JsonNode message) {
         JsonNode toolCalls = message.get("tool_calls");
         return toolCalls != null && toolCalls.isArray() && !toolCalls.isEmpty();
+    }
+
+    private boolean isLengthLimited(JsonNode response) {
+        JsonNode choices = response.get("choices");
+        if (choices == null || !choices.isArray() || choices.isEmpty()) {
+            return false;
+        }
+        return "length".equals(text(choices.get(0).get("finish_reason")));
     }
 
     private Decision parseToolDecision(JsonNode message) {

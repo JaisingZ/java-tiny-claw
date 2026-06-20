@@ -88,8 +88,18 @@ public final class DefaultPromptComposer implements PromptComposer {
                 + "若用户要求一句话、一个标题、一个路径或一个简短结果，就只输出一句话或该结果本身。\n"
                 + "如果多个操作互相独立（例如读取多个不同文件），建议在单轮中并行调用。\n"
                 + "如果 Observation 已经满足用户目标且没有失败信息，直接输出最终回答，不要重复调用相同工具。\n"
+                + "如果最近刚修改文件且任务要求验证，下一步优先执行验证命令，不要重复读取刚读过且未变化的文件。\n"
                 + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。\n"
                 + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。\n\n";
+    }
+
+    private void appendAgentsFile(StringBuilder prompt) {
+        String agents = agentsFileLoader.load();
+        if (!hasText(agents)) {
+            return;
+        }
+        prompt.append("# Project Instructions (AGENTS.md)\n");
+        prompt.append(agents).append("\n\n");
     }
 
     private void appendPlanModeInstruction(StringBuilder prompt) {
@@ -101,20 +111,11 @@ public final class DefaultPromptComposer implements PromptComposer {
         prompt.append("当前已开启 Plan Mode。长程任务状态必须外部化到 Markdown 文件，不能只依赖短期上下文。\n");
         prompt.append("状态目录（相对于当前工作区）：").append(normalizedStateDir).append("\n");
         prompt.append("只能在该状态目录维护任务级状态文件，不要在工作区根目录直接创建 PLAN.md 或 TODO.md。\n");
-        prompt.append("ACTION 阶段开始长程任务时，先检查状态目录下的 PLAN.md 和 TODO.md。\n");
+        prompt.append("任务开始或需要恢复进度时，先检查状态目录下的 PLAN.md 和 TODO.md；不要每轮都重复读取状态文件。\n");
         prompt.append("如果文件不存在，先创建 PLAN.md 记录目标、约束、方案，再创建 TODO.md 记录 Markdown checkbox 待办。\n");
         prompt.append("如果文件已存在，先读取 PLAN.md 和 TODO.md，再根据其中的进度继续执行。\n");
         prompt.append("每完成一个明确步骤后，更新 TODO.md 的 checkbox；不要为了简单问答创建或更新状态文件。\n");
         prompt.append("最终回答必须说明实际完成了什么、还剩什么；不要只汇报 TODO.md 已打勾。\n\n");
-    }
-
-    private void appendAgentsFile(StringBuilder prompt) {
-        String agents = agentsFileLoader.load();
-        if (!hasText(agents)) {
-            return;
-        }
-        prompt.append("# Project Instructions (AGENTS.md)\n");
-        prompt.append(agents).append("\n\n");
     }
 
     private void appendSkills(StringBuilder prompt) {

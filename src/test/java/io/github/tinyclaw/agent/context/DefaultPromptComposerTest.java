@@ -56,7 +56,10 @@ class DefaultPromptComposerTest {
         assertThat(prompt)
                 .contains("当前是 ACTION 阶段")
                 .contains("调用一个或多个独立工具")
-                .contains("function.arguments");
+                .contains("function.arguments")
+                .contains("刚修改文件")
+                .contains("优先执行验证")
+                .contains("不要重复读取刚读过且未变化的文件");
     }
 
     @Test
@@ -85,11 +88,12 @@ class DefaultPromptComposerTest {
                 .contains("状态目录（相对于当前工作区）：.tinyclaw/state/cli/default")
                 .contains("PLAN.md")
                 .contains("TODO.md")
-                .contains("先检查状态目录")
+                .contains("任务开始或需要恢复进度时")
                 .contains("如果文件不存在")
                 .contains("如果文件已存在")
                 .contains("更新 TODO.md 的 checkbox")
-                .contains("最终回答必须说明实际完成了什么");
+                .contains("最终回答必须说明实际完成了什么")
+                .doesNotContain("ACTION 阶段开始长程任务时，先检查状态目录");
     }
 
     @Test

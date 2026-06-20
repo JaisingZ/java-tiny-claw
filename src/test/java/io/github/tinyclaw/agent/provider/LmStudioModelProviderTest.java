@@ -143,6 +143,19 @@ class LmStudioModelProviderTest {
         assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-reasoning-only", "finish")),
                 DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT))
                 .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("LM Studio action response truncated before content or tool calls");
+    }
+
+    @Test
+    void actionPhaseKeepsGenericErrorForEmptyNonTruncatedResponse() throws Exception {
+        startServer(200, completionWithMessage("{\"content\":\"\"}", "stop"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        LmStudioModelProvider provider = new LmStudioModelProvider(
+                new LmStudioConfig(baseUrl(), "qwen-local"));
+
+        assertThatThrownBy(() -> provider.decide(AgentContext.create(new Task("task-empty-action", "finish")),
+                DecisionPhase.ACTION, Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT))
+                .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("LM Studio action response missing content or tool calls");
     }
 

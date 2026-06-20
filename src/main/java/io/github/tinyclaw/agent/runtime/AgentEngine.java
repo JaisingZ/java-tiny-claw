@@ -26,8 +26,10 @@ import io.github.tinyclaw.agent.tool.ToolResult;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
@@ -194,9 +196,10 @@ public final class AgentEngine {
             rootSpan.putAttribute("goal_preview", preview(context.goal(), 160));
 
             SystemReminderInjector systemReminderInjector = new SystemReminderInjector();
+            TokenEfficiencyState tokenEfficiencyState = new TokenEfficiencyState();
             RunResult result = null;
             while (context.stepCount() < maxSteps) {
-                TurnResult turn = runTurn(context, systemReminderInjector, metrics, rootSpan);
+                TurnResult turn = runTurn(context, systemReminderInjector, tokenEfficiencyState, metrics, rootSpan);
                 if (turn.result() != null) {
                     result = turn.result();
                     break;
@@ -240,7 +243,7 @@ public final class AgentEngine {
     }
 
     private TurnResult runTurn(AgentContext context, SystemReminderInjector systemReminderInjector,
-            RunMetricsCollector metrics, TraceSpan rootSpan) {
+            TokenEfficiencyState tokenEfficiencyState, RunMetricsCollector metrics, TraceSpan rootSpan) {
         int currentStep = context.stepCount() + 1;
         try (TraceScope turnScope = traceRecorder.startChild(rootSpan, "turn")) {
             TraceSpan turnSpan = turnScope.span();
@@ -263,7 +266,7 @@ public final class AgentEngine {
             } catch (ProviderCallException ex) {
                 return TurnResult.done(fail(context, ex.reason(), metrics));
             }
-            return applyDecision(context, decision, systemReminderInjector, metrics, turnSpan);
+            return applyDecision(context, decision, systemReminderInjector, tokenEfficiencyState, metrics, turnSpan);
         }
     }
 
@@ -329,7 +332,8 @@ public final class AgentEngine {
     }
 
     private TurnResult applyDecision(AgentContext context, Decision decision,
-            SystemReminderInjector systemReminderInjector, RunMetricsCollector metrics, TraceSpan turnSpan) {
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyState tokenEfficiencyState,
+            RunMetricsCollector metrics, TraceSpan turnSpan) {
         if (decision instanceof FinishDecision) {
             FinishDecision finish = (FinishDecision) decision;
             runLogger.finished(finish);
@@ -338,29 +342,32 @@ public final class AgentEngine {
         }
 
         if (decision instanceof ToolDecision) {
-            return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector, metrics,
-                    turnSpan);
+            return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector,
+                    tokenEfficiencyState, metrics, turnSpan);
         }
 
         if (decision instanceof ParallelToolDecision) {
             return handleParallelToolDecision(context, (ParallelToolDecision) decision, systemReminderInjector,
-                    metrics, turnSpan);
+                    tokenEfficiencyState, metrics, turnSpan);
         }
 
         return TurnResult.done(fail(context, "unsupported_decision", metrics));
     }
 
     private TurnResult handleToolDecision(AgentContext context, ToolCall call,
-            SystemReminderInjector systemReminderInjector, RunMetricsCollector metrics, TraceSpan turnSpan) {
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyState tokenEfficiencyState,
+            RunMetricsCollector metrics, TraceSpan turnSpan) {
         ToolResult toolResult = executeToolCall(context, call, metrics, turnSpan);
         List<String> outputs = new ArrayList<String>();
         outputs.add(observationFor(call, toolResult));
         appendReminder(outputs, systemReminderInjector.afterToolCall(call, toolResult));
+        appendReminder(outputs, tokenEfficiencyState.afterToolCall(context, call, toolResult));
         return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
     private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision,
-            SystemReminderInjector systemReminderInjector, RunMetricsCollector metrics, TraceSpan turnSpan) {
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyState tokenEfficiencyState,
+            RunMetricsCollector metrics, TraceSpan turnSpan) {
         List<ToolCall> calls = decision.getCalls();
         if (calls.isEmpty()) {
             return TurnResult.next(context.advance());
@@ -382,6 +389,7 @@ public final class AgentEngine {
 
         List<String> outputs = new ArrayList<String>();
         String lastReminder = null;
+        String lastTokenReminder = null;
         for (ToolCall call : calls) {
             ToolResult result;
             CompletableFuture<ToolResult> future = readOnlyResults.get(call);
@@ -400,9 +408,14 @@ public final class AgentEngine {
             if (reminder != null) {
                 lastReminder = reminder;
             }
+            String tokenReminder = tokenEfficiencyState.afterToolCall(context, call, result);
+            if (tokenReminder != null) {
+                lastTokenReminder = tokenReminder;
+            }
         }
 
         appendReminder(outputs, lastReminder);
+        appendReminder(outputs, lastTokenReminder);
         return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
@@ -432,6 +445,12 @@ public final class AgentEngine {
 
     private String observationFor(ToolCall call, ToolResult toolResult) {
         if (toolResult.success()) {
+            if (TokenEfficiencyState.isReadFile(call)) {
+                String path = TokenEfficiencyState.normalizedPath(call);
+                if (path != null) {
+                    return "[read_file path=" + path + "]\n" + toolResult.output();
+                }
+            }
             return toolResult.output();
         }
         return errorRecoveryAdvisor.advise(call, toolResult.errorMessage());
@@ -478,6 +497,86 @@ public final class AgentEngine {
             combinedOutput.append(outputs.get(i));
         }
         return combinedOutput.toString();
+    }
+
+    private static final class TokenEfficiencyState {
+        private static final int REPEATED_READ_THRESHOLD = 2;
+
+        private final Map<String, Integer> successfulReadCounts = new HashMap<String, Integer>();
+
+        private String afterToolCall(AgentContext context, ToolCall call, ToolResult result) {
+            if (!result.success()) {
+                return null;
+            }
+            if (isReadFile(call)) {
+                return afterSuccessfulRead(call);
+            }
+            if (isWriteTool(call) && requiresValidation(context)) {
+                return "[SYSTEM REMINDER] A file was just modified and this task asks for validation. "
+                        + "Next, prioritize running the validation/test command such as validation.ps1; "
+                        + "do not repeat-read unchanged files first.";
+            }
+            return null;
+        }
+
+        private String afterSuccessfulRead(ToolCall call) {
+            String path = normalizedPath(call);
+            if (path == null) {
+                return null;
+            }
+            int count = successfulReadCounts.getOrDefault(path, 0) + 1;
+            successfulReadCounts.put(path, count);
+            if (count <= REPEATED_READ_THRESHOLD) {
+                return null;
+            }
+            return "[SYSTEM REMINDER] You have successfully read the same read_file path " + count
+                    + " times: " + path + ". Stop repeating this read; modify, validate, test, or finish.";
+        }
+
+        private static boolean isReadFile(ToolCall call) {
+            return "read_file".equals(call.toolName());
+        }
+
+        private static boolean isWriteTool(ToolCall call) {
+            return "write_file".equals(call.toolName()) || "edit_file".equals(call.toolName());
+        }
+
+        private static String normalizedPath(ToolCall call) {
+            Object rawPath = call.arguments().get("path");
+            if (!(rawPath instanceof String)) {
+                return null;
+            }
+            String path = ((String) rawPath).trim().replace('\\', '/');
+            while (path.startsWith("./")) {
+                path = path.substring(2);
+            }
+            return path.isEmpty() ? null : path;
+        }
+
+        private boolean requiresValidation(AgentContext context) {
+            StringBuilder content = new StringBuilder();
+            append(content, context.goal());
+            append(content, context.lastThought());
+            for (String observation : context.observations()) {
+                append(content, observation);
+            }
+            String value = content.toString();
+            String lower = value.toLowerCase(Locale.ROOT);
+            return value.contains("验证")
+                    || lower.contains("validate")
+                    || lower.contains("validation.ps1")
+                    || lower.contains("test");
+        }
+
+        private void append(StringBuilder builder, String value) {
+            if (value == null || value.isBlank()) {
+                return;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(value);
+        }
     }
 
     private long elapsedMillis(long startNanos) {
