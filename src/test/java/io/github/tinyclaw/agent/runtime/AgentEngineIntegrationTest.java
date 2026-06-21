@@ -173,7 +173,7 @@ class AgentEngineIntegrationTest {
 
         private RunResult run(ModelProvider provider, String taskId, String goal) {
             ExecutorService executor = Executors.newFixedThreadPool(4);
-            AgentEngine engine = new AgentEngine(provider, registry, 4, false, NoopRunLogger.INSTANCE, executor);
+            AgentEngine engine = new AgentEngine(provider, registry, false, NoopRunLogger.INSTANCE, executor);
             try {
                 return engine.run(new Task(taskId, goal));
             } finally {

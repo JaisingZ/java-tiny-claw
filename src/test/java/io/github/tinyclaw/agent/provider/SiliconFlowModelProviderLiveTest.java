@@ -44,7 +44,6 @@ class SiliconFlowModelProviderLiveTest {
                 new SiliconFlowModelProvider(liveConfig(),
                         line -> providerExchange.append(line).append(System.lineSeparator())),
                 new ToolRegistry(),
-                1,
                 true);
 
         RunResult result = engine.run(new Task("live-thinking-trace",
@@ -129,7 +128,6 @@ class SiliconFlowModelProviderLiveTest {
         AgentEngine engine = new AgentEngine(
                 new SiliconFlowModelProvider(liveConfig()),
                 registry,
-                5,
                 true);
 
         RunResult result = engine.run(new Task("live-parallel-exec",

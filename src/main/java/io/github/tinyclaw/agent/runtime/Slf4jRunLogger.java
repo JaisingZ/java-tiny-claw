@@ -48,12 +48,11 @@ public final class Slf4jRunLogger implements RunLogger {
     }
 
     @Override
-    public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
-            List<ToolDefinition> tools) {
+    public void engineStarted(Path workDir, String model, boolean enableThinking, List<ToolDefinition> tools) {
         logEvent("[Engine] 引擎启动，锁定工作区: " + workDir.toAbsolutePath().normalize());
         logEvent("[Engine] 模型: " + model);
         logEvent("[Engine] 慢思考模式 (Thinking Phase): " + enableThinking);
-        logEvent("[Engine] 最大工具步数: " + maxSteps);
+        logEvent("[Engine] 主循环: decision-driven，无固定步数上限");
         logEvent("[Engine] 可用工具: " + toolNames(tools));
     }
 

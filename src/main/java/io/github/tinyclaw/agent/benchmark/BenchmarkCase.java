@@ -12,20 +12,15 @@ public final class BenchmarkCase {
     private final String setupCommand;
     private final String taskPrompt;
     private final String validateCommand;
-    private final int maxSteps;
     private final boolean enableThinking;
 
     public BenchmarkCase(String id, String name, String setupCommand, String taskPrompt, String validateCommand,
-            int maxSteps, boolean enableThinking) {
+            boolean enableThinking) {
         this.id = requireText(id, "id");
         this.name = requireText(name, "name");
         this.setupCommand = setupCommand == null ? "" : setupCommand;
         this.taskPrompt = requireText(taskPrompt, "taskPrompt");
         this.validateCommand = requireText(validateCommand, "validateCommand");
-        if (maxSteps <= 0) {
-            throw new IllegalArgumentException("maxSteps must be positive");
-        }
-        this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
     }
 
@@ -67,14 +62,6 @@ public final class BenchmarkCase {
 
     public String getValidateCommand() {
         return validateCommand();
-    }
-
-    public int maxSteps() {
-        return maxSteps;
-    }
-
-    public int getMaxSteps() {
-        return maxSteps();
     }
 
     public boolean enableThinking() {

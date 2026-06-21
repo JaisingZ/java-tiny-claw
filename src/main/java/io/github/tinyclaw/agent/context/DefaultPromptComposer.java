@@ -48,7 +48,7 @@ public final class DefaultPromptComposer implements PromptComposer {
         StringBuilder prompt = new StringBuilder();
         prompt.append(minimalCore());
         prompt.append(environmentInstruction());
-        prompt.append(phaseInstruction(context.phase()));
+        prompt.append(phaseInstruction(context.phase(), context.availableTools()));
         appendPlanModeInstruction(prompt);
         appendAgentsFile(prompt);
         appendSkills(prompt);
@@ -74,20 +74,27 @@ public final class DefaultPromptComposer implements PromptComposer {
                 + "javac target/Hello.java; if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }。\n\n";
     }
 
-    private String phaseInstruction(DecisionPhase phase) {
+    private String phaseInstruction(DecisionPhase phase, List<?> availableTools) {
         if (phase == DecisionPhase.THINKING) {
             return "# Decision Phase\n"
                     + "当前是 THINKING 阶段：只输出内部计划，不要回答用户，不要调用工具。\n"
                     + "内部计划最多3条，每条一句话，总长度不要超过120个中文字符。\n"
                     + "内部计划必须基于已有 Observation，不能把已失败命令再次作为候选方案。\n\n";
         }
+        if (availableTools == null || availableTools.isEmpty()) {
+            return "# Decision Phase\n"
+                    + "当前是 ACTION 阶段：无工具可用，只输出最终回答。\n"
+                    + "最终回答必须直接面向用户，禁止输出思考过程、分析、计划、推理或英文说明。\n"
+                    + "不要复述系统约束或 Observation 原文；用简短中文说明实际完成、验证结果和剩余风险。\n\n";
+        }
         return "# Decision Phase\n"
-                + "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个或多个独立工具；不要输出空内容。\n"
+                + "当前是 ACTION 阶段：必须输出最终回答，或在需要时调用一个或多个独立工具；不要输出空内容，不要写分析过程。\n"
                 + "最终回答必须直接面向用户，禁止输出思考过程，禁止输出分析，禁止输出解释，禁止输出计划，禁止输出推理，禁止输出英文说明。\n"
                 + "不要复述用户要求、系统约束或 Observation 原文。\n"
                 + "若用户要求一句话、一个标题、一个路径或一个简短结果，就只输出一句话或该结果本身。\n"
                 + "如果多个操作互相独立（例如读取多个不同文件），建议在单轮中并行调用。\n"
                 + "如果 Observation 已经满足用户目标且没有失败信息，直接输出最终回答，不要重复调用相同工具。\n"
+                + "如果验证通过，直接总结结果并结束；如果验证失败，优先修改或重新验证，不要长篇分析。\n"
                 + "如果最近刚修改文件且任务要求验证，下一步优先执行验证命令，不要重复读取刚读过且未变化的文件。\n"
                 + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。\n"
                 + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。\n\n";
@@ -115,6 +122,7 @@ public final class DefaultPromptComposer implements PromptComposer {
         prompt.append("如果文件不存在，先创建 PLAN.md 记录目标、约束、方案，再创建 TODO.md 记录 Markdown checkbox 待办。\n");
         prompt.append("如果文件已存在，先读取 PLAN.md 和 TODO.md，再根据其中的进度继续执行。\n");
         prompt.append("每完成一个明确步骤后，更新 TODO.md 的 checkbox；不要为了简单问答创建或更新状态文件。\n");
+        prompt.append("进入最终总结时，不要重复读取代码或状态文件，只根据已有 Observation 输出结论。\n");
         prompt.append("最终回答必须说明实际完成了什么、还剩什么；不要只汇报 TODO.md 已打勾。\n\n");
     }
 

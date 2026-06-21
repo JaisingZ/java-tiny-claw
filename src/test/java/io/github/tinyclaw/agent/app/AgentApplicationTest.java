@@ -70,12 +70,11 @@ class AgentApplicationTest {
     @Test
     void runOptionsParsesAllSupportedOptions() {
         RunOptions options = RunOptions.parse(
-                new String[] { "run", "--plan", "--thinking", "--max-steps", "3", "--debug", "--prompt", "hello" });
+                new String[] { "run", "--plan", "--thinking", "--debug", "--prompt", "hello" });
 
         assertThat(options.prompt()).isEqualTo("hello");
         assertThat(options.planMode()).isTrue();
         assertThat(options.thinking()).isTrue();
-        assertThat(options.maxSteps()).isEqualTo(3);
         assertThat(options.debug()).isTrue();
     }
 
@@ -84,7 +83,6 @@ class AgentApplicationTest {
         RunOptions options = RunOptions.parse(new String[] { "run", "--prompt", "hello" });
 
         assertThat(options.planMode()).isFalse();
-        assertThat(options.maxSteps()).isEqualTo(8);
     }
 
     @Test
@@ -121,16 +119,10 @@ class AgentApplicationTest {
     }
 
     @Test
-    void runOptionsRejectsInvalidMaxSteps() {
-        assertThatThrownBy(() -> RunOptions.parse(new String[] { "run", "--prompt", "hello", "--max-steps", "0" }))
+    void runOptionsRejectsMaxStepsOption() {
+        assertThatThrownBy(() -> RunOptions.parse(new String[] { "run", "--prompt", "hello", "--max-steps", "3" }))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("--max-steps must be positive");
-        assertThatThrownBy(() -> RunOptions.parse(new String[] { "run", "--prompt", "hello", "--max-steps", "abc" }))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Invalid --max-steps: abc");
-        assertThatThrownBy(() -> RunOptions.parse(new String[] { "run", "--prompt", "hello", "--max-steps" }))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Missing value for --max-steps");
+                .hasMessage("Unknown run option: --max-steps");
     }
 
     private ModelProvider noopProvider() {

@@ -37,7 +37,7 @@ class SessionWorkingMemoryFlowTest {
         Files.writeString(workDir.resolve("README.md"), "project secret: token_12345\n");
         ToolRegistry registry = new ToolRegistry().register(new ReadFileTool(workDir));
         ArticleFlowProvider provider = new ArticleFlowProvider();
-        AgentEngine engine = new AgentEngine(provider, registry, 4);
+        AgentEngine engine = new AgentEngine(provider, registry);
         SessionManager manager = new SessionManager(new WorkingMemoryPolicy(6, 2_000));
         AgentSession sessionA = manager.getOrCreate("chat-front");
         AgentSession sessionB = manager.getOrCreate("chat-back");

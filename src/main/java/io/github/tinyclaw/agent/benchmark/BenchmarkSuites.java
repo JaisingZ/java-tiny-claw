@@ -32,7 +32,6 @@ public final class BenchmarkSuites {
                         "当前目录有 config.json。请使用 edit_file 工具把 version 从 v1.0.0 改为 v2.0.0，不要做其他多余操作。",
                         "$match = Select-String -Path config.json -Pattern 'v2.0.0'; "
                                 + "if (-not $match) { exit 1 }",
-                        6,
                         false),
                 new BenchmarkCase(
                         "java_test_generation",
@@ -52,7 +51,6 @@ public final class BenchmarkSuites {
                                 + "javac Calculator.java CalculatorTest.java; "
                                 + "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; "
                                 + "java CalculatorTest",
-                        8,
                         false),
                 concurrencyCounterRepairCase(
                         "@'\n" + concurrencyCounterProgram() + "\n'@ | Set-Content -Path CounterRaceCheck.java",
@@ -74,7 +72,6 @@ public final class BenchmarkSuites {
                                 + "EOF",
                         "当前目录有 config.json。请使用 edit_file 工具把 version 从 v1.0.0 改为 v2.0.0，不要做其他多余操作。",
                         "grep 'v2.0.0' config.json",
-                        6,
                         false),
                 new BenchmarkCase(
                         "java_test_generation",
@@ -90,7 +87,6 @@ public final class BenchmarkSuites {
                                 + "测试文件不要依赖 JUnit，必须包含 main 方法，用 javac Calculator.java CalculatorTest.java "
                                 + "和 java CalculatorTest 可以直接验证 add(2, 3) == 5。",
                         "test -f CalculatorTest.java && javac Calculator.java CalculatorTest.java && java CalculatorTest",
-                        8,
                         false),
                 concurrencyCounterRepairCase(
                         "cat > CounterRaceCheck.java <<'EOF'\n"
@@ -108,7 +104,6 @@ public final class BenchmarkSuites {
                         + "找到并发安全问题，分析原因，修复它，并执行正确性验证。"
                         + "请把验证命令和结果写入最终回答。",
                 validateCommand,
-                12,
                 true);
     }
 

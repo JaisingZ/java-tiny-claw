@@ -4,7 +4,6 @@ lmstudio.thinkingMaxTokens=256
 lmstudio.actionMaxTokens=4096
 
 agent.workdir=.
-agent.maxSteps=8
 agent.enableThinking=false
 agent.planMode=false
 agent.debug=false

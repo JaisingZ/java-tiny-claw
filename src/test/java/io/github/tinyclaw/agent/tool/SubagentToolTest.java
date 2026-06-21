@@ -55,13 +55,13 @@ class SubagentToolTest {
     @Test
     void wrapsRunnerExceptionAsSubagentFailure() {
         SubagentTool tool = new SubagentTool(prompt -> {
-            throw new IllegalStateException("max_steps_exceeded");
+            throw new IllegalStateException("provider unavailable");
         });
 
         ToolResult result = tool.execute(new ToolCall("spawn_subagent",
                 singletonArgument("task_prompt", "调查日志")), state());
 
-        assertThat(result).isEqualTo(ToolResult.failure("subagent_failed: max_steps_exceeded"));
+        assertThat(result).isEqualTo(ToolResult.failure("subagent_failed: provider unavailable"));
     }
 
     @Test

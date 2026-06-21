@@ -45,7 +45,6 @@ class TelegramAgentWebhookServiceTest {
                 telegramConfig,
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 workDir,
-                2,
                 false,
                 true,
                 new WorkingMemoryPolicy(),
@@ -73,7 +72,6 @@ class TelegramAgentWebhookServiceTest {
                 telegramConfig,
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 workDir,
-                2,
                 false,
                 true,
                 new WorkingMemoryPolicy(),
@@ -109,7 +107,6 @@ class TelegramAgentWebhookServiceTest {
                 new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 workDir,
-                2,
                 false,
                 false,
                 false,
@@ -155,7 +152,6 @@ class TelegramAgentWebhookServiceTest {
                 new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 workDir,
-                2,
                 false,
                 false,
                 false,
@@ -185,7 +181,6 @@ class TelegramAgentWebhookServiceTest {
                 new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 workDir,
-                2,
                 false,
                 false,
                 true,
@@ -214,7 +209,6 @@ class TelegramAgentWebhookServiceTest {
                 new TelegramWebhookConfig("token-1", "", "127.0.0.1", 0, "/telegram/webhook", "", false, 40),
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 workDir,
-                2,
                 false,
                 false,
                 false,
@@ -246,7 +240,6 @@ class TelegramAgentWebhookServiceTest {
                 telegramConfig,
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 Path.of("."),
-                2,
                 false,
                 port -> {
                     tunnelPort.set(port);
@@ -277,7 +270,6 @@ class TelegramAgentWebhookServiceTest {
                 telegramConfig,
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 Path.of("."),
-                2,
                 false,
                 port -> {
                     throw new AssertionError("trycloudflare tunnel must not start when public URL is configured");
@@ -300,7 +292,6 @@ class TelegramAgentWebhookServiceTest {
                 telegramConfig,
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 Path.of("."),
-                2,
                 false,
                 port -> new FakeTunnel("https://abc-def.trycloudflare.com", events),
                 config -> new TelegramWebhookRegistrar(config, (url, body) -> {
@@ -324,7 +315,6 @@ class TelegramAgentWebhookServiceTest {
                 telegramConfig,
                 new LmStudioConfig("http://localhost:1234/v1", "model-1"),
                 Path.of("."),
-                2,
                 false,
                 port -> new FakeTunnel("https://abc-def.trycloudflare.com", events),
                 config -> new TelegramWebhookRegistrar(config, (url, body) -> {

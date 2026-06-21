@@ -159,8 +159,8 @@ public final class BenchmarkRunner {
             ToolRegistry registry = AgentToolRegistries.mainRegistry(provider, workDir);
             PromptComposer promptComposer = new DefaultPromptComposer(
                     workDir, false, workDir.resolve(".tinyclaw").resolve("state"));
-            AgentEngine engine = new AgentEngine(provider, registry, benchmarkCase.maxSteps(),
-                    benchmarkCase.enableThinking(), runLogger, promptComposer, workDir,
+            AgentEngine engine = new AgentEngine(provider, registry, benchmarkCase.enableThinking(), runLogger,
+                    promptComposer, workDir,
                     TraceRecorder.forSink(new FileTraceSink(workDir)));
             return engine.run(session, new Task("bench-" + benchmarkCase.id(), benchmarkCase.taskPrompt()));
         }

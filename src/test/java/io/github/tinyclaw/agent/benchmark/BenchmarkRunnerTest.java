@@ -100,7 +100,7 @@ class BenchmarkRunnerTest {
     }
 
     private BenchmarkCase caseWithId(String id) {
-        return new BenchmarkCase(id, "case " + id, "setup", "do task", "validate", 3, false);
+        return new BenchmarkCase(id, "case " + id, "setup", "do task", "validate", false);
     }
 
     private RunResult successResult() {

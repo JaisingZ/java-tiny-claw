@@ -42,7 +42,7 @@ class MainLoopJavaPrimitiveSmokeTest {
                 .register(new WriteFileTool(workDir))
                 .register(new BashTool(workDir, Duration.ofSeconds(10), 8_000));
 
-        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry, 5);
+        AgentEngine engine = new AgentEngine(new WriteCompileRunProvider(), registry);
 
         RunResult result = engine.run(new Task("task-java-smoke", "create and run minimal java file"));
 

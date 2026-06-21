@@ -17,7 +17,7 @@ public final class LmStudioConfig {
      */
     public static final String DEFAULT_BASE_URL = "http://localhost:1234/v1";
     public static final int DEFAULT_THINKING_MAX_TOKENS = 256;
-    public static final int DEFAULT_ACTION_MAX_TOKENS = 1024;
+    public static final int DEFAULT_ACTION_MAX_TOKENS = 8192;
 
     private final String baseUrl;
     private final String model;

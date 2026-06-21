@@ -51,15 +51,33 @@ class DefaultPromptComposerTest {
         DefaultPromptComposer composer = new DefaultPromptComposer(workDir);
 
         String prompt = composer.compose(new PromptContext(workDir, DecisionPhase.ACTION,
-                Collections.<ToolDefinition>emptyList()));
+                Collections.singletonList(new ToolDefinition("bash", "run command",
+                        Collections.<String, Object>singletonMap("type", "object")))));
 
         assertThat(prompt)
                 .contains("当前是 ACTION 阶段")
                 .contains("调用一个或多个独立工具")
                 .contains("function.arguments")
+                .contains("验证通过")
+                .contains("直接总结")
                 .contains("刚修改文件")
                 .contains("优先执行验证")
                 .contains("不要重复读取刚读过且未变化的文件");
+    }
+
+    @Test
+    void actionPhaseWithoutToolsOnlyAllowsFinalAnswer() {
+        DefaultPromptComposer composer = new DefaultPromptComposer(workDir);
+
+        String prompt = composer.compose(new PromptContext(workDir, DecisionPhase.ACTION,
+                Collections.<ToolDefinition>emptyList()));
+
+        assertThat(prompt)
+                .contains("当前是 ACTION 阶段")
+                .contains("无工具可用")
+                .contains("只输出最终回答")
+                .doesNotContain("function.arguments")
+                .doesNotContain("调用一个或多个独立工具");
     }
 
     @Test
@@ -92,6 +110,8 @@ class DefaultPromptComposerTest {
                 .contains("如果文件不存在")
                 .contains("如果文件已存在")
                 .contains("更新 TODO.md 的 checkbox")
+                .contains("最终总结")
+                .contains("不要重复读取代码或状态文件")
                 .contains("最终回答必须说明实际完成了什么")
                 .doesNotContain("ACTION 阶段开始长程任务时，先检查状态目录");
     }

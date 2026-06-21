@@ -19,14 +19,12 @@ import java.util.TreeMap;
  */
 public final class TelegramAgentConfig {
 
-    private static final int DEFAULT_MAX_STEPS = 8;
     private static final boolean DEFAULT_ENABLE_THINKING = false;
     private static final boolean DEFAULT_PLAN_MODE = false;
     private static final boolean DEFAULT_DEBUG = false;
     private static final boolean DEFAULT_INTENT_FILTER_ENABLED = false;
 
     private final Path workDir;
-    private final int maxSteps;
     private final boolean enableThinking;
     private final boolean planMode;
     private final boolean debug;
@@ -35,11 +33,10 @@ public final class TelegramAgentConfig {
     private final WorkingMemoryPolicy workingMemoryPolicy;
     private final ToolPermissionConfig toolPermissionConfig;
 
-    private TelegramAgentConfig(Path workDir, int maxSteps, boolean enableThinking, boolean planMode, boolean debug,
+    private TelegramAgentConfig(Path workDir, boolean enableThinking, boolean planMode, boolean debug,
             boolean intentFilterEnabled, List<String> intentFilterMarkers, WorkingMemoryPolicy workingMemoryPolicy,
             ToolPermissionConfig toolPermissionConfig) {
         this.workDir = workDir;
-        this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.planMode = planMode;
         this.debug = debug;
@@ -58,8 +55,6 @@ public final class TelegramAgentConfig {
         }
         return new TelegramAgentConfig(
                 Path.of(optional(values, "agent.workdir", ".")),
-                parsePositiveInt(optional(values, "agent.maxSteps", String.valueOf(DEFAULT_MAX_STEPS)),
-                        "agent.maxSteps"),
                 parseBoolean(optional(values, "agent.enableThinking", String.valueOf(DEFAULT_ENABLE_THINKING)),
                         "agent.enableThinking"),
                 parseBoolean(optional(values, "agent.planMode", String.valueOf(DEFAULT_PLAN_MODE)),
@@ -92,7 +87,7 @@ public final class TelegramAgentConfig {
         try (InputStream inputStream = TelegramAgentConfig.class.getClassLoader()
                 .getResourceAsStream("agent.properties")) {
             if (inputStream == null) {
-                return new TelegramAgentConfig(Path.of("."), DEFAULT_MAX_STEPS, DEFAULT_ENABLE_THINKING,
+                return new TelegramAgentConfig(Path.of("."), DEFAULT_ENABLE_THINKING,
                         DEFAULT_PLAN_MODE,
                         DEFAULT_DEBUG,
                         DEFAULT_INTENT_FILTER_ENABLED,
@@ -109,10 +104,6 @@ public final class TelegramAgentConfig {
 
     public Path workDir() {
         return workDir;
-    }
-
-    public int maxSteps() {
-        return maxSteps;
     }
 
     public boolean enableThinking() {

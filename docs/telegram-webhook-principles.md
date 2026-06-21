@@ -66,7 +66,6 @@ Telegram Bot API
 - `telegram.webhook.registrationMaxAttempts`：`setWebhook` 最大尝试次数（含首次），默认 `3`。
 - `telegram.webhook.registrationRetryIntervalSeconds`：`setWebhook` 重试间隔秒数，默认 `20`。
 - `agent.workdir`：Webhook 模式 Agent 工作目录，默认 `.`。
-- `agent.maxSteps`：Webhook 模式 Agent 最大步数，默认 `8`。
 - `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
 - `agent.planMode`：Webhook 模式是否开启任务级状态外部化，默认 `false`。
 - `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。

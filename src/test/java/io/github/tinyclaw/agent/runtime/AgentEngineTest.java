@@ -96,6 +96,18 @@ class AgentEngineTest {
     }
 
     @Test
+    void failsWhenActionReturnsUnsupportedDecision() {
+        EngineFixture fixture = fixture();
+
+        RunResult result = fixture.run((state, phase, tools, systemPrompt) -> response(new Decision() {
+        }), "task-unsupported-action", "unsupported action");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("unsupported_decision");
+        assertThat(result.observations()).isEmpty();
+    }
+
+    @Test
     void recordsTraceTreeForSuccessfulRun() {
         List<TraceSpan> exported = new ArrayList<TraceSpan>();
         EngineFixture fixture = fixture()
@@ -114,7 +126,6 @@ class AgentEngineTest {
         assertThat(root.durationMillis()).isGreaterThanOrEqualTo(0L);
         assertThat(root.attributes())
                 .containsEntry("work_dir", ".")
-                .containsEntry("max_steps", 4)
                 .containsEntry("enable_thinking", false)
                 .containsEntry("goal_preview", "echo once")
                 .containsEntry("success", true);
@@ -204,18 +215,22 @@ class AgentEngineTest {
 
     @Test
     void failedRunWithSessionDoesNotPersistNoisyObservations() {
-        EngineFixture fixture = fixture()
-                .withTools(new EchoTool())
-                .withMaxSteps(1);
+        EngineFixture fixture = fixture().withTools(new EchoTool());
         AgentSession session = new AgentSession("chat-failed");
+        int[] calls = new int[] { 0 };
 
-        RunResult result = fixture.run(constantProvider(tool("echo", "text", "noisy")),
-                session, "task-session-failed", "repeat noisy failure");
+        RunResult result = fixture.run((state, phase, tools, systemPrompt) -> {
+            calls[0]++;
+            if (calls[0] == 1) {
+                return response(tool("echo", "text", "noisy"));
+            }
+            throw new IllegalStateException("provider stopped");
+        }, session, "task-session-failed", "repeat noisy failure");
 
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
         assertThat(result.observations()).containsExactly("noisy");
         assertThat(session.history()).isEmpty();
-        assertThat(session.metrics().modelCallCount()).isEqualTo(1);
+        assertThat(session.metrics().modelCallCount()).isEqualTo(2);
         assertThat(session.metrics().toolCallCount()).isEqualTo(1);
     }
 
@@ -250,17 +265,16 @@ class AgentEngineTest {
         assertThat(result.observations()).containsExactly("hello");
     }
 
-    /**
-     * 找不到工具时作为可恢复观测进入下一轮，最终由步数兜底。
-     */
     @Test
-    void recordsMissingToolAsRecoveryObservationUntilMaxSteps() {
-        EngineFixture fixture = fixture().withMaxSteps(1);
+    void recordsMissingToolAsRecoveryObservationUntilModelFinishes() {
+        EngineFixture fixture = fixture();
 
-        RunResult result = fixture.run(constantProvider(tool("missing")), "task-2", "missing tool");
+        RunResult result = fixture.run(scriptedProvider(
+                tool("missing"),
+                finish("reported missing tool")), "task-2", "missing tool");
 
-        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
-        assertThat(result.failureReason()).isEqualTo("max_steps_exceeded");
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("reported missing tool");
         assertThat(result.observations()).hasSize(1);
         assertThat(result.observations().get(0))
                 .contains("Error executing missing: Unknown tool: missing")
@@ -288,18 +302,20 @@ class AgentEngineTest {
         assertThat(provider.contexts().get(1).observations()).containsExactly(result.observations().get(0));
     }
 
-    /**
-     * 达到步数上限时失败
-     */
     @Test
-    void failsWhenMaxStepsIsExceeded() {
-        EngineFixture fixture = fixture().withTools(new EchoTool()).withMaxSteps(1);
+    void continuesToolLoopUntilFinishDecisionWithoutStepLimit() {
+        EngineFixture fixture = fixture().withTools(new EchoTool());
 
-        RunResult result = fixture.run(constantProvider(tool("echo", "text", "hello")), "task-4", "loop forever");
+        RunResult result = fixture.run(scriptedProvider(
+                tool("echo", "text", "one"),
+                tool("echo", "text", "two"),
+                tool("echo", "text", "three"),
+                finish("done")), "task-4", "multi-step tool loop");
 
-        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
-        assertThat(result.failureReason()).isEqualTo("max_steps_exceeded");
-        assertThat(result.stepCount()).isEqualTo(1);
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("done");
+        assertThat(result.stepCount()).isEqualTo(3);
+        assertThat(result.observations()).containsExactly("one", "two", "three");
     }
 
     /**
@@ -422,15 +438,16 @@ class AgentEngineTest {
      * 并行决策中的未知工具保持与单工具相同的失败文案
      */
     @Test
-    void failsWhenParallelDecisionContainsMissingTool() {
+    void recordsParallelMissingToolUntilModelFinishes() {
         EngineFixture fixture = fixture().withTools(new ReadOnlyEchoTool("read1", "hello"));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("missing"))), "task-parallel-missing", "parallel missing");
+                parallel(call("read1"), call("missing")),
+                finish("reported parallel missing tool")), "task-parallel-missing", "parallel missing");
 
-        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
-        assertThat(result.failureReason()).isEqualTo("max_steps_exceeded");
-        assertThat(result.observations()).hasSize(4);
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("reported parallel missing tool");
+        assertThat(result.observations()).hasSize(1);
         assertThat(result.observations().get(0))
                 .contains("hello")
                 .contains("Error executing missing: Unknown tool: missing");
@@ -463,7 +480,7 @@ class AgentEngineTest {
      */
     @Test
     void injectsSystemReminderAfterThreeRepeatedIneffectiveToolCalls() {
-        EngineFixture fixture = fixture().withTools(new FailingTool()).withMaxSteps(5);
+        EngineFixture fixture = fixture().withTools(new FailingTool());
         ReminderAwareProvider provider = new ReminderAwareProvider();
 
         RunResult result = fixture.run(provider, "task-reminder", "avoid repeated failure");
@@ -483,7 +500,7 @@ class AgentEngineTest {
      */
     @Test
     void appendsSystemReminderAtEndOfCurrentObservation() {
-        EngineFixture fixture = fixture().withTools(new FailingTool()).withMaxSteps(4);
+        EngineFixture fixture = fixture().withTools(new FailingTool());
         RecordingContextProvider provider = new RecordingContextProvider(
                 tool("fail_tool"),
                 tool("fail_tool"),
@@ -505,8 +522,7 @@ class AgentEngineTest {
     @Test
     void appendsAtMostOneSystemReminderForParallelFailuresPerTurn() {
         EngineFixture fixture = fixture()
-                .withTools(new FailingTool(), new FailingTool("fail_tool_2"))
-                .withMaxSteps(4);
+                .withTools(new FailingTool(), new FailingTool("fail_tool_2"));
         RecordingContextProvider provider = new RecordingContextProvider(
                 parallel(call("fail_tool"), call("fail_tool_2")),
                 parallel(call("fail_tool"), call("fail_tool_2")),
@@ -526,7 +542,7 @@ class AgentEngineTest {
 
     @Test
     void injectsValidationReminderAfterSuccessfulWriteWhenTaskRequiresValidation() {
-        EngineFixture fixture = fixture().withTools(new WriteLikeTool("edit_file")).withMaxSteps(3);
+        EngineFixture fixture = fixture().withTools(new WriteLikeTool("edit_file"));
         RecordingContextProvider provider = new RecordingContextProvider(
                 tool("edit_file", "path", "src/App.java"),
                 finish("validated"));
@@ -546,7 +562,7 @@ class AgentEngineTest {
 
     @Test
     void injectsRepeatedReadReminderAfterReadingSamePathMoreThanTwice() {
-        EngineFixture fixture = fixture().withTools(new ReadFileLikeTool()).withMaxSteps(5);
+        EngineFixture fixture = fixture().withTools(new ReadFileLikeTool());
         RecordingContextProvider provider = new RecordingContextProvider(
                 tool("read_file", "path", "src/App.java"),
                 tool("read_file", "path", "./src/App.java"),
@@ -563,6 +579,41 @@ class AgentEngineTest {
                 .contains("[SYSTEM REMINDER]")
                 .contains("same read_file path")
                 .contains("modify, validate, test, or finish");
+    }
+
+    @Test
+    void entersFinalOnlyActionAfterValidationPasses() {
+        EngineFixture fixture = fixture()
+                .withTools(new FixedOutputTool("bash", "expected=100000\nactual=100000\nresult=ok\n"));
+        ValidationAwareProvider provider = new ValidationAwareProvider();
+
+        RunResult result = fixture.run(provider, "task-final-only",
+                "修复后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("validated");
+        assertThat(provider.toolCounts()).containsExactly(1, 0);
+        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.contexts().get(1).observations().get(0)).contains("result=ok");
+    }
+
+    @Test
+    void keepsToolsVisibleAndAddsReminderAfterValidationFails() {
+        EngineFixture fixture = fixture()
+                .withTools(new FixedOutputTool("bash", "expected=100000\nactual=17312\nresult=failed\n"));
+        ValidationAwareProvider provider = new ValidationAwareProvider();
+
+        RunResult result = fixture.run(provider, "task-validation-failed",
+                "修复后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).isEqualTo("needs fix");
+        assertThat(provider.toolCounts()).containsExactly(1, 1);
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0))
+                .contains("result=failed")
+                .contains("[SYSTEM REMINDER]")
+                .contains("validation failed");
     }
 
     /**
@@ -698,12 +749,14 @@ class AgentEngineTest {
     }
 
     @Test
-    void defaultSubagentRunnerFailsWhenMaxStepsExceeded() {
-        DefaultSubagentRunner runner = new DefaultSubagentRunner(constantProvider(tool("missing")), Path.of("."));
+    void defaultSubagentRunnerFailsWhenProviderFails() {
+        DefaultSubagentRunner runner = new DefaultSubagentRunner((state, phase, tools, systemPrompt) -> {
+            throw new IllegalStateException("provider unavailable");
+        }, Path.of("."));
 
-        ToolResult result = runner.run("never finishes");
+        ToolResult result = runner.run("inspect files");
 
-        assertThat(result).isEqualTo(ToolResult.failure("max_steps_exceeded"));
+        assertThat(result).isEqualTo(ToolResult.failure("provider_error: provider unavailable"));
     }
 
     @Test
@@ -823,7 +876,7 @@ class AgentEngineTest {
     @Test
     void sessionHistoryStoresSystemReminderObservation() {
         ReminderAwareProvider provider = new ReminderAwareProvider();
-        EngineFixture fixture = fixture().withTools(new FailingTool()).withMaxSteps(5);
+        EngineFixture fixture = fixture().withTools(new FailingTool());
         AgentSession session = new AgentSession("chat-system-reminder");
 
         RunResult result = fixture.run(provider, session, "task-session-reminder", "repeat same failed tool");
@@ -1045,6 +1098,26 @@ class AgentEngineTest {
         }
     }
 
+    private static final class FixedOutputTool implements Tool {
+        private final String name;
+        private final String output;
+
+        private FixedOutputTool(String name, String output) {
+            this.name = name;
+            this.output = output;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public ToolResult execute(ToolCall call, AgentContext state) {
+            return ToolResult.success(output);
+        }
+    }
+
     private static final class ReadOnlyEchoTool implements Tool {
         private final String name;
         private final String output;
@@ -1189,6 +1262,33 @@ class AgentEngineTest {
         }
     }
 
+    private static final class ValidationAwareProvider implements ModelProvider {
+        private final List<Integer> toolCounts = new ArrayList<Integer>();
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+
+        @Override
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            toolCounts.add(Integer.valueOf(availableTools.size()));
+            if (state.observations().isEmpty()) {
+                return response(tool("bash", "command", "powershell -File validation.ps1"));
+            }
+            if (state.observations().get(state.observations().size() - 1).contains("result=ok")) {
+                return response(finish("validated"));
+            }
+            return response(finish("needs fix"));
+        }
+
+        private List<Integer> toolCounts() {
+            return toolCounts;
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
+        }
+    }
+
     private static final class RecordingSubagentPromptProvider implements ModelProvider {
         private final List<String> prompts = new ArrayList<String>();
         private final List<String> toolNames = new ArrayList<String>();
@@ -1295,8 +1395,7 @@ class AgentEngineTest {
         }
 
         @Override
-        public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
-                List<ToolDefinition> tools) {
+        public void engineStarted(Path workDir, String model, boolean enableThinking, List<ToolDefinition> tools) {
         }
 
         @Override
@@ -1403,7 +1502,6 @@ class AgentEngineTest {
     private final class EngineFixture {
         private final ToolRegistry registry = new ToolRegistry();
         private RunLogger runLogger = new RunLoggerAdapter();
-        private int maxSteps = 4;
         private boolean thinking = false;
         private PromptComposer promptComposer = null;
         private ContextCompactor contextCompactor = null;
@@ -1413,11 +1511,6 @@ class AgentEngineTest {
             for (Tool tool : tools) {
                 registry.register(tool);
             }
-            return this;
-        }
-
-        private EngineFixture withMaxSteps(int value) {
-            maxSteps = value;
             return this;
         }
 
@@ -1472,10 +1565,10 @@ class AgentEngineTest {
                     ? new ContextCompactor()
                     : contextCompactor;
             if (composer == null) {
-                return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor, compactor,
+                return new AgentEngine(provider, registry, thinking, runLogger, executor, compactor,
                         traceRecorder);
             }
-            return new AgentEngine(provider, registry, maxSteps, thinking, runLogger, executor,
+            return new AgentEngine(provider, registry, thinking, runLogger, executor,
                     composer, Path.of("."), compactor, traceRecorder);
         }
     }

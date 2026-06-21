@@ -23,7 +23,7 @@ class LmStudioConfigTest {
         assertThat(config.baseUrl()).isEqualTo("http://localhost:1234/v1");
         assertThat(config.model()).isEqualTo("qwen-local");
         assertThat(config.thinkingMaxTokens()).isEqualTo(256);
-        assertThat(config.actionMaxTokens()).isEqualTo(1024);
+        assertThat(config.actionMaxTokens()).isEqualTo(8192);
     }
 
     @Test

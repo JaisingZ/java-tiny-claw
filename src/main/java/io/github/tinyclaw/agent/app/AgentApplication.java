@@ -118,9 +118,8 @@ public final class AgentApplication {
         ToolRegistry registry = AgentToolRegistries.mainRegistry(provider, workDir);
         logMountedTools(registry, runLogger);
         PromptComposer promptComposer = new DefaultPromptComposer(workDir, options.planMode(), cliStateDir());
-        runLogger.engineStarted(workDir, config.model(), options.maxSteps(), options.thinking(),
-                registry.definitions());
-        AgentEngine engine = new AgentEngine(provider, registry, options.maxSteps(), options.thinking(), runLogger,
+        runLogger.engineStarted(workDir, config.model(), options.thinking(), registry.definitions());
+        AgentEngine engine = new AgentEngine(provider, registry, options.thinking(), runLogger,
                 promptComposer, workDir, TraceRecorder.forSink(new FileTraceSink(workDir)));
 
         RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));

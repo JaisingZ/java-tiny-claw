@@ -66,7 +66,7 @@ This is an experimental project, not a production Agent platform.
 
 | Area | English | 中文 |
 | --- | --- | --- |
-| Runtime | Owns the main loop, max steps, tool execution order, failure handling, and metrics. | 负责主循环、最大步数、工具执行顺序、失败处理和指标。 |
+| Runtime | Owns the main loop, tool execution order, failure handling, and metrics. | 负责主循环、工具执行顺序、失败处理和指标。 |
 | Provider | Adapts OpenAI-compatible chat completions into internal decisions. | 将 OpenAI-compatible Chat Completions 映射为内部决策。 |
 | Context | Builds the system prompt from core rules, workspace constraints, `AGENTS.md`, and skill summaries. | 从核心规则、工作区约束、`AGENTS.md` 和技能摘要组装 System Prompt。 |
 | Tool Registry | Registers tools, exposes schemas, routes execution, and applies middleware. | 注册工具、暴露工具定义、路由执行并应用 Middleware。 |
@@ -202,7 +202,7 @@ Run with two-phase thinking:
 开启两阶段 Thinking：
 
 ```sh
-mvn exec:java -Dexec.args="run --thinking --max-steps 8 --prompt <prompt>"
+mvn exec:java -Dexec.args="run --thinking --prompt <prompt>"
 ```
 
 Run with Plan Mode:
@@ -223,10 +223,12 @@ Example: prepare a small Java concurrency counter workspace, then let the Agent 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\prepare-concurrency-counter-workspace.ps1
-mvn exec:java "-Dexec.args=run --thinking --plan --max-steps 12 --prompt 请在 target/concurrency-counter-workspace 中自行探索，找到并发安全问题，分析原因，修复并执行正确性验证。"
+mvn exec:java "-Dexec.args=run --thinking --plan --prompt 请在 target/concurrency-counter-workspace 中自行探索，找到并发安全问题，分析原因，修复并执行正确性验证。"
 Set-Location target\concurrency-counter-workspace
 powershell -File .\validation.ps1
 ```
+
+> 主循环按 `FinishDecision` 结束；`ToolDecision` 和 `ParallelToolDecision` 继续执行工具调用，Harness 仅保留系统提醒，不做硬性停机阈值。
 
 Do not rely only on the final answer. Check `RESULT`, `OBSERVATIONS`, `METRICS`, `.tinyclaw/traces/trace-*.json`, the validation output, and the actual files in the workspace.
 
@@ -266,7 +268,6 @@ Common `agent.properties` settings:
 
 ```properties
 agent.workdir=.
-agent.maxSteps=8
 agent.enableThinking=false
 agent.planMode=false
 agent.debug=false

@@ -19,7 +19,7 @@
 ctx = AgentContext.create(task)
 reminder = new SystemReminderInjector()
 
-while ctx.stepCount < maxSteps:
+while true:
   if enableThinking:
     request THINKING decision with no tools
     if ThinkingDecision:
@@ -52,7 +52,6 @@ while ctx.stepCount < maxSteps:
 
   return failed("unsupported_decision")
 
-return failed("max_steps_exceeded")
 ```
 
 ## 约束
@@ -77,7 +76,6 @@ return failed("max_steps_exceeded")
 - 连续无效工具调用 -> 在最新观测末尾追加 `[SYSTEM REMINDER]`，提醒模型停止重复、换策略或说明需要人工输入
 - 并行工具执行异常 -> `parallel_execution_failed: <message>`
 - 不支持的决策类型 -> `unsupported_decision`
-- 超过最大步数 -> `max_steps_exceeded`
 
 ## 当前实现对应
 
@@ -93,5 +91,6 @@ return failed("max_steps_exceeded")
 - 覆盖 `FinishDecision`、`ToolDecision`、`ParallelToolDecision` 和可选 `ThinkingDecision`。
 - 每轮关键步骤都有 `RunLogger` 可读日志。
 - 每次 CLI/Telegram 运行都能生成 Root/Turn/LLM/Tool 层级的本地 JSON trace。
-- `maxSteps` 能截断无限循环。
+- 无硬性步数阈值；主循环以 `FinishDecision`、`unsupported_*` 等失败分支结束。
+- `SystemReminder` 负责在行为偏离时给模型单轮提示，不触发硬性停机。
 - 工具失败不会穿透成主循环崩溃。

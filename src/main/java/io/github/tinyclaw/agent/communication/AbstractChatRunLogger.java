@@ -40,8 +40,7 @@ public abstract class AbstractChatRunLogger implements RunLogger {
     }
 
     @Override
-    public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
-            List<ToolDefinition> tools) {
+    public void engineStarted(Path workDir, String model, boolean enableThinking, List<ToolDefinition> tools) {
     }
 
     @Override

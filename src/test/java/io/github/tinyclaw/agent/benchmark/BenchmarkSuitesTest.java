@@ -21,7 +21,6 @@ class BenchmarkSuitesTest {
         assertThat(concurrencyCase.setupCommand()).contains("CounterRaceCheck.java");
         assertThat(concurrencyCase.taskPrompt()).contains("自行探索").contains("并发安全问题");
         assertThat(concurrencyCase.validateCommand()).contains("CounterRaceCheck").contains("100000");
-        assertThat(concurrencyCase.maxSteps()).isGreaterThanOrEqualTo(12);
         assertThat(concurrencyCase.enableThinking()).isTrue();
     }
 

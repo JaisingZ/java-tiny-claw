@@ -155,7 +155,7 @@ optional thinking -> action decision -> tool/finish -> observe -> decide
 - 不支持的决策返回 `unsupported_decision`。
 - Thinking 阶段返回非 `ThinkingDecision` 时返回 `unsupported_thinking_decision`。
 - 并行工具执行异常返回 `parallel_execution_failed: ...`。
-- 超过最大步数返回 `max_steps_exceeded`。
+- 主循环不再设置硬性步数上限；未支持决策会直接失败返回。
 
 ## 5. 开发约束
 

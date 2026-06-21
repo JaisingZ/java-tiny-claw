@@ -21,7 +21,6 @@ class TelegramAgentConfigTest {
         TelegramAgentConfig config = TelegramAgentConfig.from(new HashMap<String, String>());
 
         assertThat(config.workDir()).isEqualTo(Path.of("."));
-        assertThat(config.maxSteps()).isEqualTo(8);
         assertThat(config.enableThinking()).isFalse();
         assertThat(config.planMode()).isFalse();
         assertThat(config.debug()).isFalse();
@@ -42,7 +41,6 @@ class TelegramAgentConfigTest {
     void loadsFromPropertiesMap() {
         Map<String, String> values = new HashMap<String, String>();
         values.put("agent.workdir", "sandbox");
-        values.put("agent.maxSteps", "12");
         values.put("agent.enableThinking", "true");
         values.put("agent.planMode", "true");
         values.put("agent.debug", "true");
@@ -62,7 +60,6 @@ class TelegramAgentConfigTest {
         TelegramAgentConfig config = TelegramAgentConfig.from(values);
 
         assertThat(config.workDir()).isEqualTo(Path.of("sandbox"));
-        assertThat(config.maxSteps()).isEqualTo(12);
         assertThat(config.enableThinking()).isTrue();
         assertThat(config.planMode()).isTrue();
         assertThat(config.debug()).isTrue();
@@ -83,7 +80,6 @@ class TelegramAgentConfigTest {
     void loadsFromPropertiesFile() throws Exception {
         Path configPath = tempDir.resolve("agent.properties");
         Files.writeString(configPath, "agent.workdir=work\n"
-                + "agent.maxSteps=5\n"
                 + "agent.enableThinking=true\n"
                 + "agent.planMode=true\n"
                 + "agent.debug=true\n"
@@ -102,7 +98,6 @@ class TelegramAgentConfigTest {
         TelegramAgentConfig config = TelegramAgentConfig.load(configPath);
 
         assertThat(config.workDir()).isEqualTo(Path.of("work"));
-        assertThat(config.maxSteps()).isEqualTo(5);
         assertThat(config.enableThinking()).isTrue();
         assertThat(config.planMode()).isTrue();
         assertThat(config.debug()).isTrue();
@@ -116,16 +111,6 @@ class TelegramAgentConfigTest {
         assertThat(config.toolPermissionConfig().hotReload()).isFalse();
         assertThat(config.toolPermissionConfig().reloadInterval().getSeconds()).isEqualTo(4);
         assertThat(config.toolPermissionConfig().toolActions().get("write_file")).isEqualTo(ToolPermissionAction.DENY);
-    }
-
-    @Test
-    void rejectsInvalidMaxSteps() {
-        Map<String, String> values = new HashMap<String, String>();
-        values.put("agent.maxSteps", "0");
-
-        assertThatThrownBy(() -> TelegramAgentConfig.from(values))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("agent.maxSteps");
     }
 
     @Test

@@ -18,7 +18,6 @@ import java.util.UUID;
  */
 public final class DefaultSubagentRunner implements SubagentRunner {
 
-    private static final int SUBAGENT_MAX_STEPS = 6;
     private static final String SUBAGENT_SYSTEM_SUFFIX = "\n\n# Subagent Constraints\n"
             + "你是 Explorer Subagent，只负责受限探索。\n"
             + "必须基于工具证据回答；没有证据就继续读取相关文件或说明未找到。\n"
@@ -55,8 +54,8 @@ public final class DefaultSubagentRunner implements SubagentRunner {
         }
 
         ToolRegistry registry = AgentToolRegistries.subagentRegistry(workDir);
-        AgentEngine engine = new AgentEngine(provider, registry, SUBAGENT_MAX_STEPS, false,
-                NoopRunLogger.INSTANCE, withSubagentInstruction(promptComposer), workDir);
+        AgentEngine engine = new AgentEngine(provider, registry, false, NoopRunLogger.INSTANCE,
+                withSubagentInstruction(promptComposer), workDir);
         try {
             RunResult result = engine.run(new Task("subagent-" + UUID.randomUUID(), taskPrompt.trim()));
             if (result.status() == RunStatus.SUCCESS) {

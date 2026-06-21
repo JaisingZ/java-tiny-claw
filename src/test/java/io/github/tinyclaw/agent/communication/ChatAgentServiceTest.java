@@ -46,7 +46,7 @@ class ChatAgentServiceTest {
         AtomicReference<String> goal = new AtomicReference<String>();
         WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(
-                logger -> new AgentEngine(new EchoFinishProvider(taskId, goal), new ToolRegistry(), 2, false, logger),
+                logger -> new AgentEngine(new EchoFinishProvider(taskId, goal), new ToolRegistry(), false, logger),
                 TelegramStyleRunLogger::new,
                 executor);
 
@@ -110,7 +110,7 @@ class ChatAgentServiceTest {
         RecordingSession session = new RecordingSession();
         WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(
-                logger -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger),
+                logger -> new AgentEngine(provider, new ToolRegistry(), false, logger),
                 TelegramStyleRunLogger::new,
                 executor,
                 new SessionManager());
@@ -137,7 +137,7 @@ class ChatAgentServiceTest {
         RecordingSession session = new RecordingSession();
         WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(
-                logger -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger),
+                logger -> new AgentEngine(provider, new ToolRegistry(), false, logger),
                 TelegramStyleRunLogger::new,
                 executor,
                 new SessionManager());
@@ -158,7 +158,7 @@ class ChatAgentServiceTest {
         RecordingSession session = new RecordingSession();
         WorkspaceSerialExecutor executor = new WorkspaceSerialExecutor();
         ChatAgentService service = new ChatAgentService(
-                (logger, message) -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger,
+                (logger, message) -> new AgentEngine(provider, new ToolRegistry(), false, logger,
                         new DefaultPromptComposer(Path.of("."), true,
                                 Path.of(".tinyclaw", "state", "chat", message.chatId())),
                         Path.of(".")),
@@ -210,7 +210,7 @@ class ChatAgentServiceTest {
                 (logger, message) -> {
                     providerCalls.incrementAndGet();
                     return new AgentEngine(new EchoFinishProvider(new AtomicReference<String>(),
-                            new AtomicReference<String>()), new ToolRegistry(), 2, false, logger);
+                            new AtomicReference<String>()), new ToolRegistry(), false, logger);
                 },
                 TelegramStyleRunLogger::new,
                 executor,
@@ -236,7 +236,7 @@ class ChatAgentServiceTest {
                 (logger, message) -> {
                     providerCalls.incrementAndGet();
                     return new AgentEngine(new EchoFinishProvider(new AtomicReference<String>(),
-                            new AtomicReference<String>()), new ToolRegistry(), 2, false, logger);
+                            new AtomicReference<String>()), new ToolRegistry(), false, logger);
                 },
                 TelegramStyleRunLogger::new,
                 executor,
@@ -264,7 +264,7 @@ class ChatAgentServiceTest {
                     new ModelUsage(12, 4, 16), "model-a", true);
         };
         ChatAgentService service = new ChatAgentService(
-                logger -> new AgentEngine(provider, new ToolRegistry(), 2, false, logger),
+                logger -> new AgentEngine(provider, new ToolRegistry(), false, logger),
                 TelegramStyleRunLogger::new,
                 executor,
                 sessionManager);

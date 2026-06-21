@@ -333,7 +333,7 @@ class LmStudioModelProviderTest {
                 .contains("model=qwen-local")
                 .contains("messageCount=2")
                 .contains("toolCount=0")
-                .contains("maxTokens=1024")
+                .contains("maxTokens=8192")
                 .contains("lastUserMessageLength=8")
                 .contains("========== [Provider][ACTION] Response Summary ==========")
                 .contains("finishReason=stop")

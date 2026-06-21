@@ -33,8 +33,7 @@ public interface RunLogger {
     /**
      * 记录引擎启动。
      */
-    void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
-            List<ToolDefinition> tools);
+    void engineStarted(Path workDir, String model, boolean enableThinking, List<ToolDefinition> tools);
 
     /**
      * 记录回合开始。

@@ -48,8 +48,7 @@ public final class NoopRunLogger implements RunLogger {
      * 忽略引擎启动事件。
      */
     @Override
-    public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
-            List<ToolDefinition> tools) {
+    public void engineStarted(Path workDir, String model, boolean enableThinking, List<ToolDefinition> tools) {
     }
 
     /**

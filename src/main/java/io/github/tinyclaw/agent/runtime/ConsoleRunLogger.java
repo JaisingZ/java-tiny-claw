@@ -57,9 +57,8 @@ public final class ConsoleRunLogger implements RunLogger {
     }
 
     @Override
-    public void engineStarted(Path workDir, String model, int maxSteps, boolean enableThinking,
-            List<ToolDefinition> tools) {
-        delegate.engineStarted(workDir, model, maxSteps, enableThinking, tools);
+    public void engineStarted(Path workDir, String model, boolean enableThinking, List<ToolDefinition> tools) {
+        delegate.engineStarted(workDir, model, enableThinking, tools);
     }
 
     @Override

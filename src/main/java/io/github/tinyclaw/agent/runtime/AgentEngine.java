@@ -44,7 +44,6 @@ public final class AgentEngine {
 
     private final ModelProvider provider;
     private final ToolRegistry toolRegistry;
-    private final int maxSteps;
     private final boolean enableThinking;
     private final RunLogger runLogger;
     private final ExecutorService toolExecutor;
@@ -57,107 +56,106 @@ public final class AgentEngine {
     /**
      * 创建不启用 thinking 的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps) {
-        this(provider, toolRegistry, maxSteps, false);
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry) {
+        this(provider, toolRegistry, false);
     }
 
     /**
      * 创建可选 thinking 阶段的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking) {
-        this(provider, toolRegistry, maxSteps, enableThinking, NoopRunLogger.INSTANCE);
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking) {
+        this(provider, toolRegistry, enableThinking, NoopRunLogger.INSTANCE);
     }
 
     /**
      * 创建带可读日志输出的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor());
+        this(provider, toolRegistry, enableThinking, runLogger, createToolExecutor());
     }
 
     /**
      * 创建带 Prompt 组装器和可读日志输出的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, PromptComposer promptComposer, Path workDir) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, promptComposer, workDir,
+        this(provider, toolRegistry, enableThinking, runLogger, promptComposer, workDir,
                 TraceRecorder.noop());
     }
 
     /**
      * 创建带 Prompt 组装器、可读日志输出和结构化 Trace 的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, PromptComposer promptComposer, Path workDir, TraceRecorder traceRecorder) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor(),
+        this(provider, toolRegistry, enableThinking, runLogger, createToolExecutor(),
                 promptComposer, workDir, traceRecorder);
     }
 
     /**
      * 创建带 Plan Mode 状态目录的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, Path workDir, boolean planMode, Path stateDir) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, workDir, planMode, stateDir,
+        this(provider, toolRegistry, enableThinking, runLogger, workDir, planMode, stateDir,
                 TraceRecorder.noop());
     }
 
     /**
      * 创建带 Plan Mode 状态目录和结构化 Trace 的主循环。
      */
-    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    public AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, Path workDir, boolean planMode, Path stateDir, TraceRecorder traceRecorder) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, createToolExecutor(),
+        this(provider, toolRegistry, enableThinking, runLogger, createToolExecutor(),
                 new DefaultPromptComposer(workDir == null ? Path.of(".") : workDir, planMode, stateDir),
                 workDir == null ? Path.of(".") : workDir, traceRecorder);
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+        this(provider, toolRegistry, enableThinking, runLogger, toolExecutor,
                 new DefaultPromptComposer(Path.of(".")), Path.of("."), new ContextCompactor());
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, ContextCompactor contextCompactor) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor, contextCompactor,
+        this(provider, toolRegistry, enableThinking, runLogger, toolExecutor, contextCompactor,
                 TraceRecorder.noop());
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, ContextCompactor contextCompactor,
             TraceRecorder traceRecorder) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+        this(provider, toolRegistry, enableThinking, runLogger, toolExecutor,
                 new DefaultPromptComposer(Path.of(".")), Path.of("."), contextCompactor, traceRecorder);
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+        this(provider, toolRegistry, enableThinking, runLogger, toolExecutor,
                 promptComposer, workDir, new ContextCompactor(), TraceRecorder.noop());
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir,
             TraceRecorder traceRecorder) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+        this(provider, toolRegistry, enableThinking, runLogger, toolExecutor,
                 promptComposer, workDir, new ContextCompactor(), traceRecorder);
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir,
             ContextCompactor contextCompactor) {
-        this(provider, toolRegistry, maxSteps, enableThinking, runLogger, toolExecutor,
+        this(provider, toolRegistry, enableThinking, runLogger, toolExecutor,
                 promptComposer, workDir, contextCompactor, TraceRecorder.noop());
     }
 
-    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, int maxSteps, boolean enableThinking,
+    AgentEngine(ModelProvider provider, ToolRegistry toolRegistry, boolean enableThinking,
             RunLogger runLogger, ExecutorService toolExecutor, PromptComposer promptComposer, Path workDir,
             ContextCompactor contextCompactor, TraceRecorder traceRecorder) {
         this.provider = provider;
         this.toolRegistry = toolRegistry;
-        this.maxSteps = maxSteps;
         this.enableThinking = enableThinking;
         this.runLogger = runLogger == null ? NoopRunLogger.INSTANCE : runLogger;
         this.toolExecutor = toolExecutor;
@@ -169,7 +167,7 @@ public final class AgentEngine {
     }
 
     /**
-     * 执行任务直到模型结束、工具失败、provider 失败或达到最大步数。
+     * 执行任务直到模型结束、provider 失败或运行时遇到不可恢复错误。
      */
     public RunResult run(Task task) {
         AgentContext context = AgentContext.create(task);
@@ -191,23 +189,19 @@ public final class AgentEngine {
         try (TraceScope rootScope = traceRecorder.startRoot("agent.run")) {
             TraceSpan rootSpan = rootScope.span();
             rootSpan.putAttribute("work_dir", workDir.toString());
-            rootSpan.putAttribute("max_steps", maxSteps);
             rootSpan.putAttribute("enable_thinking", enableThinking);
             rootSpan.putAttribute("goal_preview", preview(context.goal(), 160));
 
             SystemReminderInjector systemReminderInjector = new SystemReminderInjector();
             TokenEfficiencyState tokenEfficiencyState = new TokenEfficiencyState();
             RunResult result = null;
-            while (context.stepCount() < maxSteps) {
+            while (true) {
                 TurnResult turn = runTurn(context, systemReminderInjector, tokenEfficiencyState, metrics, rootSpan);
                 if (turn.result() != null) {
                     result = turn.result();
                     break;
                 }
                 context = turn.context();
-            }
-            if (result == null) {
-                result = fail(context, "max_steps_exceeded", metrics);
             }
             rootSpan.putAttribute("success", result.status() == RunStatus.SUCCESS);
             rootSpan.putAttribute("step_count", result.stepCount());
@@ -285,7 +279,7 @@ public final class AgentEngine {
     }
 
     private Decision requestActionDecision(AgentContext context, RunMetricsCollector metrics, TraceSpan turnSpan) {
-        List<ToolDefinition> toolDefinitions = toolRegistry.definitions();
+        List<ToolDefinition> toolDefinitions = actionToolsFor(context);
         runLogger.actionStarted(toolDefinitions);
         ProviderResponse response = invokeProvider(context, DecisionPhase.ACTION, toolDefinitions, metrics, turnSpan);
 
@@ -303,6 +297,8 @@ public final class AgentEngine {
             TraceSpan providerSpan = providerScope.span();
             providerSpan.putAttribute("phase", phase.name());
             providerSpan.putAttribute("tool_count", availableTools.size());
+            providerSpan.putAttribute("final_only_action",
+                    phase == DecisionPhase.ACTION && availableTools.isEmpty());
             String systemPrompt = promptComposer.compose(new PromptContext(workDir, phase, availableTools));
             AgentContext compactedContext = contextCompactor.compact(context);
             providerSpan.putAttribute("system_prompt_chars", lengthOf(systemPrompt));
@@ -329,6 +325,14 @@ public final class AgentEngine {
                     ModelUsage.empty(), false));
             throw new ProviderCallException(reason);
         }
+    }
+
+    private List<ToolDefinition> actionToolsFor(AgentContext context) {
+        if (TokenEfficiencyState.requiresValidation(context)
+                && TokenEfficiencyState.validationPassed(context)) {
+            return Collections.emptyList();
+        }
+        return toolRegistry.definitions();
     }
 
     private TurnResult applyDecision(AgentContext context, Decision decision,
@@ -511,6 +515,10 @@ public final class AgentEngine {
             if (isReadFile(call)) {
                 return afterSuccessfulRead(call);
             }
+            if (requiresValidation(context) && validationFailed(result.output())) {
+                return "[SYSTEM REMINDER] The validation failed. Fix the failing code or run a targeted check next; "
+                        + "avoid long analysis and do not finish until validation passes.";
+            }
             if (isWriteTool(call) && requiresValidation(context)) {
                 return "[SYSTEM REMINDER] A file was just modified and this task asks for validation. "
                         + "Next, prioritize running the validation/test command such as validation.ps1; "
@@ -553,7 +561,7 @@ public final class AgentEngine {
             return path.isEmpty() ? null : path;
         }
 
-        private boolean requiresValidation(AgentContext context) {
+        private static boolean requiresValidation(AgentContext context) {
             StringBuilder content = new StringBuilder();
             append(content, context.goal());
             append(content, context.lastThought());
@@ -568,7 +576,46 @@ public final class AgentEngine {
                     || lower.contains("test");
         }
 
-        private void append(StringBuilder builder, String value) {
+        private static boolean validationPassed(AgentContext context) {
+            String latest = latestObservation(context);
+            if (latest == null) {
+                return false;
+            }
+            String lower = latest.toLowerCase(Locale.ROOT);
+            return lower.contains("result=ok")
+                    || lower.contains("build success")
+                    || lower.contains("failures: 0")
+                    || lower.contains("failures=0");
+        }
+
+        private static boolean validationFailed(String output) {
+            if (output == null || output.isBlank()) {
+                return false;
+            }
+            String lower = output.toLowerCase(Locale.ROOT);
+            if (lower.contains("result=failed")
+                    || lower.contains("build failure")
+                    || lower.contains("failures: 1")
+                    || lower.contains("failures=1")) {
+                return true;
+            }
+            int exitCodeIndex = lower.indexOf("exitcode=");
+            if (exitCodeIndex < 0) {
+                return false;
+            }
+            int valueStart = exitCodeIndex + "exitcode=".length();
+            return valueStart < lower.length() && lower.charAt(valueStart) != '0';
+        }
+
+        private static String latestObservation(AgentContext context) {
+            List<String> observations = context.observations();
+            if (observations.isEmpty()) {
+                return null;
+            }
+            return observations.get(observations.size() - 1);
+        }
+
+        private static void append(StringBuilder builder, String value) {
             if (value == null || value.isBlank()) {
                 return;
             }
