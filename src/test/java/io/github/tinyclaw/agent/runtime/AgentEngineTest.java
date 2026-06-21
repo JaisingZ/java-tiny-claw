@@ -181,7 +181,7 @@ class AgentEngineTest {
                 .withTraceRecorder(TraceRecorder.forSink(exported::add));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("read2")),
+                multiCall(call("read1"), call("read2")),
                 finish("done")), "task-parallel-trace", "parallel echo");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -518,15 +518,15 @@ class AgentEngineTest {
     }
 
     /**
-     * 并行工具决策执行成功
+     * 多工具调用决策执行成功
      */
     @Test
-    void runsParallelToolsInDeclaredOrder() {
+    void runsMultiCallToolsInDeclaredOrder() {
         EngineFixture fixture = fixture()
                 .withTools(new ReadOnlyEchoTool("read1", "hello"), new ReadOnlyEchoTool("read2", "world"));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("read2")),
+                multiCall(call("read1"), call("read2")),
                 finish("done")), "task-parallel", "parallel echo");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -534,14 +534,14 @@ class AgentEngineTest {
     }
 
     /**
-     * 并行决策中的未知工具保持与单工具相同的失败文案
+     * 多工具调用中的未知工具保持与单工具相同的失败文案
      */
     @Test
-    void recordsParallelMissingToolUntilModelFinishes() {
+    void recordsMultiCallMissingToolUntilModelFinishes() {
         EngineFixture fixture = fixture().withTools(new ReadOnlyEchoTool("read1", "hello"));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("missing")),
+                multiCall(call("read1"), call("missing")),
                 finish("reported parallel missing tool")), "task-parallel-missing", "parallel missing");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -556,11 +556,11 @@ class AgentEngineTest {
      * 并行工具中的失败也按声明顺序写入同一条观测，供下一轮恢复。
      */
     @Test
-    void recordsMixedParallelSuccessAndFailureInDeclaredOrder() {
+    void recordsMixedMultiCallSuccessAndFailureInDeclaredOrder() {
         EngineFixture fixture = fixture()
                 .withTools(new ReadOnlyEchoTool("read1", "hello"), new FailingTool());
         RecordingContextProvider provider = new RecordingContextProvider(
-                parallel(call("read1"), call("fail_tool")),
+                multiCall(call("read1"), call("fail_tool")),
                 finish("done"));
 
         RunResult result = fixture.run(provider, "task-parallel-recovery", "parallel recovery");
@@ -619,13 +619,13 @@ class AgentEngineTest {
      * 并行工具多次无效时，每轮最多追加一条 Reminder。
      */
     @Test
-    void appendsAtMostOneSystemReminderForParallelFailuresPerTurn() {
+    void appendsAtMostOneSystemReminderForMultiCallFailuresPerTurn() {
         EngineFixture fixture = fixture()
                 .withTools(new FailingTool(), new FailingTool("fail_tool_2"));
         RecordingContextProvider provider = new RecordingContextProvider(
-                parallel(call("fail_tool"), call("fail_tool_2")),
-                parallel(call("fail_tool"), call("fail_tool_2")),
-                parallel(call("fail_tool"), call("fail_tool_2")),
+                multiCall(call("fail_tool"), call("fail_tool_2")),
+                multiCall(call("fail_tool"), call("fail_tool_2")),
+                multiCall(call("fail_tool"), call("fail_tool_2")),
                 finish("done"));
 
         RunResult result = fixture.run(provider, "task-parallel-reminder", "repeat parallel failures");
@@ -716,14 +716,14 @@ class AgentEngineTest {
     }
 
     /**
-     * 空并行决策也会推进一步
+     * 空工具调用决策也会推进一步
      */
     @Test
-    void advancesWhenParallelDecisionIsEmpty() {
+    void advancesWhenToolDecisionIsEmpty() {
         EngineFixture fixture = fixture();
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(),
+                multiCall(),
                 finish("done")), "task-parallel-empty", "parallel empty");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -735,7 +735,7 @@ class AgentEngineTest {
      * 混合只读和副作用工具时 结果顺序仍以决策声明顺序为准
      */
     @Test
-    void keepsDeclaredOutputOrderForMixedParallelTools() {
+    void keepsDeclaredOutputOrderForMixedMultiCallTools() {
         List<String> executionOrder = Collections.synchronizedList(new ArrayList<String>());
         EngineFixture fixture = fixture().withTools(
                 new TrackingTool("read1", "hello", false, executionOrder),
@@ -744,7 +744,7 @@ class AgentEngineTest {
                 new TrackingTool("write2", "write-b", true, executionOrder));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("write1"), call("read2"), call("write2")),
+                multiCall(call("read1"), call("write1"), call("read2"), call("write2")),
                 finish("done")), "task-parallel-mixed", "parallel mixed");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -756,7 +756,7 @@ class AgentEngineTest {
      * 单工具和并行工具都只推进一步并追加一条观测
      */
     @Test
-    void keepsStepAndObservationSemanticsForSingleAndParallelTools() {
+    void keepsStepAndObservationSemanticsForSingleAndMultiCallTools() {
         EngineFixture singleFixture = fixture().withTools(new EchoTool());
         RunResult singleResult = singleFixture.run(scriptedProvider(
                 tool("echo", "text", "hello"),
@@ -765,7 +765,7 @@ class AgentEngineTest {
         EngineFixture parallelFixture = fixture()
                 .withTools(new ReadOnlyEchoTool("read1", "hello"), new ReadOnlyEchoTool("read2", "world"));
         RunResult parallelResult = parallelFixture.run(scriptedProvider(
-                parallel(call("read1"), call("read2")),
+                multiCall(call("read1"), call("read2")),
                 finish("done")), "task-parallel-shape", "parallel shape");
 
         assertThat(singleResult.stepCount()).isEqualTo(1);
@@ -859,12 +859,12 @@ class AgentEngineTest {
     }
 
     @Test
-    void runsParallelSpawnSubagentCallsInDeclaredOrder() {
+    void runsMultiCallSpawnSubagentCallsInDeclaredOrder() {
         SubagentTool tool = new SubagentTool(prompt -> ToolResult.success("summary-" + prompt));
         EngineFixture fixture = fixture().withTools(tool);
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(
+                multiCall(
                         call("spawn_subagent", "task_prompt", "a"),
                         call("spawn_subagent", "task_prompt", "b")),
                 finish("done")), "task-parallel-subagent", "parallel subagents");
@@ -1071,7 +1071,7 @@ class AgentEngineTest {
         return new FinishDecision(answer);
     }
 
-    private static ToolDecision parallel(ToolCall... calls) {
+    private static ToolDecision multiCall(ToolCall... calls) {
         return new ToolDecision(Arrays.asList(calls));
     }
 

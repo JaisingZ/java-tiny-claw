@@ -72,17 +72,17 @@ public final class Slf4jRunLogger implements RunLogger {
     }
 
     @Override
+    public void reviewStarted(int attempt) {
+        logEvent("[Engine][Phase 1.5] 隐藏工具，审查慢思考计划 (attempt " + attempt + ")...");
+    }
+
+    @Override
     public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
         if (!verboseEvents) {
             return;
         }
         logEvent("[Engine][Phase 1] 慢思考完成 (返回 " + textLength(decision.thought())
                 + " 字符, 耗时 " + durationMillis + "ms)");
-    }
-
-    @Override
-    public void reviewStarted(int attempt) {
-        logEvent("[Engine][Phase 1.5] 隐藏工具，审查慢思考计划 (attempt " + attempt + ")...");
     }
 
     @Override
