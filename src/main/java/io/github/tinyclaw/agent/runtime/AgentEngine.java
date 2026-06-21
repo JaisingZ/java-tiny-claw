@@ -8,6 +8,7 @@ import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
@@ -41,6 +42,8 @@ import java.util.concurrent.Executors;
  * 只负责短期上下文推进、模型决策和工具执行。
  */
 public final class AgentEngine {
+
+    private static final int MAX_REVIEW_ATTEMPTS = 2;
 
     private final ModelProvider provider;
     private final ToolRegistry toolRegistry;
@@ -248,7 +251,7 @@ public final class AgentEngine {
 
             if (enableThinking) {
                 try {
-                    context = runThinkingPhase(context, metrics, turnSpan);
+                    context = runPlanningReviewLoop(context, metrics, turnSpan);
                 } catch (ProviderCallException ex) {
                     return TurnResult.done(fail(context, ex.reason(), metrics));
                 }
@@ -262,6 +265,30 @@ public final class AgentEngine {
             }
             return applyDecision(context, decision, systemReminderInjector, tokenEfficiencyState, metrics, turnSpan);
         }
+    }
+
+    private AgentContext runPlanningReviewLoop(AgentContext context, RunMetricsCollector metrics,
+            TraceSpan turnSpan) {
+        AgentContext current = context;
+        for (int attempt = 1; attempt <= MAX_REVIEW_ATTEMPTS; attempt++) {
+            current = runThinkingPhase(current, metrics, turnSpan);
+            ReviewDecision review = runReviewPhase(current, attempt, metrics, turnSpan);
+            if (review.status() == ReviewDecision.Status.APPROVED) {
+                if (!hasText(review.approvedPlan())) {
+                    throw new ProviderCallException("plan_review_failed");
+                }
+                return current.withApprovedPlan(review.approvedPlan());
+            }
+            if (review.status() == ReviewDecision.Status.REVISE) {
+                current = current.withReviewFeedback(review.feedback());
+                continue;
+            }
+            if (review.status() == ReviewDecision.Status.BLOCKED) {
+                throw new ProviderCallException("plan_review_blocked: " + nullSafe(review.reason()));
+            }
+            throw new ProviderCallException("unsupported_review_decision");
+        }
+        throw new ProviderCallException("plan_review_failed");
     }
 
     private AgentContext runThinkingPhase(AgentContext context, RunMetricsCollector metrics, TraceSpan turnSpan) {
@@ -278,6 +305,21 @@ public final class AgentEngine {
         return context.think(thinking.thought());
     }
 
+    private ReviewDecision runReviewPhase(AgentContext context, int attempt, RunMetricsCollector metrics,
+            TraceSpan turnSpan) {
+        runLogger.reviewStarted(attempt);
+        ProviderResponse response = invokeProvider(context, DecisionPhase.REVIEW,
+                Collections.<ToolDefinition>emptyList(), metrics, turnSpan);
+
+        if (!(response.decision() instanceof ReviewDecision)) {
+            throw new ProviderCallException("unsupported_review_decision");
+        }
+
+        ReviewDecision review = (ReviewDecision) response.decision();
+        runLogger.reviewCompleted(review, response.durationMillis());
+        return review;
+    }
+
     private Decision requestActionDecision(AgentContext context, RunMetricsCollector metrics, TraceSpan turnSpan) {
         List<ToolDefinition> toolDefinitions = actionToolsFor(context);
         runLogger.actionStarted(toolDefinitions);
@@ -292,7 +334,7 @@ public final class AgentEngine {
     private ProviderResponse invokeProvider(AgentContext context, DecisionPhase phase,
             List<ToolDefinition> availableTools, RunMetricsCollector metrics, TraceSpan turnSpan) {
         long start = System.nanoTime();
-        String spanName = phase == DecisionPhase.THINKING ? "llm.thinking" : "llm.action";
+        String spanName = spanName(phase);
         try (TraceScope providerScope = traceRecorder.startChild(turnSpan, spanName)) {
             TraceSpan providerSpan = providerScope.span();
             providerSpan.putAttribute("phase", phase.name());
@@ -303,6 +345,9 @@ public final class AgentEngine {
             AgentContext compactedContext = contextCompactor.compact(context);
             providerSpan.putAttribute("system_prompt_chars", lengthOf(systemPrompt));
             providerSpan.putAttribute("input_context_message_count", contextMessageCount(compactedContext));
+            providerSpan.putAttribute("draft_thought_chars", lengthOf(compactedContext.draftThought()));
+            providerSpan.putAttribute("review_feedback_chars", lengthOf(compactedContext.reviewFeedback()));
+            providerSpan.putAttribute("approved_plan_chars", lengthOf(compactedContext.approvedPlan()));
             ModelResponse response = provider.decide(compactedContext, phase, availableTools, systemPrompt);
             long durationMillis = elapsedMillis(start);
             providerSpan.putAttribute("model", response.model());
@@ -325,6 +370,16 @@ public final class AgentEngine {
                     ModelUsage.empty(), false));
             throw new ProviderCallException(reason);
         }
+    }
+
+    private String spanName(DecisionPhase phase) {
+        if (phase == DecisionPhase.THINKING) {
+            return "llm.thinking";
+        }
+        if (phase == DecisionPhase.REVIEW) {
+            return "llm.review";
+        }
+        return "llm.action";
     }
 
     private List<ToolDefinition> actionToolsFor(AgentContext context) {
@@ -564,7 +619,9 @@ public final class AgentEngine {
         private static boolean requiresValidation(AgentContext context) {
             StringBuilder content = new StringBuilder();
             append(content, context.goal());
-            append(content, context.lastThought());
+            append(content, context.draftThought());
+            append(content, context.reviewFeedback());
+            append(content, context.approvedPlan());
             for (String observation : context.observations()) {
                 append(content, observation);
             }
@@ -643,10 +700,24 @@ public final class AgentEngine {
 
     private int contextMessageCount(AgentContext context) {
         int count = 1 + context.workingMemory().size() + context.observations().size();
-        if (context.lastThought() != null && !context.lastThought().isBlank()) {
+        if (context.draftThought() != null && !context.draftThought().isBlank()) {
+            count++;
+        }
+        if (context.reviewFeedback() != null && !context.reviewFeedback().isBlank()) {
+            count++;
+        }
+        if (context.approvedPlan() != null && !context.approvedPlan().isBlank()) {
             count++;
         }
         return count;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private String nullSafe(String value) {
+        return value == null ? "" : value;
     }
 
     private TraceSpan latestChild(TraceSpan parent, String name) {

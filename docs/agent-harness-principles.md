@@ -59,6 +59,7 @@ CLI `run` 默认不挂载 Telegram 审批 Middleware，保持命令行运行语�
 ### 2.5 观测优先
 
 - 以可读日志为主，使用 `RunLogger` 输出关键步骤；需要复盘决策路径时使用 `.tinyclaw/traces` 下的 JSON trace。
+- 默认日志与 trace 不记录 `ThinkingDecision`、`ReviewDecision` 的原始文本，只记录长度、阶段与决策类型；便于安全与隐私可观测。
 - CLI 非 debug 场景输出 `OBSERVATIONS`，用于闭环判断。
 - 最终输出以 `RunResult` 为准，覆盖成功/失败、步数、观察信息和运行指标。
 
@@ -77,7 +78,7 @@ Runtime 负责主循环与控制流。
 - 接收 `Task`
 - 创建并推进 `AgentContext`
 - 调用 `ModelProvider`
-- 处理 `ThinkingDecision`、`FinishDecision`、`ToolDecision`、`ParallelToolDecision`
+- 处理 `ThinkingDecision`、`ReviewDecision`、`FinishDecision`、`ToolDecision`、`ParallelToolDecision`
 - 执行工具调用并记录观测
 - 决定继续、成功或失败
 
@@ -135,16 +136,31 @@ Communication 负责把外部消息转换成 Agent 任务。
 当前主循环采用：
 
 ```text
-optional thinking -> action decision -> tool/finish -> observe -> decide
+optional thinking -> optional review loop -> action decision -> tool/finish -> observe -> decide
 ```
 
 其中：
 
 - `thinking`：可选 `THINKING` 阶段，模型输出 `ThinkingDecision`。
+- `review loop`：可选 `REVIEW` 微循环，模型输出 `ReviewDecision` 审查草案。
+  - `APPROVED`：返回压缩后的 `approvedPlan`，进入 `ACTION`。
+  - `REVISE`：返回 `reviewFeedback`，触发下一轮 `THINKING`，最多 2 次 review attempt。
+  - `BLOCKED`：返回需要人工补充信息的 `reason`，本次 run 失败。
 - `action decision`：`ACTION` 阶段，模型输出最终回答或工具调用。
 - `tool/finish`：Runtime 执行工具或结束任务。
 - `observe`：Runtime 记录工具结果并更新 `AgentContext`。
 - `decide`：Runtime 判断继续、失败或结束。
+
+### 4.2-a Self Review 微循环边界
+
+- `DecisionPhase.REVIEW` 只用于 `Self Review`，不挂载工具。
+- `AgentContext` 明确分离三类内部文本：
+  - `draftThought`：THINKING 产出的草稿，只给 REVIEW 看。
+  - `reviewFeedback`：REVIEW 的修改意见，只给下一轮 THINKING 看。
+  - `approvedPlan`：REVIEW 批准后的压缩计划，只给 ACTION 看。
+- `ReviewDecision` 三态是互斥且完整的：`APPROVED`、`REVISE`、`BLOCKED`。
+- review 轮次不计入工具执行类 `max step`，它是决策质量闭环，不是执行量控制。
+- 任一 `REVIEW` 决策无效（类型非法或缺少约束字段）直接失败；超限两轮反馈则走失败分支。
 
 ### 4.3 失败处理
 
@@ -154,7 +170,9 @@ optional thinking -> action decision -> tool/finish -> observe -> decide
 - 工具失败会作为观测回写上下文，并附带恢复建议。
 - 不支持的决策返回 `unsupported_decision`。
 - Thinking 阶段返回非 `ThinkingDecision` 时返回 `unsupported_thinking_decision`。
+- REVIEW 阶段返回非 `ReviewDecision` 时返回 `unsupported_review_decision`。
 - 并行工具执行异常返回 `parallel_execution_failed: ...`。
+- Review 连续要求修改且 2 次 attempt 后仍未批准时返回 `plan_review_failed`。
 - 主循环不再设置硬性步数上限；未支持决策会直接失败返回。
 
 ## 5. 开发约束

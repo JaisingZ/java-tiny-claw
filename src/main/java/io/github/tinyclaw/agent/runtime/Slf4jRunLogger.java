@@ -1,6 +1,7 @@
 package io.github.tinyclaw.agent.runtime;
 
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
@@ -77,13 +78,28 @@ public final class Slf4jRunLogger implements RunLogger {
         }
         logEvent("[Engine][Phase 1] 慢思考完成 (返回 " + textLength(decision.thought())
                 + " 字符, 耗时 " + durationMillis + "ms)");
-        writeLine("🧠 [内部思考]:");
-        writeLine(decision.thought());
+    }
+
+    @Override
+    public void reviewStarted(int attempt) {
+        logEvent("[Engine][Phase 1.5] 隐藏工具，审查慢思考计划 (attempt " + attempt + ")...");
+    }
+
+    @Override
+    public void reviewCompleted(ReviewDecision decision, long durationMillis) {
+        if (!verboseEvents) {
+            return;
+        }
+        logEvent("[Engine][Phase 1.5] 审查完成，状态 " + decision.status()
+                + " (plan=" + textLength(decision.approvedPlan())
+                + ", feedback=" + textLength(decision.feedback())
+                + ", reason=" + textLength(decision.reason())
+                + ", 耗时 " + durationMillis + "ms)");
     }
 
     @Override
     public void actionStarted(List<ToolDefinition> tools) {
-        logEvent("[Engine][Phase 2] 恢复工具挂载，等待模型采取行动...");
+        logEvent("[Engine][Phase 2] 按审查通过计划恢复工具挂载，等待模型采取行动...");
         logEvent("[Engine][Phase 2] 可见工具: " + toolNames(tools));
     }
 

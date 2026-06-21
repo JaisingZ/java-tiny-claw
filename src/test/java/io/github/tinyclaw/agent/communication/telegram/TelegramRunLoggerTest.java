@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.tinyclaw.agent.communication.ChatSession;
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.tool.ToolResult;
@@ -26,7 +27,9 @@ class TelegramRunLoggerTest {
         TelegramRunLogger logger = new TelegramRunLogger(session);
 
         logger.thinkingStarted();
-        logger.thinkingCompleted(new ThinkingDecision("inspect files"), 12L);
+        logger.thinkingCompleted(new ThinkingDecision("secret inspect files"), 12L);
+        logger.reviewStarted(1);
+        logger.reviewCompleted(ReviewDecision.approved("secret approved plan"), 7L);
         logger.toolStarted(new ToolCall("read_file", Collections.<String, Object>singletonMap("path", "README.md")));
         logger.toolCompleted(new ToolCall("read_file", Collections.<String, Object>emptyMap()),
                 ToolResult.success("long output"), 8L);
@@ -36,10 +39,15 @@ class TelegramRunLoggerTest {
         assertThat(session.statuses()).containsExactly(
                 "模型正在慢思考...",
                 "慢思考完成，耗时 12ms。",
+                "正在审查执行计划，第 1 次。",
+                "计划审查完成，状态 APPROVED，耗时 7ms。",
                 "准备执行工具 read_file，参数 keys [path]。",
                 "工具 read_file 执行成功，耗时 8ms。");
         assertThat(session.messages()).containsExactly("done");
         assertThat(session.errors()).containsExactly("Agent 运行失败：boom");
+        assertThat(String.join("\n", session.statuses()))
+                .doesNotContain("secret inspect files")
+                .doesNotContain("secret approved plan");
     }
 
     private static final class RecordingSession implements ChatSession {

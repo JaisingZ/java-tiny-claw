@@ -42,6 +42,7 @@ Decision decide(AgentContext context, DecisionPhase phase, List<ToolDefinition> 
 Provider 只能返回项目内部的 `Decision` 类型：
 
 - `ThinkingDecision`：慢思考阶段的文本结果。
+- `ReviewDecision`：自评审阶段结果，包含 `APPROVED`、`REVISE`、`BLOCKED` 三态。
 - `ToolDecision`：请求执行一个工具。
 - `ParallelToolDecision`：请求执行多个工具。
 - `FinishDecision`：任务完成并给出最终回答。
@@ -70,6 +71,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 实现时应把厂商消息结构收敛到项目内部模型：
 
 - 模型普通文本响应收敛为 `FinishDecision` 或 `ThinkingDecision`。
+- `REVIEW` 阶段文本响应收敛为 `ReviewDecision`（`APPROVED` / `REVISE` / `BLOCKED`）。
 - 模型工具调用响应收敛为 `ToolDecision` 或 `ParallelToolDecision`。
 - 工具名、参数和调用 ID 收敛为内部 `ToolCall`。
 - 厂商错误统一转换为 Provider 异常，由 `Runtime` 按 `provider_error` 失败规则处理。
@@ -80,10 +82,19 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 `DecisionPhase` 决定模型是否能看到工具：
 
-- `THINKING`：不挂载工具，只允许模型输出思考文本，并由 Provider 返回 `ThinkingDecision`。
+- `THINKING`：不挂载工具，只允许模型输出 `ThinkingDecision`（草稿输入）。
+- `REVIEW`：不挂载工具，只允许模型输出 `ReviewDecision`：
+  - `APPROVED`：返回压缩后的 `approvedPlan` 并切到 `ACTION`。
+  - `REVISE`：返回 `reviewFeedback` 并触发下一轮 `THINKING`。
+  - `BLOCKED`：返回 `reason`，由 Runtime 失败结束并要求人工补充。
 - `ACTION`：挂载可用工具，允许模型输出工具调用或最终回答。
 
 物理工具执行必须等完整工具调用参数生成并通过 Provider 解析后，才交给 `Runtime`、`ToolRegistry` 和 `Tool`。Provider 不允许边流式生成参数边触发工具执行。
+
+## Debug 与观测输出约定
+
+- `Provider` 日志/trace 输出默认记录决策类型、长度、阶段与耗时，不记录 `ThinkingDecision`、`ReviewDecision` 的原始文本。
+- 如有特殊调试需求，需通过会话级开关显式开启原文输出，且保持最小权限范围。
 
 ## 验收标准
 

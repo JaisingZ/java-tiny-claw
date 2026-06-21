@@ -1,6 +1,7 @@
 package io.github.tinyclaw.agent.runtime;
 
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
@@ -49,6 +50,16 @@ public interface RunLogger {
      * 记录慢思考完成。
      */
     void thinkingCompleted(ThinkingDecision decision, long durationMillis);
+
+    /**
+     * 记录 self-review 开始。
+     */
+    void reviewStarted(int attempt);
+
+    /**
+     * 记录 self-review 完成。
+     */
+    void reviewCompleted(ReviewDecision decision, long durationMillis);
 
     /**
      * 记录行动阶段开始。

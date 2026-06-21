@@ -1,6 +1,7 @@
 package io.github.tinyclaw.agent.runtime;
 
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
@@ -70,6 +71,14 @@ public final class NoopRunLogger implements RunLogger {
      */
     @Override
     public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
+    }
+
+    @Override
+    public void reviewStarted(int attempt) {
+    }
+
+    @Override
+    public void reviewCompleted(ReviewDecision decision, long durationMillis) {
     }
 
     /**

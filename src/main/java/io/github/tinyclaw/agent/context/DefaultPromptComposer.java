@@ -79,7 +79,16 @@ public final class DefaultPromptComposer implements PromptComposer {
             return "# Decision Phase\n"
                     + "当前是 THINKING 阶段：只输出内部计划，不要回答用户，不要调用工具。\n"
                     + "内部计划最多3条，每条一句话，总长度不要超过120个中文字符。\n"
-                    + "内部计划必须基于已有 Observation，不能把已失败命令再次作为候选方案。\n\n";
+                    + "内部计划必须基于已有 Observation 和 review feedback，不能把已失败命令再次作为候选方案。\n\n";
+        }
+        if (phase == DecisionPhase.REVIEW) {
+            return "# Decision Phase\n"
+                    + "当前是 REVIEW 阶段：审查 THINKING 阶段的 draft thought，不要回答用户，不要调用工具。\n"
+                    + "只输出严格 JSON object，status 只能是 APPROVED、REVISE、BLOCKED。\n"
+                    + "APPROVED 时输出 {\"status\":\"APPROVED\",\"approvedPlan\":\"压缩后的可执行计划\"}，approvedPlan 不超过1200字符。\n"
+                    + "REVISE 时输出 {\"status\":\"REVISE\",\"feedback\":\"需要重写计划的具体原因\"}。\n"
+                    + "BLOCKED 时输出 {\"status\":\"BLOCKED\",\"reason\":\"需要用户或人工补充的信息\"}。\n"
+                    + "审查标准：计划必须可执行、与用户目标一致、不会重复已失败动作、不会泄露内部推理。\n\n";
         }
         if (availableTools == null || availableTools.isEmpty()) {
             return "# Decision Phase\n"

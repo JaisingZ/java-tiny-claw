@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.MissingNode;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.domain.ToolDecision;
@@ -43,6 +44,13 @@ final class ProviderDebugSummary {
     static String decision(Decision decision) {
         if (decision instanceof ThinkingDecision) {
             return "ThinkingDecision thoughtLength=" + textLength(((ThinkingDecision) decision).thought());
+        }
+        if (decision instanceof ReviewDecision) {
+            ReviewDecision review = (ReviewDecision) decision;
+            return "ReviewDecision status=" + review.status()
+                    + " approvedPlanLength=" + textLength(review.approvedPlan())
+                    + " feedbackLength=" + textLength(review.feedback())
+                    + " reasonLength=" + textLength(review.reason());
         }
         if (decision instanceof FinishDecision) {
             return "FinishDecision answerLength=" + textLength(((FinishDecision) decision).answer());

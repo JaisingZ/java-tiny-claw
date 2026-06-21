@@ -7,36 +7,45 @@ import java.util.Objects;
 
 /**
  * main loop 每轮执行上下文。
- * 保存当前任务、步数、观察信息和上一次思考内容。
+ * 保存当前任务、步数、观察信息和 planning/review 内部上下文。
  */
 public final class AgentContext {
 
     private final Task task;
     private final int step;
     private final List<String> observations;
-    private final String lastThought;
+    private final String draftThought;
+    private final String reviewFeedback;
+    private final String approvedPlan;
     private final List<SessionMessage> workingMemory;
 
     /**
      * 创建上下文。
      * observations 会被封装为不可变列表，避免后续被外部修改。
      */
-    public AgentContext(Task task, int step, List<String> observations, String lastThought) {
-        this(task, step, observations, lastThought, Collections.<SessionMessage>emptyList());
+    public AgentContext(Task task, int step, List<String> observations, String draftThought) {
+        this(task, step, observations, draftThought, Collections.<SessionMessage>emptyList());
     }
 
     /**
      * 创建带 Session Working Memory 的上下文。
      */
-    public AgentContext(Task task, int step, List<String> observations, String lastThought,
+    public AgentContext(Task task, int step, List<String> observations, String draftThought,
             List<SessionMessage> workingMemory) {
+        this(task, step, observations, draftThought, null, null, workingMemory);
+    }
+
+    public AgentContext(Task task, int step, List<String> observations, String draftThought,
+            String reviewFeedback, String approvedPlan, List<SessionMessage> workingMemory) {
         this.task = task;
         this.step = step;
         List<String> safeObservations = observations == null
                 ? Collections.<String>emptyList()
                 : observations;
         this.observations = Collections.unmodifiableList(new ArrayList<String>(safeObservations));
-        this.lastThought = lastThought;
+        this.draftThought = draftThought;
+        this.reviewFeedback = reviewFeedback;
+        this.approvedPlan = approvedPlan;
         List<SessionMessage> safeWorkingMemory = workingMemory == null
                 ? Collections.<SessionMessage>emptyList()
                 : workingMemory;
@@ -61,7 +70,8 @@ public final class AgentContext {
      * 进入下一步并返回新上下文。
      */
     public AgentContext advance() {
-        return new AgentContext(task, step + 1, observations, lastThought, workingMemory);
+        return new AgentContext(task, step + 1, observations, draftThought, reviewFeedback,
+                approvedPlan, workingMemory);
     }
 
     /**
@@ -70,14 +80,29 @@ public final class AgentContext {
     public AgentContext observe(String observation) {
         List<String> nextObservations = new ArrayList<String>(observations);
         nextObservations.add(observation);
-        return new AgentContext(task, step, nextObservations, lastThought, workingMemory);
+        return new AgentContext(task, step, nextObservations, draftThought, reviewFeedback,
+                approvedPlan, workingMemory);
     }
 
     /**
      * 更新当前思考内容并返回新上下文。
      */
     public AgentContext think(String thought) {
-        return new AgentContext(task, step, observations, thought, workingMemory);
+        return new AgentContext(task, step, observations, thought, null, null, workingMemory);
+    }
+
+    /**
+     * 写入审查反馈，供下一轮 THINKING 使用。
+     */
+    public AgentContext withReviewFeedback(String feedback) {
+        return new AgentContext(task, step, observations, null, feedback, null, workingMemory);
+    }
+
+    /**
+     * 写入压缩后的审查通过计划，供 ACTION 使用。
+     */
+    public AgentContext withApprovedPlan(String plan) {
+        return new AgentContext(task, step, observations, null, null, plan, workingMemory);
     }
 
     /**
@@ -126,7 +151,19 @@ public final class AgentContext {
      * 获取最近一次思考内容。
      */
     public String lastThought() {
-        return lastThought;
+        return draftThought;
+    }
+
+    public String draftThought() {
+        return draftThought;
+    }
+
+    public String reviewFeedback() {
+        return reviewFeedback;
+    }
+
+    public String approvedPlan() {
+        return approvedPlan;
     }
 
     /**
@@ -182,7 +219,19 @@ public final class AgentContext {
      * 获取最近一次思考内容（兼容 get 风格调用）。
      */
     public String getLastThought() {
-        return lastThought;
+        return draftThought;
+    }
+
+    public String getDraftThought() {
+        return draftThought;
+    }
+
+    public String getReviewFeedback() {
+        return reviewFeedback;
+    }
+
+    public String getApprovedPlan() {
+        return approvedPlan;
     }
 
     /**
@@ -207,7 +256,9 @@ public final class AgentContext {
         return step == that.step
                 && Objects.equals(task, that.task)
                 && Objects.equals(observations, that.observations)
-                && Objects.equals(lastThought, that.lastThought)
+                && Objects.equals(draftThought, that.draftThought)
+                && Objects.equals(reviewFeedback, that.reviewFeedback)
+                && Objects.equals(approvedPlan, that.approvedPlan)
                 && Objects.equals(workingMemory, that.workingMemory);
     }
 
@@ -216,6 +267,6 @@ public final class AgentContext {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(task, step, observations, lastThought, workingMemory);
+        return Objects.hash(task, step, observations, draftThought, reviewFeedback, approvedPlan, workingMemory);
     }
 }

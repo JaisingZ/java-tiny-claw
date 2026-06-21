@@ -9,6 +9,7 @@ import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
 import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.SessionMessageKind;
 import io.github.tinyclaw.agent.domain.Task;
@@ -333,11 +334,14 @@ class AgentEngineTest {
         assertThat(result.observations()).containsExactly("hello");
         assertThat(provider.phases()).containsExactly(
                 DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
                 DecisionPhase.ACTION,
                 DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
                 DecisionPhase.ACTION);
         assertThat(provider.toolsByPhase().get(0)).isEmpty();
-        assertThat(provider.toolsByPhase().get(1)).containsExactly(new ToolDefinition(
+        assertThat(provider.toolsByPhase().get(1)).isEmpty();
+        assertThat(provider.toolsByPhase().get(2)).containsExactly(new ToolDefinition(
                 "echo",
                 "echo",
                 Collections.<String, Object>singletonMap("type", "object")));
@@ -375,6 +379,8 @@ class AgentEngineTest {
                 "turn:1",
                 "thinking-start",
                 "thinking-complete:plan to call echo",
+                "review-start:1",
+                "review-complete:APPROVED",
                 "action-start:[echo]",
                 "tool-decision:echo",
                 "tool-start:echo",
@@ -382,6 +388,8 @@ class AgentEngineTest {
                 "turn:2",
                 "thinking-start",
                 "thinking-complete:plan to finish",
+                "review-start:1",
+                "review-complete:APPROVED",
                 "action-start:[echo]",
                 "finish:done");
     }
@@ -416,6 +424,98 @@ class AgentEngineTest {
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
         assertThat(result.failureReason()).isEqualTo("unsupported_thinking_decision");
         assertThat(result.observations()).isEmpty();
+    }
+
+    @Test
+    void passesApprovedPlanToActionAfterReviewApproves() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("raw draft"),
+                ReviewDecision.approved("approved plan"),
+                finish("done"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-approved", "finish after review");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.ACTION);
+        assertThat(provider.contexts().get(1).draftThought()).isEqualTo("raw draft");
+        assertThat(provider.contexts().get(2).approvedPlan()).isEqualTo("approved plan");
+        assertThat(provider.contexts().get(2).draftThought()).isNull();
+        assertThat(provider.contexts().get(2).reviewFeedback()).isNull();
+    }
+
+    @Test
+    void reviewReviseFeedsBackIntoNextThinking() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("bad draft"),
+                ReviewDecision.revise("avoid repeated failed command"),
+                new ThinkingDecision("better draft"),
+                ReviewDecision.approved("better approved plan"),
+                finish("done"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-revise", "revise plan");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.ACTION);
+        assertThat(provider.contexts().get(2).reviewFeedback()).isEqualTo("avoid repeated failed command");
+        assertThat(provider.contexts().get(4).approvedPlan()).isEqualTo("better approved plan");
+        assertThat(provider.contexts().get(4).draftThought()).isNull();
+        assertThat(provider.contexts().get(4).reviewFeedback()).isNull();
+    }
+
+    @Test
+    void failsWhenReviewKeepsRequestingRevision() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("draft 1"),
+                ReviewDecision.revise("still wrong"),
+                new ThinkingDecision("draft 2"),
+                ReviewDecision.revise("still wrong again"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-failed", "cannot approve");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("plan_review_failed");
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW);
+    }
+
+    @Test
+    void failsWhenReviewBlocksForHumanInput() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("needs missing input"),
+                ReviewDecision.blocked("missing repository path"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-blocked", "blocked plan");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("plan_review_blocked: missing repository path");
+    }
+
+    @Test
+    void failsWhenReviewReturnsUnsupportedDecision() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("draft"),
+                finish("wrong phase"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-unsupported", "bad review");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("unsupported_review_decision");
     }
 
     /**
@@ -907,8 +1007,11 @@ class AgentEngineTest {
         RunResult result = fixture.run(provider, session, "task-thinking-compaction", "finish");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
-        assertThat(provider.phases()).containsExactly(DecisionPhase.THINKING, DecisionPhase.ACTION);
-        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.ACTION);
+        assertThat(provider.contexts()).hasSize(3);
         for (AgentContext context : provider.contexts()) {
             SessionMessage compactedObservation = context.workingMemory().get(1);
             assertThat(compactedObservation.kind()).isEqualTo(SessionMessageKind.OBSERVATION);
@@ -1036,6 +1139,9 @@ class AgentEngineTest {
                 }
                 return response(new ThinkingDecision("plan to finish"));
             }
+            if (phase == DecisionPhase.REVIEW) {
+                return response(ReviewDecision.approved("approved " + state.draftThought()));
+            }
             if (state.observations().isEmpty()) {
                 return response(tool("echo", "text", "hello"));
             }
@@ -1048,6 +1154,40 @@ class AgentEngineTest {
 
         List<List<ToolDefinition>> toolsByPhase() {
             return toolsByPhase;
+        }
+    }
+
+    private static final class ReviewFlowProvider implements ModelProvider {
+        private final Decision[] decisions;
+        private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+        private int index;
+
+        private ReviewFlowProvider(Decision... decisions) {
+            this.decisions = decisions;
+        }
+
+        @Override
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            phases.add(phase);
+            if (phase == DecisionPhase.THINKING || phase == DecisionPhase.REVIEW) {
+                assertThat(availableTools).isEmpty();
+            }
+            int current = index;
+            if (current < decisions.length - 1) {
+                index++;
+            }
+            return response(decisions[current]);
+        }
+
+        private List<DecisionPhase> phases() {
+            return phases;
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
         }
     }
 
@@ -1369,6 +1509,9 @@ class AgentEngineTest {
             if (phase == DecisionPhase.THINKING) {
                 return response(new ThinkingDecision("ready"));
             }
+            if (phase == DecisionPhase.REVIEW) {
+                return response(ReviewDecision.approved("ready"));
+            }
             return response(finish("done"));
         }
 
@@ -1408,6 +1551,14 @@ class AgentEngineTest {
 
         @Override
         public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
+        }
+
+        @Override
+        public void reviewStarted(int attempt) {
+        }
+
+        @Override
+        public void reviewCompleted(ReviewDecision decision, long durationMillis) {
         }
 
         @Override
@@ -1454,6 +1605,16 @@ class AgentEngineTest {
         @Override
         public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
             events.add("thinking-complete:" + decision.thought());
+        }
+
+        @Override
+        public void reviewStarted(int attempt) {
+            events.add("review-start:" + attempt);
+        }
+
+        @Override
+        public void reviewCompleted(ReviewDecision decision, long durationMillis) {
+            events.add("review-complete:" + decision.status());
         }
 
         @Override

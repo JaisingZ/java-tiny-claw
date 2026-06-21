@@ -11,6 +11,7 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
@@ -133,6 +134,47 @@ class LmStudioModelProviderTest {
     }
 
     @Test
+    void thinkingPhaseReceivesReviewFeedbackButNotDraftThought() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"think again\"}"),
+                new AtomicReference<String>(), requestBody);
+        LmStudioModelProvider provider = new LmStudioModelProvider(
+                new LmStudioConfig(baseUrl(), "qwen-local"));
+        AgentContext context = AgentContext.create(new Task("task-thinking-feedback", "think"))
+                .think("raw draft")
+                .withReviewFeedback("fix repeated read");
+
+        Decision decision = provider.decide(context, DecisionPhase.THINKING,
+                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isEqualTo(new ThinkingDecision("think again"));
+        assertThat(requestBody.get().toString()).contains("上一轮自检意见：fix repeated read");
+        assertThat(requestBody.get().toString()).doesNotContain("raw draft");
+    }
+
+    @Test
+    void reviewPhaseParsesReviewDecisionAndReceivesDraftWithoutTools() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"{\\\"status\\\":\\\"APPROVED\\\","
+                        + "\\\"approvedPlan\\\":\\\"use approved plan\\\"}\"}"),
+                new AtomicReference<String>(), requestBody);
+        LmStudioModelProvider provider = new LmStudioModelProvider(
+                new LmStudioConfig(baseUrl(), "qwen-local"));
+        AgentContext context = AgentContext.create(new Task("task-review", "review"))
+                .think("raw draft");
+        ToolDefinition tool = new ToolDefinition("echo", "echo",
+                Collections.<String, Object>singletonMap("type", "object"));
+
+        Decision decision = provider.decide(context, DecisionPhase.REVIEW,
+                Collections.singletonList(tool), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isEqualTo(ReviewDecision.approved("use approved plan"));
+        assertThat(requestBody.get().has("tools")).isFalse();
+        assertThat(requestBody.get().get("max_tokens").asInt()).isEqualTo(256);
+        assertThat(requestBody.get().toString()).contains("待审查计划草稿：raw draft");
+    }
+
+    @Test
     void actionPhaseRejectsReasoningOnlyResponseAsFinalAnswer() throws Exception {
         startServer(200, completionWithMessage("{\"content\":\"\",\"reasoning_content\":\"internal reasoning\"}",
                         "length"),
@@ -200,6 +242,25 @@ class LmStudioModelProviderTest {
         assertThat(requestBody.get().get("messages")).hasSize(2);
         assertThat(requestBody.get().toString()).doesNotContain("内部思考记录");
         assertThat(requestBody.get().toString()).doesNotContain("不该回传");
+    }
+
+    @Test
+    void actionPhaseSendsApprovedPlanWithoutRawDraftThought() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+                new AtomicReference<String>(), requestBody);
+        LmStudioModelProvider provider = new LmStudioModelProvider(
+                new LmStudioConfig(baseUrl(), "qwen-local"));
+        AgentContext state = AgentContext.create(new Task("task-action-approved-plan", "finish"))
+                .think("raw draft should stay internal")
+                .withApprovedPlan("approved plan for action");
+
+        Decision decision = provider.decide(state, DecisionPhase.ACTION,
+                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isEqualTo(new FinishDecision("done"));
+        assertThat(requestBody.get().toString()).contains("审查通过的执行计划：approved plan for action");
+        assertThat(requestBody.get().toString()).doesNotContain("raw draft should stay internal");
     }
 
     @Test
