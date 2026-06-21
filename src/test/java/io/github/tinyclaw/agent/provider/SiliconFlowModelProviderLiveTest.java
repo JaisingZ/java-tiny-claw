@@ -7,7 +7,6 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.runtime.RunStatus;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
@@ -93,19 +92,19 @@ class SiliconFlowModelProviderLiveTest {
     }
 
     @Test
-    void actionPhaseUsesRealApiForParallelToolDecision() {
+    void actionPhaseUsesRealApiForMultiCallToolDecision() {
         SiliconFlowModelProvider provider = new SiliconFlowModelProvider(liveConfig());
 
         Decision decision = provider.decide(AgentContext.create(new Task("live-parallel-tools",
                         "必须并行调用两个 read_file 工具，分别读取 a.txt 和 b.txt。不要直接回答。")),
                 DecisionPhase.ACTION, Collections.singletonList(readFileToolDefinition()), SYSTEM_PROMPT).decision();
 
-        assertThat(decision).isInstanceOf(ParallelToolDecision.class);
-        ParallelToolDecision parallelDecision = (ParallelToolDecision) decision;
-        assertThat(parallelDecision.getCalls()).hasSize(2);
+        assertThat(decision).isInstanceOf(ToolDecision.class);
+        ToolDecision toolDecision = (ToolDecision) decision;
+        assertThat(toolDecision.getCalls()).hasSize(2);
 
         Set<String> paths = new HashSet<>();
-        for (ToolCall call : parallelDecision.getCalls()) {
+        for (ToolCall call : toolDecision.getCalls()) {
             assertThat(call.toolName()).isEqualTo("read_file");
             paths.add(String.valueOf(call.arguments().get("path")));
         }

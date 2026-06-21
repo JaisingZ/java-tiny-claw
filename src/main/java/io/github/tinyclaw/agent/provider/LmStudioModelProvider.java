@@ -10,7 +10,7 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.SessionMessageKind;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
@@ -97,6 +97,9 @@ public final class LmStudioModelProvider implements ModelProvider {
             if (phase == DecisionPhase.THINKING) {
                 String content = textOrFallback(message, "content", "reasoning_content");
                 decision = new ThinkingDecision(sanitizeThinkingText(content));
+            } else if (phase == DecisionPhase.REVIEW) {
+                String content = textOrFallback(message, "content", "reasoning_content");
+                decision = parseReviewDecision(content);
             } else {
                 String content = text(message.get("content"));
                 if (!hasText(sanitizeFinishText(content))) {
@@ -133,16 +136,22 @@ public final class LmStudioModelProvider implements ModelProvider {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", config.model());
         root.put("stream", false);
-        root.put("max_tokens", phase == DecisionPhase.THINKING
-                ? config.thinkingMaxTokens()
-                : config.actionMaxTokens());
+        root.put("max_tokens", phase == DecisionPhase.ACTION
+                ? config.actionMaxTokens()
+                : config.thinkingMaxTokens());
 
         ArrayNode messages = root.putArray("messages");
         addMessage(messages, "system", systemPrompt);
         addWorkingMemoryMessages(messages, context);
         addMessage(messages, "user", context.goal());
-        if (phase == DecisionPhase.THINKING && hasText(context.lastThought())) {
-            addMessage(messages, "system", "内部思考记录：" + context.lastThought());
+        if (phase == DecisionPhase.THINKING && hasText(context.reviewFeedback())) {
+            addMessage(messages, "system", "上一轮自检意见：" + context.reviewFeedback());
+        }
+        if (phase == DecisionPhase.REVIEW && hasText(context.draftThought())) {
+            addMessage(messages, "system", "待审查计划草稿：" + context.draftThought());
+        }
+        if (phase == DecisionPhase.ACTION && hasText(context.approvedPlan())) {
+            addMessage(messages, "system", "审查通过的执行计划：" + context.approvedPlan());
         }
         for (String observation : context.observations()) {
             addMessage(messages, "user", "Observation: " + observation);
@@ -161,6 +170,36 @@ public final class LmStudioModelProvider implements ModelProvider {
         }
 
         return root;
+    }
+
+    private ReviewDecision parseReviewDecision(String content) {
+        String candidate = extractJsonObject(stripMarkdownFence(content));
+        try {
+            JsonNode node = objectMapper.readTree(candidate);
+            String status = text(node.get("status")).trim().toUpperCase();
+            if ("APPROVED".equals(status)) {
+                return ReviewDecision.approved(firstText(node, "approvedPlan", "approved_plan"));
+            }
+            if ("REVISE".equals(status)) {
+                return ReviewDecision.revise(firstText(node, "feedback", "reviewFeedback", "review_feedback"));
+            }
+            if ("BLOCKED".equals(status)) {
+                return ReviewDecision.blocked(firstText(node, "reason"));
+            }
+            throw new RuntimeException("LM Studio review response has unsupported status: " + status);
+        } catch (JsonProcessingException ex) {
+            throw new RuntimeException("Invalid LM Studio review response JSON", ex);
+        }
+    }
+
+    private String firstText(JsonNode node, String... names) {
+        for (String name : names) {
+            String value = text(node.get(name));
+            if (hasText(value)) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private void addWorkingMemoryMessages(ArrayNode messages, AgentContext context) {
@@ -272,10 +311,7 @@ public final class LmStudioModelProvider implements ModelProvider {
             throw new RuntimeException("LM Studio tool calls missing function in all calls");
         }
 
-        if (calls.size() == 1) {
-            return new ToolDecision(calls.get(0));
-        }
-        return new ParallelToolDecision(calls);
+        return new ToolDecision(calls);
     }
 
     private Map<String, Object> parseArguments(String argumentsText) {

@@ -167,23 +167,17 @@ public final class BashTool implements Tool {
     }
 
     private String toolDescription() {
-        if (isWindows()) {
-            return "Execute a PowerShell command inside the workspace. Do not use mkdir -p; "
-                    + "use New-Item -ItemType Directory -Force target when a directory must be created. "
-                    + "Do not use && or ||. Do not rely on ; for success gating; "
-                    + "check $LASTEXITCODE before running the next command.";
-        }
-        return "Execute a bash command inside the workspace";
+        return "Execute a shell command inside the workspace. On Windows this runs PowerShell; "
+                + "do not use mkdir -p and use New-Item -ItemType Directory -Force target instead. "
+                + "Do not use && or ||. Do not rely on ; for success gating; "
+                + "check $LASTEXITCODE before running the next command.";
     }
 
     private String commandDescription() {
-        if (isWindows()) {
-            return "PowerShell command to execute inside the workspace through "
-                    + "powershell -NoProfile -NonInteractive -Command. "
-                    + "For compile-then-run, use: javac target/Hello.java; "
-                    + "if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }";
-        }
-        return "bash command to execute inside the workspace";
+        return "Shell command to execute inside the workspace. On Windows it runs through "
+                + "powershell -NoProfile -NonInteractive -Command. "
+                + "For compile-then-run on Windows, use: javac target/Hello.java; "
+                + "if ($LASTEXITCODE -eq 0) { java -cp target Hello } else { exit $LASTEXITCODE }";
     }
     /**
      * 默认标记为具有副作用，因为脚本内容不可知。

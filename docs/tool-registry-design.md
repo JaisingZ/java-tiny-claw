@@ -93,8 +93,8 @@ ToolResult.failure("middleware_error: <message>")
 
 `AgentEngine` 处理工具决策时遵循“只读并发、涉写串行”原则：
 
-1. **单工具决策**：`ToolDecision` 直接通过 `ToolRegistry.execute(call, context)` 执行。
-2. **多工具决策**：`ParallelToolDecision` 承载多个 `ToolCall`。
+1. **工具决策**：`ToolDecision` 承载一个或多个 `ToolCall`。
+2. **多调用决策**：当 `ToolDecision.calls()` 包含多个调用时，运行时按调用属性选择并发或串行。
 3. **只读并发**：`AgentEngine` 通过 `ToolRegistry.snapshot()` 找到工具实例，`tool.isSideEffect()==false` 的工具会并发执行。
 4. **涉写串行**：写工具或未知副作用工具按模型返回顺序串行执行。
 5. **Middleware 检查**：每个工具调用在真正执行前先通过 Registry 中的 Middleware 链。
@@ -108,10 +108,9 @@ ToolResult.failure("middleware_error: <message>")
 
 - `ThinkingDecision`：可选 `THINKING` 阶段的思考文本。
 - `FinishDecision`：最终回答。
-- `ToolDecision`：单个工具调用。
-- `ParallelToolDecision`：多个工具调用。
+- `ToolDecision`：一个或多个工具调用。
 
-`ToolDecision` 是单工具特例；`ParallelToolDecision` 用于读多文件等互相独立操作。
+`ToolDecision` 中的多调用列表用于读多文件等互相独立操作；是否并发由 Runtime 根据工具副作用属性决定。
 
 ## 基础工具
 

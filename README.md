@@ -228,7 +228,7 @@ Set-Location target\concurrency-counter-workspace
 powershell -File .\validation.ps1
 ```
 
-> 主循环按 `FinishDecision` 结束；`ToolDecision` 和 `ParallelToolDecision` 继续执行工具调用，Harness 仅保留系统提醒，不做硬性停机阈值。
+> 主循环按 `FinishDecision` 结束；`ToolDecision` 继续执行一个或多个工具调用，Harness 仅保留系统提醒，不做硬性停机阈值。
 
 Do not rely only on the final answer. Check `RESULT`, `OBSERVATIONS`, `METRICS`, `.tinyclaw/traces/trace-*.json`, the validation output, and the actual files in the workspace.
 

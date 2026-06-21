@@ -4,12 +4,13 @@
 
 把 Agent 的最小闭环收敛为一个明确、可测试、可观测的主循环。
 
-当前 Tiny Agent Harness 的主循环只做四件事：
+当前 Tiny Agent Harness 的主循环默认覆盖：
 
 1. 初始化/更新运行时上下文 `AgentContext`
 2. 请求模型决策
-3. 执行工具或结束任务
-4. 落日志、指标、trace 并返回 `RunResult`
+3. 可选 self-review 循环
+4. 执行工具或结束任务
+5. 落日志、指标、trace 并返回 `RunResult`
 
 长程任务通过可选 Plan Mode 引导模型维护 `.tinyclaw/state/.../PLAN.md` 与 `TODO.md`。结构化回放由 `TraceRecorder` 输出本地 JSON trace。
 
@@ -27,22 +28,35 @@ while true:
     else:
       return failed("unsupported_thinking_decision")
 
+  if enableThinking:
+    reviewAttempts = 0
+    while reviewAttempts < 2:
+      reviewAttempts = reviewAttempts + 1
+      request REVIEW decision with no tools
+      if ReviewDecision.status == APPROVED:
+        ctx = ctx.withApprovedPlan(approvedPlan)
+        break
+      if ReviewDecision.status == REVISE:
+        ctx = ctx.withReviewFeedback(feedback)
+        request THINKING decision with no tools
+        if ThinkingDecision:
+          ctx = ctx.think(thought)
+        else:
+          return failed("unsupported_thinking_decision")
+        continue
+      if ReviewDecision.status == BLOCKED:
+        return failed("plan_review_blocked: " + reason)
+      return failed("unsupported_review_decision")
+
+    if ctx.approvedPlan is empty:
+      return failed("plan_review_failed")
+
   request ACTION decision with tool definitions
 
   if FinishDecision:
     return success(answer)
 
   if ToolDecision:
-    execute one tool through ToolRegistry
-    if success:
-      ctx = ctx.advance().observe(output)
-    else:
-      ctx = ctx.advance().observe(recovery_observation)
-    if reminder is triggered:
-      append [SYSTEM REMINDER] at the end of the current observation
-    continue
-
-  if ParallelToolDecision:
     execute read-only tools concurrently
     execute side-effect tools serially in model order
     convert each failed result to a recovery observation
@@ -63,6 +77,7 @@ while true:
 - `RunLogger` 负责可读日志输出。
 - `RunMetrics` 负责模型和工具调用的汇总指标。
 - `TraceRecorder` 负责结构化回放，默认写入 `.tinyclaw/traces/trace-<traceId>.json`。
+- `TraceRecorder`/`RunLogger` 默认不保存 `ThinkingDecision` 与 `ReviewDecision` 的原始文本，采集决策类型、长度、阶段和时间。
 - `SystemReminderInjector` 是单次 run 内的局部防呆状态，不跨任务复用。
 - 执行前拦截通过 `ToolRegistry` Middleware 接入；当前 Telegram 模式可挂载工具审批，CLI `run` 默认不挂载审批中间件。
 
@@ -70,6 +85,9 @@ while true:
 
 - Provider 抛异常 -> `provider_error: <message>`
 - Thinking 阶段返回非 `ThinkingDecision` -> `unsupported_thinking_decision`
+- REVIEW 阶段返回非 `ReviewDecision` -> `unsupported_review_decision`
+- 2 次 review attempt 后仍未批准 -> `plan_review_failed`
+- REVIEW 返回 BLOCKED -> `plan_review_blocked: <reason>`
 - 未知工具 -> 写入 `Error executing <name>: Unknown tool: <name>` 观测
 - 工具执行抛异常 -> `tool_error: <message>`
 - 工具返回失败 -> 写入 `Error executing <tool>: <message>` 观测，命中规则时追加 `[Recovery Hint]`
@@ -88,9 +106,10 @@ while true:
 ## 验收标准
 
 - 能从 `Task` 跑到 `SUCCESS` 或 `FAILED`。
-- 覆盖 `FinishDecision`、`ToolDecision`、`ParallelToolDecision` 和可选 `ThinkingDecision`。
+- 覆盖 `FinishDecision`、`ToolDecision` 和可选 `ThinkingDecision`。
 - 每轮关键步骤都有 `RunLogger` 可读日志。
 - 每次 CLI/Telegram 运行都能生成 Root/Turn/LLM/Tool 层级的本地 JSON trace。
 - 无硬性步数阈值；主循环以 `FinishDecision`、`unsupported_*` 等失败分支结束。
+- REVIEW 仅做决策审阅，最多 2 次 `reviewFeedback`；不计入工具执行 `max step` 或步长上限。
 - `SystemReminder` 负责在行为偏离时给模型单轮提示，不触发硬性停机。
 - 工具失败不会穿透成主循环崩溃。

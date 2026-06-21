@@ -1,0 +1,59 @@
+name: Codex Auto Release
+
+on:
+  push:
+    branches:
+      - "codex/**"
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "Codex branch to merge"
+        required: true
+        default: "codex/agent-harness-baseline"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-merge
+  cancel-in-progress: false
+
+jobs:
+  verify-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.source_branch || github.ref_name }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run tests and package
+        run: mvn -B test package
+
+      - name: Squash merge into release
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="${{ github.event.inputs.source_branch || github.ref_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin \
+            "+refs/heads/release:refs/remotes/origin/release" \
+            "+refs/heads/${SOURCE}:refs/remotes/origin/${SOURCE}"
+          git switch release
+          git reset --hard origin/release
+          git merge --squash "origin/$SOURCE"
+          if git diff --cached --quiet; then
+            echo "No changes to merge."
+            exit 0
+          fi
+          git commit -m "chore: merge $SOURCE into release"
+          git push origin HEAD:release

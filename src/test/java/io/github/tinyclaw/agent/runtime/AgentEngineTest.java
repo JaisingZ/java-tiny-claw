@@ -8,7 +8,7 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.SessionMessageKind;
 import io.github.tinyclaw.agent.domain.Task;
@@ -181,7 +181,7 @@ class AgentEngineTest {
                 .withTraceRecorder(TraceRecorder.forSink(exported::add));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("read2")),
+                multiCall(call("read1"), call("read2")),
                 finish("done")), "task-parallel-trace", "parallel echo");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -333,11 +333,14 @@ class AgentEngineTest {
         assertThat(result.observations()).containsExactly("hello");
         assertThat(provider.phases()).containsExactly(
                 DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
                 DecisionPhase.ACTION,
                 DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
                 DecisionPhase.ACTION);
         assertThat(provider.toolsByPhase().get(0)).isEmpty();
-        assertThat(provider.toolsByPhase().get(1)).containsExactly(new ToolDefinition(
+        assertThat(provider.toolsByPhase().get(1)).isEmpty();
+        assertThat(provider.toolsByPhase().get(2)).containsExactly(new ToolDefinition(
                 "echo",
                 "echo",
                 Collections.<String, Object>singletonMap("type", "object")));
@@ -375,13 +378,17 @@ class AgentEngineTest {
                 "turn:1",
                 "thinking-start",
                 "thinking-complete:plan to call echo",
+                "review-start:1",
+                "review-complete:APPROVED",
                 "action-start:[echo]",
-                "tool-decision:echo",
+                "tool-decision:[echo]",
                 "tool-start:echo",
                 "tool-success:echo",
                 "turn:2",
                 "thinking-start",
                 "thinking-complete:plan to finish",
+                "review-start:1",
+                "review-complete:APPROVED",
                 "action-start:[echo]",
                 "finish:done");
     }
@@ -418,16 +425,108 @@ class AgentEngineTest {
         assertThat(result.observations()).isEmpty();
     }
 
+    @Test
+    void passesApprovedPlanToActionAfterReviewApproves() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("raw draft"),
+                ReviewDecision.approved("approved plan"),
+                finish("done"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-approved", "finish after review");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.ACTION);
+        assertThat(provider.contexts().get(1).draftThought()).isEqualTo("raw draft");
+        assertThat(provider.contexts().get(2).approvedPlan()).isEqualTo("approved plan");
+        assertThat(provider.contexts().get(2).draftThought()).isNull();
+        assertThat(provider.contexts().get(2).reviewFeedback()).isNull();
+    }
+
+    @Test
+    void reviewReviseFeedsBackIntoNextThinking() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("bad draft"),
+                ReviewDecision.revise("avoid repeated failed command"),
+                new ThinkingDecision("better draft"),
+                ReviewDecision.approved("better approved plan"),
+                finish("done"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-revise", "revise plan");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.ACTION);
+        assertThat(provider.contexts().get(2).reviewFeedback()).isEqualTo("avoid repeated failed command");
+        assertThat(provider.contexts().get(4).approvedPlan()).isEqualTo("better approved plan");
+        assertThat(provider.contexts().get(4).draftThought()).isNull();
+        assertThat(provider.contexts().get(4).reviewFeedback()).isNull();
+    }
+
+    @Test
+    void failsWhenReviewKeepsRequestingRevision() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("draft 1"),
+                ReviewDecision.revise("still wrong"),
+                new ThinkingDecision("draft 2"),
+                ReviewDecision.revise("still wrong again"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-failed", "cannot approve");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("plan_review_failed");
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW);
+    }
+
+    @Test
+    void failsWhenReviewBlocksForHumanInput() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("needs missing input"),
+                ReviewDecision.blocked("missing repository path"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-blocked", "blocked plan");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("plan_review_blocked: missing repository path");
+    }
+
+    @Test
+    void failsWhenReviewReturnsUnsupportedDecision() {
+        ReviewFlowProvider provider = new ReviewFlowProvider(
+                new ThinkingDecision("draft"),
+                finish("wrong phase"));
+        EngineFixture fixture = fixture().withThinking(true);
+
+        RunResult result = fixture.run(provider, "task-review-unsupported", "bad review");
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("unsupported_review_decision");
+    }
+
     /**
-     * 并行工具决策执行成功
+     * 多工具调用决策执行成功
      */
     @Test
-    void runsParallelToolsInDeclaredOrder() {
+    void runsMultiCallToolsInDeclaredOrder() {
         EngineFixture fixture = fixture()
                 .withTools(new ReadOnlyEchoTool("read1", "hello"), new ReadOnlyEchoTool("read2", "world"));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("read2")),
+                multiCall(call("read1"), call("read2")),
                 finish("done")), "task-parallel", "parallel echo");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -435,14 +534,14 @@ class AgentEngineTest {
     }
 
     /**
-     * 并行决策中的未知工具保持与单工具相同的失败文案
+     * 多工具调用中的未知工具保持与单工具相同的失败文案
      */
     @Test
-    void recordsParallelMissingToolUntilModelFinishes() {
+    void recordsMultiCallMissingToolUntilModelFinishes() {
         EngineFixture fixture = fixture().withTools(new ReadOnlyEchoTool("read1", "hello"));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("missing")),
+                multiCall(call("read1"), call("missing")),
                 finish("reported parallel missing tool")), "task-parallel-missing", "parallel missing");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -457,11 +556,11 @@ class AgentEngineTest {
      * 并行工具中的失败也按声明顺序写入同一条观测，供下一轮恢复。
      */
     @Test
-    void recordsMixedParallelSuccessAndFailureInDeclaredOrder() {
+    void recordsMixedMultiCallSuccessAndFailureInDeclaredOrder() {
         EngineFixture fixture = fixture()
                 .withTools(new ReadOnlyEchoTool("read1", "hello"), new FailingTool());
         RecordingContextProvider provider = new RecordingContextProvider(
-                parallel(call("read1"), call("fail_tool")),
+                multiCall(call("read1"), call("fail_tool")),
                 finish("done"));
 
         RunResult result = fixture.run(provider, "task-parallel-recovery", "parallel recovery");
@@ -520,13 +619,13 @@ class AgentEngineTest {
      * 并行工具多次无效时，每轮最多追加一条 Reminder。
      */
     @Test
-    void appendsAtMostOneSystemReminderForParallelFailuresPerTurn() {
+    void appendsAtMostOneSystemReminderForMultiCallFailuresPerTurn() {
         EngineFixture fixture = fixture()
                 .withTools(new FailingTool(), new FailingTool("fail_tool_2"));
         RecordingContextProvider provider = new RecordingContextProvider(
-                parallel(call("fail_tool"), call("fail_tool_2")),
-                parallel(call("fail_tool"), call("fail_tool_2")),
-                parallel(call("fail_tool"), call("fail_tool_2")),
+                multiCall(call("fail_tool"), call("fail_tool_2")),
+                multiCall(call("fail_tool"), call("fail_tool_2")),
+                multiCall(call("fail_tool"), call("fail_tool_2")),
                 finish("done"));
 
         RunResult result = fixture.run(provider, "task-parallel-reminder", "repeat parallel failures");
@@ -617,14 +716,14 @@ class AgentEngineTest {
     }
 
     /**
-     * 空并行决策也会推进一步
+     * 空工具调用决策也会推进一步
      */
     @Test
-    void advancesWhenParallelDecisionIsEmpty() {
+    void advancesWhenToolDecisionIsEmpty() {
         EngineFixture fixture = fixture();
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(),
+                multiCall(),
                 finish("done")), "task-parallel-empty", "parallel empty");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -636,7 +735,7 @@ class AgentEngineTest {
      * 混合只读和副作用工具时 结果顺序仍以决策声明顺序为准
      */
     @Test
-    void keepsDeclaredOutputOrderForMixedParallelTools() {
+    void keepsDeclaredOutputOrderForMixedMultiCallTools() {
         List<String> executionOrder = Collections.synchronizedList(new ArrayList<String>());
         EngineFixture fixture = fixture().withTools(
                 new TrackingTool("read1", "hello", false, executionOrder),
@@ -645,7 +744,7 @@ class AgentEngineTest {
                 new TrackingTool("write2", "write-b", true, executionOrder));
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(call("read1"), call("write1"), call("read2"), call("write2")),
+                multiCall(call("read1"), call("write1"), call("read2"), call("write2")),
                 finish("done")), "task-parallel-mixed", "parallel mixed");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
@@ -657,7 +756,7 @@ class AgentEngineTest {
      * 单工具和并行工具都只推进一步并追加一条观测
      */
     @Test
-    void keepsStepAndObservationSemanticsForSingleAndParallelTools() {
+    void keepsStepAndObservationSemanticsForSingleAndMultiCallTools() {
         EngineFixture singleFixture = fixture().withTools(new EchoTool());
         RunResult singleResult = singleFixture.run(scriptedProvider(
                 tool("echo", "text", "hello"),
@@ -666,7 +765,7 @@ class AgentEngineTest {
         EngineFixture parallelFixture = fixture()
                 .withTools(new ReadOnlyEchoTool("read1", "hello"), new ReadOnlyEchoTool("read2", "world"));
         RunResult parallelResult = parallelFixture.run(scriptedProvider(
-                parallel(call("read1"), call("read2")),
+                multiCall(call("read1"), call("read2")),
                 finish("done")), "task-parallel-shape", "parallel shape");
 
         assertThat(singleResult.stepCount()).isEqualTo(1);
@@ -760,12 +859,12 @@ class AgentEngineTest {
     }
 
     @Test
-    void runsParallelSpawnSubagentCallsInDeclaredOrder() {
+    void runsMultiCallSpawnSubagentCallsInDeclaredOrder() {
         SubagentTool tool = new SubagentTool(prompt -> ToolResult.success("summary-" + prompt));
         EngineFixture fixture = fixture().withTools(tool);
 
         RunResult result = fixture.run(scriptedProvider(
-                parallel(
+                multiCall(
                         call("spawn_subagent", "task_prompt", "a"),
                         call("spawn_subagent", "task_prompt", "b")),
                 finish("done")), "task-parallel-subagent", "parallel subagents");
@@ -907,8 +1006,11 @@ class AgentEngineTest {
         RunResult result = fixture.run(provider, session, "task-thinking-compaction", "finish");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
-        assertThat(provider.phases()).containsExactly(DecisionPhase.THINKING, DecisionPhase.ACTION);
-        assertThat(provider.contexts()).hasSize(2);
+        assertThat(provider.phases()).containsExactly(
+                DecisionPhase.THINKING,
+                DecisionPhase.REVIEW,
+                DecisionPhase.ACTION);
+        assertThat(provider.contexts()).hasSize(3);
         for (AgentContext context : provider.contexts()) {
             SessionMessage compactedObservation = context.workingMemory().get(1);
             assertThat(compactedObservation.kind()).isEqualTo(SessionMessageKind.OBSERVATION);
@@ -969,8 +1071,8 @@ class AgentEngineTest {
         return new FinishDecision(answer);
     }
 
-    private static ParallelToolDecision parallel(ToolCall... calls) {
-        return new ParallelToolDecision(Arrays.asList(calls));
+    private static ToolDecision multiCall(ToolCall... calls) {
+        return new ToolDecision(Arrays.asList(calls));
     }
 
     private static String repeat(String value, int count) {
@@ -1036,6 +1138,9 @@ class AgentEngineTest {
                 }
                 return response(new ThinkingDecision("plan to finish"));
             }
+            if (phase == DecisionPhase.REVIEW) {
+                return response(ReviewDecision.approved("approved " + state.draftThought()));
+            }
             if (state.observations().isEmpty()) {
                 return response(tool("echo", "text", "hello"));
             }
@@ -1048,6 +1153,40 @@ class AgentEngineTest {
 
         List<List<ToolDefinition>> toolsByPhase() {
             return toolsByPhase;
+        }
+    }
+
+    private static final class ReviewFlowProvider implements ModelProvider {
+        private final Decision[] decisions;
+        private final List<DecisionPhase> phases = new ArrayList<DecisionPhase>();
+        private final List<AgentContext> contexts = new ArrayList<AgentContext>();
+        private int index;
+
+        private ReviewFlowProvider(Decision... decisions) {
+            this.decisions = decisions;
+        }
+
+        @Override
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            contexts.add(state);
+            phases.add(phase);
+            if (phase == DecisionPhase.THINKING || phase == DecisionPhase.REVIEW) {
+                assertThat(availableTools).isEmpty();
+            }
+            int current = index;
+            if (current < decisions.length - 1) {
+                index++;
+            }
+            return response(decisions[current]);
+        }
+
+        private List<DecisionPhase> phases() {
+            return phases;
+        }
+
+        private List<AgentContext> contexts() {
+            return contexts;
         }
     }
 
@@ -1369,6 +1508,9 @@ class AgentEngineTest {
             if (phase == DecisionPhase.THINKING) {
                 return response(new ThinkingDecision("ready"));
             }
+            if (phase == DecisionPhase.REVIEW) {
+                return response(ReviewDecision.approved("ready"));
+            }
             return response(finish("done"));
         }
 
@@ -1408,6 +1550,14 @@ class AgentEngineTest {
 
         @Override
         public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
+        }
+
+        @Override
+        public void reviewStarted(int attempt) {
+        }
+
+        @Override
+        public void reviewCompleted(ReviewDecision decision, long durationMillis) {
         }
 
         @Override
@@ -1457,13 +1607,23 @@ class AgentEngineTest {
         }
 
         @Override
+        public void reviewStarted(int attempt) {
+            events.add("review-start:" + attempt);
+        }
+
+        @Override
+        public void reviewCompleted(ReviewDecision decision, long durationMillis) {
+            events.add("review-complete:" + decision.status());
+        }
+
+        @Override
         public void actionStarted(List<ToolDefinition> tools) {
             events.add("action-start:" + toolNames(tools));
         }
 
         @Override
         public void toolDecision(ToolDecision decision) {
-            events.add("tool-decision:" + decision.call().toolName());
+            events.add("tool-decision:" + toolCallNames(decision.calls()));
         }
 
         @Override
@@ -1494,6 +1654,14 @@ class AgentEngineTest {
             List<String> names = new ArrayList<String>();
             for (ToolDefinition tool : tools) {
                 names.add(tool.name());
+            }
+            return names;
+        }
+
+        private List<String> toolCallNames(List<ToolCall> calls) {
+            List<String> names = new ArrayList<String>();
+            for (ToolCall call : calls) {
+                names.add(call.toolName());
             }
             return names;
         }

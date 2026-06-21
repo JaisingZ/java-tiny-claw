@@ -2,6 +2,7 @@ package io.github.tinyclaw.agent.communication.telegram;
 
 import io.github.tinyclaw.agent.communication.AbstractChatRunLogger;
 import io.github.tinyclaw.agent.communication.ChatSession;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.tool.ToolResult;
@@ -25,6 +26,16 @@ public final class TelegramRunLogger extends AbstractChatRunLogger {
     @Override
     public void thinkingCompleted(ThinkingDecision decision, long durationMillis) {
         session().sendStatus("慢思考完成，耗时 " + durationMillis + "ms。");
+    }
+
+    @Override
+    public void reviewStarted(int attempt) {
+        session().sendStatus("正在审查执行计划，第 " + attempt + " 次。");
+    }
+
+    @Override
+    public void reviewCompleted(ReviewDecision decision, long durationMillis) {
+        session().sendStatus("计划审查完成，状态 " + decision.status() + "，耗时 " + durationMillis + "ms。");
     }
 
     @Override

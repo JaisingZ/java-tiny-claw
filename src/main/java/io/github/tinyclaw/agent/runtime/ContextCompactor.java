@@ -57,7 +57,9 @@ public final class ContextCompactor {
                 context.task(),
                 context.step(),
                 compactObservations,
-                context.lastThought(),
+                context.draftThought(),
+                context.reviewFeedback(),
+                context.approvedPlan(),
                 compactWorkingMemory);
     }
 
@@ -68,7 +70,9 @@ public final class ContextCompactor {
     private int estimatedTotalChars(AgentContext context) {
         long total = 0L;
         total += lengthOf(context.goal());
-        total += lengthOf(context.lastThought());
+        total += lengthOf(context.draftThought());
+        total += lengthOf(context.reviewFeedback());
+        total += lengthOf(context.approvedPlan());
         for (SessionMessage message : context.workingMemory()) {
             total += lengthOf(message.content());
         }

@@ -11,6 +11,7 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
@@ -132,6 +133,46 @@ class SiliconFlowModelProviderTest {
     }
 
     @Test
+    void thinkingPhaseReceivesReviewFeedbackButNotDraftThought() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"think again\"}"),
+                new AtomicReference<String>(), requestBody);
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+        AgentContext context = AgentContext.create(new Task("task-thinking-feedback", "think"))
+                .think("raw draft")
+                .withReviewFeedback("fix repeated read");
+
+        Decision decision = provider.decide(context, DecisionPhase.THINKING,
+                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isEqualTo(new ThinkingDecision("think again"));
+        assertThat(requestBody.get().toString()).contains("上一轮自检意见：fix repeated read");
+        assertThat(requestBody.get().toString()).doesNotContain("raw draft");
+    }
+
+    @Test
+    void reviewPhaseParsesReviewDecisionAndReceivesDraftWithoutTools() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"{\\\"status\\\":\\\"REVISE\\\","
+                        + "\\\"feedback\\\":\\\"rewrite with validation\\\"}\"}"),
+                new AtomicReference<String>(), requestBody);
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+        AgentContext context = AgentContext.create(new Task("task-review", "review"))
+                .think("raw draft");
+        ToolDefinition tool = new ToolDefinition("echo", "echo",
+                Collections.<String, Object>singletonMap("type", "object"));
+
+        Decision decision = provider.decide(context, DecisionPhase.REVIEW,
+                Collections.singletonList(tool), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isEqualTo(ReviewDecision.revise("rewrite with validation"));
+        assertThat(requestBody.get().has("tools")).isFalse();
+        assertThat(requestBody.get().toString()).contains("待审查计划草稿：raw draft");
+    }
+
+    @Test
     void actionPhaseSendsToolsAndParsesFirstToolCall() throws Exception {
         AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
         startServer(200, completionWithMessage("{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\","
@@ -151,6 +192,48 @@ class SiliconFlowModelProviderTest {
         assertSystemPromptContains(requestBody.get(), SYSTEM_PROMPT);
         assertThat(decision).isEqualTo(new ToolDecision(new ToolCall("echo",
                 Collections.<String, Object>singletonMap("text", "hello"))));
+    }
+
+    @Test
+    void actionPhaseParsesMultipleToolCallsAsOneToolDecision() throws Exception {
+        startServer(200, completionWithMessage("{\"tool_calls\":["
+                        + "{\"id\":\"call-1\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}},"
+                        + "{\"id\":\"call-2\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"b.txt\\\"}\"}}]}"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentContext.create(new Task("task-multi-tool", "read both")),
+                DecisionPhase.ACTION, Collections.singletonList(new ToolDefinition("read_file", "read file",
+                        Collections.<String, Object>singletonMap("type", "object"))), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isInstanceOf(ToolDecision.class);
+        ToolDecision toolDecision = (ToolDecision) decision;
+        assertThat(toolDecision.getCalls()).hasSize(2);
+        assertThat(toolDecision.getCalls().get(0).toolName()).isEqualTo("read_file");
+        assertThat(toolDecision.getCalls().get(0).arguments()).containsEntry("path", "a.txt");
+        assertThat(toolDecision.getCalls().get(1).arguments()).containsEntry("path", "b.txt");
+    }
+
+    @Test
+    void actionPhaseSendsApprovedPlanWithoutRawDraftThought() throws Exception {
+        AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
+        startServer(200, completionWithMessage("{\"content\":\"done\"}"),
+                new AtomicReference<String>(), requestBody);
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+        AgentContext state = AgentContext.create(new Task("task-action-approved-plan", "finish"))
+                .think("raw draft should stay internal")
+                .withApprovedPlan("approved plan for action");
+
+        Decision decision = provider.decide(state, DecisionPhase.ACTION,
+                Collections.<ToolDefinition>emptyList(), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isEqualTo(new FinishDecision("done"));
+        assertThat(requestBody.get().toString()).contains("审查通过的执行计划：approved plan for action");
+        assertThat(requestBody.get().toString()).doesNotContain("raw draft should stay internal");
     }
 
     @Test
@@ -326,6 +409,30 @@ class SiliconFlowModelProviderTest {
                 .doesNotContain("\"tools\"")
                 .doesNotContain("\"parameters\"")
                 .doesNotContain("hello");
+    }
+
+    @Test
+    void debugOutputSummarizesMultiCallToolDecision() throws Exception {
+        startServer(200, completionWithMessage("{\"tool_calls\":["
+                        + "{\"id\":\"call-1\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}},"
+                        + "{\"id\":\"call-2\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"b.txt\\\"}\"}}]}"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        StringBuilder debugOutput = new StringBuilder();
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"),
+                line -> debugOutput.append(line).append('\n'));
+
+        provider.decide(AgentContext.create(new Task("task-debug-multi-tools", "use tools")),
+                DecisionPhase.ACTION, java.util.List.of(new ToolDefinition("read_file", "read file",
+                        Collections.<String, Object>singletonMap("type", "object"))), SYSTEM_PROMPT);
+
+        assertThat(debugOutput.toString())
+                .contains("toolCallNames=[read_file, read_file]")
+                .contains("ToolDecision callCount=2 toolNames=[read_file, read_file]")
+                .doesNotContain("a.txt")
+                .doesNotContain("b.txt");
     }
 
     @Test

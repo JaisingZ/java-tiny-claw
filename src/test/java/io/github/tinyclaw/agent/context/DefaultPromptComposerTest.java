@@ -66,6 +66,24 @@ class DefaultPromptComposerTest {
     }
 
     @Test
+    void reviewPhaseRequiresStrictJsonAndNoToolInstructions() {
+        DefaultPromptComposer composer = new DefaultPromptComposer(workDir);
+
+        String prompt = composer.compose(new PromptContext(workDir, DecisionPhase.REVIEW,
+                Collections.<ToolDefinition>emptyList()));
+
+        assertThat(prompt)
+                .contains("当前是 REVIEW 阶段")
+                .contains("严格 JSON object")
+                .contains("APPROVED")
+                .contains("REVISE")
+                .contains("BLOCKED")
+                .contains("approvedPlan 不超过1200字符")
+                .doesNotContain("function.arguments")
+                .doesNotContain("调用一个或多个独立工具");
+    }
+
+    @Test
     void actionPhaseWithoutToolsOnlyAllowsFinalAnswer() {
         DefaultPromptComposer composer = new DefaultPromptComposer(workDir);
 
