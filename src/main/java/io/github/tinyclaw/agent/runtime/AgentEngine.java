@@ -2,7 +2,6 @@ package io.github.tinyclaw.agent.runtime;
 
 import io.github.tinyclaw.agent.context.DefaultPromptComposer;
 import io.github.tinyclaw.agent.context.PromptComposer;
-import io.github.tinyclaw.agent.context.PromptContext;
 import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
@@ -19,20 +18,15 @@ import io.github.tinyclaw.agent.observability.TraceRecorder;
 import io.github.tinyclaw.agent.observability.TraceScope;
 import io.github.tinyclaw.agent.observability.TraceSpan;
 import io.github.tinyclaw.agent.provider.ModelProvider;
-import io.github.tinyclaw.agent.provider.ModelResponse;
-import io.github.tinyclaw.agent.provider.ModelUsage;
 import io.github.tinyclaw.agent.tool.Tool;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
 import io.github.tinyclaw.agent.tool.ToolResult;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -55,6 +49,8 @@ public final class AgentEngine {
     private final ContextCompactor contextCompactor;
     private final ErrorRecoveryAdvisor errorRecoveryAdvisor;
     private final TraceRecorder traceRecorder;
+    private final ProviderCallRunner providerCallRunner;
+    private final ToolCallRunner toolCallRunner;
 
     /**
      * 创建不启用 thinking 的主循环。
@@ -167,6 +163,9 @@ public final class AgentEngine {
         this.contextCompactor = contextCompactor == null ? new ContextCompactor() : contextCompactor;
         this.errorRecoveryAdvisor = new ErrorRecoveryAdvisor();
         this.traceRecorder = traceRecorder == null ? TraceRecorder.noop() : traceRecorder;
+        this.providerCallRunner = new ProviderCallRunner(this.provider, this.promptComposer, this.workDir,
+                this.contextCompactor, this.traceRecorder);
+        this.toolCallRunner = new ToolCallRunner(this.toolRegistry, this.runLogger, this.traceRecorder);
     }
 
     /**
@@ -196,10 +195,10 @@ public final class AgentEngine {
             rootSpan.putAttribute("goal_preview", preview(context.goal(), 160));
 
             SystemReminderInjector systemReminderInjector = new SystemReminderInjector();
-            TokenEfficiencyState tokenEfficiencyState = new TokenEfficiencyState();
+            TokenEfficiencyAdvisor tokenEfficiencyAdvisor = new TokenEfficiencyAdvisor();
             RunResult result = null;
             while (true) {
-                TurnResult turn = runTurn(context, systemReminderInjector, tokenEfficiencyState, metrics, rootSpan);
+                TurnResult turn = runTurn(context, systemReminderInjector, tokenEfficiencyAdvisor, metrics, rootSpan);
                 if (turn.result() != null) {
                     result = turn.result();
                     break;
@@ -240,7 +239,7 @@ public final class AgentEngine {
     }
 
     private TurnResult runTurn(AgentContext context, SystemReminderInjector systemReminderInjector,
-            TokenEfficiencyState tokenEfficiencyState, RunMetricsCollector metrics, TraceSpan rootSpan) {
+            TokenEfficiencyAdvisor tokenEfficiencyAdvisor, RunMetricsCollector metrics, TraceSpan rootSpan) {
         int currentStep = context.stepCount() + 1;
         try (TraceScope turnScope = traceRecorder.startChild(rootSpan, "turn")) {
             TraceSpan turnSpan = turnScope.span();
@@ -263,7 +262,7 @@ public final class AgentEngine {
             } catch (ProviderCallException ex) {
                 return TurnResult.done(fail(context, ex.reason(), metrics));
             }
-            return applyDecision(context, decision, systemReminderInjector, tokenEfficiencyState, metrics, turnSpan);
+            return applyDecision(context, decision, systemReminderInjector, tokenEfficiencyAdvisor, metrics, turnSpan);
         }
     }
 
@@ -293,7 +292,7 @@ public final class AgentEngine {
 
     private AgentContext runThinkingPhase(AgentContext context, RunMetricsCollector metrics, TraceSpan turnSpan) {
         runLogger.thinkingStarted();
-        ProviderResponse response = invokeProvider(context, DecisionPhase.THINKING,
+        ProviderCallResult response = providerCallRunner.invoke(context, DecisionPhase.THINKING,
                 Collections.<ToolDefinition>emptyList(), metrics, turnSpan);
 
         if (!(response.decision() instanceof ThinkingDecision)) {
@@ -308,7 +307,7 @@ public final class AgentEngine {
     private ReviewDecision runReviewPhase(AgentContext context, int attempt, RunMetricsCollector metrics,
             TraceSpan turnSpan) {
         runLogger.reviewStarted(attempt);
-        ProviderResponse response = invokeProvider(context, DecisionPhase.REVIEW,
+        ProviderCallResult response = providerCallRunner.invoke(context, DecisionPhase.REVIEW,
                 Collections.<ToolDefinition>emptyList(), metrics, turnSpan);
 
         if (!(response.decision() instanceof ReviewDecision)) {
@@ -323,7 +322,8 @@ public final class AgentEngine {
     private Decision requestActionDecision(AgentContext context, RunMetricsCollector metrics, TraceSpan turnSpan) {
         List<ToolDefinition> toolDefinitions = actionToolsFor(context);
         runLogger.actionStarted(toolDefinitions);
-        ProviderResponse response = invokeProvider(context, DecisionPhase.ACTION, toolDefinitions, metrics, turnSpan);
+        ProviderCallResult response = providerCallRunner.invoke(context, DecisionPhase.ACTION,
+                toolDefinitions, metrics, turnSpan);
 
         if (response.decision() instanceof ToolDecision) {
             runLogger.toolDecision((ToolDecision) response.decision());
@@ -331,67 +331,16 @@ public final class AgentEngine {
         return response.decision();
     }
 
-    private ProviderResponse invokeProvider(AgentContext context, DecisionPhase phase,
-            List<ToolDefinition> availableTools, RunMetricsCollector metrics, TraceSpan turnSpan) {
-        long start = System.nanoTime();
-        String spanName = spanName(phase);
-        try (TraceScope providerScope = traceRecorder.startChild(turnSpan, spanName)) {
-            TraceSpan providerSpan = providerScope.span();
-            providerSpan.putAttribute("phase", phase.name());
-            providerSpan.putAttribute("tool_count", availableTools.size());
-            providerSpan.putAttribute("final_only_action",
-                    phase == DecisionPhase.ACTION && availableTools.isEmpty());
-            String systemPrompt = promptComposer.compose(new PromptContext(workDir, phase, availableTools));
-            AgentContext compactedContext = contextCompactor.compact(context);
-            providerSpan.putAttribute("system_prompt_chars", lengthOf(systemPrompt));
-            providerSpan.putAttribute("input_context_message_count", contextMessageCount(compactedContext));
-            providerSpan.putAttribute("draft_thought_chars", lengthOf(compactedContext.draftThought()));
-            providerSpan.putAttribute("review_feedback_chars", lengthOf(compactedContext.reviewFeedback()));
-            providerSpan.putAttribute("approved_plan_chars", lengthOf(compactedContext.approvedPlan()));
-            ModelResponse response = provider.decide(compactedContext, phase, availableTools, systemPrompt);
-            long durationMillis = elapsedMillis(start);
-            providerSpan.putAttribute("model", response.model());
-            providerSpan.putAttribute("success", true);
-            providerSpan.putAttribute("usage_available", response.usageAvailable());
-            providerSpan.putAttribute("prompt_tokens", response.usage().promptTokens());
-            providerSpan.putAttribute("completion_tokens", response.usage().completionTokens());
-            providerSpan.putAttribute("total_tokens", response.usage().totalTokens());
-            metrics.modelCalls.add(new ModelCallMetric(phase, response.model(), durationMillis, true, null,
-                    response.usage(), response.usageAvailable()));
-            return new ProviderResponse(response.decision(), durationMillis);
-        } catch (RuntimeException ex) {
-            String reason = "provider_error: " + ex.getMessage();
-            TraceSpan failedSpan = latestChild(turnSpan, spanName);
-            if (failedSpan != null) {
-                failedSpan.putAttribute("success", false);
-                failedSpan.putAttribute("error", reason);
-            }
-            metrics.modelCalls.add(new ModelCallMetric(phase, "", elapsedMillis(start), false, reason,
-                    ModelUsage.empty(), false));
-            throw new ProviderCallException(reason);
-        }
-    }
-
-    private String spanName(DecisionPhase phase) {
-        if (phase == DecisionPhase.THINKING) {
-            return "llm.thinking";
-        }
-        if (phase == DecisionPhase.REVIEW) {
-            return "llm.review";
-        }
-        return "llm.action";
-    }
-
     private List<ToolDefinition> actionToolsFor(AgentContext context) {
-        if (TokenEfficiencyState.requiresValidation(context)
-                && TokenEfficiencyState.validationPassed(context)) {
+        if (TokenEfficiencyAdvisor.requiresValidation(context)
+                && TokenEfficiencyAdvisor.validationPassed(context)) {
             return Collections.emptyList();
         }
         return toolRegistry.definitions();
     }
 
     private TurnResult applyDecision(AgentContext context, Decision decision,
-            SystemReminderInjector systemReminderInjector, TokenEfficiencyState tokenEfficiencyState,
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
             RunMetricsCollector metrics, TraceSpan turnSpan) {
         if (decision instanceof FinishDecision) {
             FinishDecision finish = (FinishDecision) decision;
@@ -402,36 +351,48 @@ public final class AgentEngine {
 
         if (decision instanceof ToolDecision) {
             return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector,
-                    tokenEfficiencyState, metrics, turnSpan);
+                    tokenEfficiencyAdvisor, metrics, turnSpan);
         }
 
         if (decision instanceof ParallelToolDecision) {
             return handleParallelToolDecision(context, (ParallelToolDecision) decision, systemReminderInjector,
-                    tokenEfficiencyState, metrics, turnSpan);
+                    tokenEfficiencyAdvisor, metrics, turnSpan);
         }
 
         return TurnResult.done(fail(context, "unsupported_decision", metrics));
     }
 
     private TurnResult handleToolDecision(AgentContext context, ToolCall call,
-            SystemReminderInjector systemReminderInjector, TokenEfficiencyState tokenEfficiencyState,
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
             RunMetricsCollector metrics, TraceSpan turnSpan) {
-        ToolResult toolResult = executeToolCall(context, call, metrics, turnSpan);
+        ToolResult toolResult = toolCallRunner.execute(context, call, metrics, turnSpan);
         List<String> outputs = new ArrayList<String>();
         outputs.add(observationFor(call, toolResult));
         appendReminder(outputs, systemReminderInjector.afterToolCall(call, toolResult));
-        appendReminder(outputs, tokenEfficiencyState.afterToolCall(context, call, toolResult));
+        appendReminder(outputs, tokenEfficiencyAdvisor.afterToolCall(context, call, toolResult));
         return TurnResult.next(advanceAndObserve(context, outputs));
     }
 
     private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision,
-            SystemReminderInjector systemReminderInjector, TokenEfficiencyState tokenEfficiencyState,
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
             RunMetricsCollector metrics, TraceSpan turnSpan) {
         List<ToolCall> calls = decision.getCalls();
         if (calls.isEmpty()) {
             return TurnResult.next(context.advance());
         }
 
+        Map<ToolCall, CompletableFuture<ToolResult>> readOnlyResults =
+                startReadOnlyToolCalls(context, calls, metrics, turnSpan);
+        ParallelToolOutputs collected = collectParallelToolOutputs(context, calls, readOnlyResults,
+                systemReminderInjector, tokenEfficiencyAdvisor, metrics, turnSpan);
+        if (collected.failureReason() != null) {
+            return TurnResult.done(fail(context, collected.failureReason(), metrics));
+        }
+        return TurnResult.next(advanceAndObserve(context, collected.outputs()));
+    }
+
+    private Map<ToolCall, CompletableFuture<ToolResult>> startReadOnlyToolCalls(AgentContext context,
+            List<ToolCall> calls, RunMetricsCollector metrics, TraceSpan turnSpan) {
         Map<ToolCall, CompletableFuture<ToolResult>> readOnlyResults =
                 new LinkedHashMap<ToolCall, CompletableFuture<ToolResult>>();
         for (ToolCall call : calls) {
@@ -441,11 +402,17 @@ public final class AgentEngine {
             }
             if (!tool.isSideEffect()) {
                 readOnlyResults.put(call,
-                        CompletableFuture.supplyAsync(() -> executeToolCall(context, call, metrics, turnSpan),
+                        CompletableFuture.supplyAsync(() -> toolCallRunner.execute(context, call, metrics, turnSpan),
                                 toolExecutor));
             }
         }
+        return readOnlyResults;
+    }
 
+    private ParallelToolOutputs collectParallelToolOutputs(AgentContext context, List<ToolCall> calls,
+            Map<ToolCall, CompletableFuture<ToolResult>> readOnlyResults,
+            SystemReminderInjector systemReminderInjector, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
+            RunMetricsCollector metrics, TraceSpan turnSpan) {
         List<String> outputs = new ArrayList<String>();
         String lastReminder = null;
         String lastTokenReminder = null;
@@ -456,10 +423,10 @@ public final class AgentEngine {
                 try {
                     result = future.get();
                 } catch (Exception ex) {
-                    return TurnResult.done(fail(context, "parallel_execution_failed: " + ex.getMessage(), metrics));
+                    return ParallelToolOutputs.failed("parallel_execution_failed: " + ex.getMessage());
                 }
             } else {
-                result = executeToolCall(context, call, metrics, turnSpan);
+                result = toolCallRunner.execute(context, call, metrics, turnSpan);
             }
 
             outputs.add(observationFor(call, result));
@@ -467,7 +434,7 @@ public final class AgentEngine {
             if (reminder != null) {
                 lastReminder = reminder;
             }
-            String tokenReminder = tokenEfficiencyState.afterToolCall(context, call, result);
+            String tokenReminder = tokenEfficiencyAdvisor.afterToolCall(context, call, result);
             if (tokenReminder != null) {
                 lastTokenReminder = tokenReminder;
             }
@@ -475,37 +442,13 @@ public final class AgentEngine {
 
         appendReminder(outputs, lastReminder);
         appendReminder(outputs, lastTokenReminder);
-        return TurnResult.next(advanceAndObserve(context, outputs));
-    }
-
-    private ToolResult executeToolCall(AgentContext context, ToolCall call, RunMetricsCollector metrics,
-            TraceSpan turnSpan) {
-        long toolStart = System.nanoTime();
-        try (TraceScope toolScope = traceRecorder.startChild(turnSpan, "tool.execute")) {
-            TraceSpan toolSpan = toolScope.span();
-            Tool tool = toolRegistry.snapshot().get(call.toolName());
-            toolSpan.putAttribute("tool_name", call.toolName());
-            toolSpan.putAttribute("side_effect", tool == null || tool.isSideEffect());
-            toolSpan.putAttribute("arguments_preview", preview(String.valueOf(call.arguments()), 400));
-            runLogger.toolStarted(call);
-            ToolResult toolResult = toolRegistry.execute(call, context);
-            long durationMillis = elapsedMillis(toolStart);
-            runLogger.toolCompleted(call, toolResult, durationMillis);
-            toolSpan.putAttribute("success", toolResult.success());
-            toolSpan.putAttribute("output_bytes", outputBytes(toolResult));
-            if (!toolResult.success()) {
-                toolSpan.putAttribute("error", toolResult.errorMessage());
-            }
-            metrics.toolCalls.add(new ToolCallMetric(call.toolName(), durationMillis, toolResult.success(),
-                    outputBytes(toolResult), toolResult.errorMessage()));
-            return toolResult;
-        }
+        return ParallelToolOutputs.success(outputs);
     }
 
     private String observationFor(ToolCall call, ToolResult toolResult) {
         if (toolResult.success()) {
-            if (TokenEfficiencyState.isReadFile(call)) {
-                String path = TokenEfficiencyState.normalizedPath(call);
+            if (TokenEfficiencyAdvisor.isReadFile(call)) {
+                String path = TokenEfficiencyAdvisor.normalizedPath(call);
                 if (path != null) {
                     return "[read_file path=" + path + "]\n" + toolResult.output();
                 }
@@ -558,177 +501,12 @@ public final class AgentEngine {
         return combinedOutput.toString();
     }
 
-    private static final class TokenEfficiencyState {
-        private static final int REPEATED_READ_THRESHOLD = 2;
-
-        private final Map<String, Integer> successfulReadCounts = new HashMap<String, Integer>();
-
-        private String afterToolCall(AgentContext context, ToolCall call, ToolResult result) {
-            if (!result.success()) {
-                return null;
-            }
-            if (isReadFile(call)) {
-                return afterSuccessfulRead(call);
-            }
-            if (requiresValidation(context) && validationFailed(result.output())) {
-                return "[SYSTEM REMINDER] The validation failed. Fix the failing code or run a targeted check next; "
-                        + "avoid long analysis and do not finish until validation passes.";
-            }
-            if (isWriteTool(call) && requiresValidation(context)) {
-                return "[SYSTEM REMINDER] A file was just modified and this task asks for validation. "
-                        + "Next, prioritize running the validation/test command such as validation.ps1; "
-                        + "do not repeat-read unchanged files first.";
-            }
-            return null;
-        }
-
-        private String afterSuccessfulRead(ToolCall call) {
-            String path = normalizedPath(call);
-            if (path == null) {
-                return null;
-            }
-            int count = successfulReadCounts.getOrDefault(path, 0) + 1;
-            successfulReadCounts.put(path, count);
-            if (count <= REPEATED_READ_THRESHOLD) {
-                return null;
-            }
-            return "[SYSTEM REMINDER] You have successfully read the same read_file path " + count
-                    + " times: " + path + ". Stop repeating this read; modify, validate, test, or finish.";
-        }
-
-        private static boolean isReadFile(ToolCall call) {
-            return "read_file".equals(call.toolName());
-        }
-
-        private static boolean isWriteTool(ToolCall call) {
-            return "write_file".equals(call.toolName()) || "edit_file".equals(call.toolName());
-        }
-
-        private static String normalizedPath(ToolCall call) {
-            Object rawPath = call.arguments().get("path");
-            if (!(rawPath instanceof String)) {
-                return null;
-            }
-            String path = ((String) rawPath).trim().replace('\\', '/');
-            while (path.startsWith("./")) {
-                path = path.substring(2);
-            }
-            return path.isEmpty() ? null : path;
-        }
-
-        private static boolean requiresValidation(AgentContext context) {
-            StringBuilder content = new StringBuilder();
-            append(content, context.goal());
-            append(content, context.draftThought());
-            append(content, context.reviewFeedback());
-            append(content, context.approvedPlan());
-            for (String observation : context.observations()) {
-                append(content, observation);
-            }
-            String value = content.toString();
-            String lower = value.toLowerCase(Locale.ROOT);
-            return value.contains("验证")
-                    || lower.contains("validate")
-                    || lower.contains("validation.ps1")
-                    || lower.contains("test");
-        }
-
-        private static boolean validationPassed(AgentContext context) {
-            String latest = latestObservation(context);
-            if (latest == null) {
-                return false;
-            }
-            String lower = latest.toLowerCase(Locale.ROOT);
-            return lower.contains("result=ok")
-                    || lower.contains("build success")
-                    || lower.contains("failures: 0")
-                    || lower.contains("failures=0");
-        }
-
-        private static boolean validationFailed(String output) {
-            if (output == null || output.isBlank()) {
-                return false;
-            }
-            String lower = output.toLowerCase(Locale.ROOT);
-            if (lower.contains("result=failed")
-                    || lower.contains("build failure")
-                    || lower.contains("failures: 1")
-                    || lower.contains("failures=1")) {
-                return true;
-            }
-            int exitCodeIndex = lower.indexOf("exitcode=");
-            if (exitCodeIndex < 0) {
-                return false;
-            }
-            int valueStart = exitCodeIndex + "exitcode=".length();
-            return valueStart < lower.length() && lower.charAt(valueStart) != '0';
-        }
-
-        private static String latestObservation(AgentContext context) {
-            List<String> observations = context.observations();
-            if (observations.isEmpty()) {
-                return null;
-            }
-            return observations.get(observations.size() - 1);
-        }
-
-        private static void append(StringBuilder builder, String value) {
-            if (value == null || value.isBlank()) {
-                return;
-            }
-            if (builder.length() > 0) {
-                builder.append('\n');
-            }
-            builder.append(value);
-        }
-    }
-
-    private long elapsedMillis(long startNanos) {
-        return (System.nanoTime() - startNanos) / 1_000_000L;
-    }
-
-    private int outputBytes(ToolResult result) {
-        if (result == null || !result.success() || result.output() == null) {
-            return 0;
-        }
-        return result.output().getBytes(StandardCharsets.UTF_8).length;
-    }
-
-    private int lengthOf(String value) {
-        return value == null ? 0 : value.length();
-    }
-
-    private int contextMessageCount(AgentContext context) {
-        int count = 1 + context.workingMemory().size() + context.observations().size();
-        if (context.draftThought() != null && !context.draftThought().isBlank()) {
-            count++;
-        }
-        if (context.reviewFeedback() != null && !context.reviewFeedback().isBlank()) {
-            count++;
-        }
-        if (context.approvedPlan() != null && !context.approvedPlan().isBlank()) {
-            count++;
-        }
-        return count;
-    }
-
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }
 
     private String nullSafe(String value) {
         return value == null ? "" : value;
-    }
-
-    private TraceSpan latestChild(TraceSpan parent, String name) {
-        List<TraceSpan> children = parent.children();
-        for (int i = children.size() - 1; i >= 0; i--) {
-            TraceSpan child = children.get(i);
-            if (name.equals(child.name())) {
-                return child;
-            }
-        }
-        return null;
     }
 
     private String preview(String value, int maxLength) {
@@ -740,21 +518,6 @@ public final class AgentEngine {
             return normalized;
         }
         return normalized.substring(0, maxLength) + "...";
-    }
-
-    private static final class RunMetricsCollector {
-        private final List<ModelCallMetric> modelCalls =
-                Collections.synchronizedList(new ArrayList<ModelCallMetric>());
-        private final List<ToolCallMetric> toolCalls =
-                Collections.synchronizedList(new ArrayList<ToolCallMetric>());
-
-        private RunMetrics snapshot() {
-            synchronized (modelCalls) {
-                synchronized (toolCalls) {
-                    return new RunMetrics(modelCalls, toolCalls);
-                }
-            }
-        }
     }
 
     private static final class TurnResult {
@@ -783,34 +546,29 @@ public final class AgentEngine {
         }
     }
 
-    private static final class ProviderResponse {
-        private final Decision decision;
-        private final long durationMillis;
+    private static final class ParallelToolOutputs {
+        private final List<String> outputs;
+        private final String failureReason;
 
-        private ProviderResponse(Decision decision, long durationMillis) {
-            this.decision = decision;
-            this.durationMillis = durationMillis;
+        private ParallelToolOutputs(List<String> outputs, String failureReason) {
+            this.outputs = outputs;
+            this.failureReason = failureReason;
         }
 
-        private Decision decision() {
-            return decision;
+        private static ParallelToolOutputs success(List<String> outputs) {
+            return new ParallelToolOutputs(outputs, null);
         }
 
-        private long durationMillis() {
-            return durationMillis;
-        }
-    }
-
-    private static final class ProviderCallException extends RuntimeException {
-        private final String reason;
-
-        private ProviderCallException(String reason) {
-            super(reason);
-            this.reason = reason;
+        private static ParallelToolOutputs failed(String failureReason) {
+            return new ParallelToolOutputs(Collections.<String>emptyList(), failureReason);
         }
 
-        private String reason() {
-            return reason;
+        private List<String> outputs() {
+            return outputs;
+        }
+
+        private String failureReason() {
+            return failureReason;
         }
     }
 }
