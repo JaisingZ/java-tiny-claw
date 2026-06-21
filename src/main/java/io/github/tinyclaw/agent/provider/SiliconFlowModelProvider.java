@@ -10,7 +10,6 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
 import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.SessionMessageKind;
@@ -293,10 +292,7 @@ public final class SiliconFlowModelProvider implements ModelProvider {
             throw new RuntimeException("SiliconFlow tool calls missing function in all calls");
         }
 
-        if (calls.size() == 1) {
-            return new ToolDecision(calls.get(0));
-        }
-        return new ParallelToolDecision(calls);
+        return new ToolDecision(calls);
     }
 
     private Map<String, Object> parseArguments(String argumentsText) {

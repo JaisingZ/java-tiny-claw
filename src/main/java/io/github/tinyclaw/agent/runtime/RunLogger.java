@@ -67,7 +67,7 @@ public interface RunLogger {
     void actionStarted(List<ToolDefinition> tools);
 
     /**
-     * 记录模型请求工具调用。
+     * 记录模型请求一组工具调用。
      */
     void toolDecision(ToolDecision decision);
 

@@ -8,7 +8,6 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
 import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.SessionMessageKind;
@@ -382,7 +381,7 @@ class AgentEngineTest {
                 "review-start:1",
                 "review-complete:APPROVED",
                 "action-start:[echo]",
-                "tool-decision:echo",
+                "tool-decision:[echo]",
                 "tool-start:echo",
                 "tool-success:echo",
                 "turn:2",
@@ -1072,8 +1071,8 @@ class AgentEngineTest {
         return new FinishDecision(answer);
     }
 
-    private static ParallelToolDecision parallel(ToolCall... calls) {
-        return new ParallelToolDecision(Arrays.asList(calls));
+    private static ToolDecision parallel(ToolCall... calls) {
+        return new ToolDecision(Arrays.asList(calls));
     }
 
     private static String repeat(String value, int count) {
@@ -1624,7 +1623,7 @@ class AgentEngineTest {
 
         @Override
         public void toolDecision(ToolDecision decision) {
-            events.add("tool-decision:" + decision.call().toolName());
+            events.add("tool-decision:" + toolCallNames(decision.calls()));
         }
 
         @Override
@@ -1655,6 +1654,14 @@ class AgentEngineTest {
             List<String> names = new ArrayList<String>();
             for (ToolDefinition tool : tools) {
                 names.add(tool.name());
+            }
+            return names;
+        }
+
+        private List<String> toolCallNames(List<ToolCall> calls) {
+            List<String> names = new ArrayList<String>();
+            for (ToolCall call : calls) {
+                names.add(call.toolName());
             }
             return names;
         }

@@ -195,6 +195,29 @@ class SiliconFlowModelProviderTest {
     }
 
     @Test
+    void actionPhaseParsesMultipleToolCallsAsOneToolDecision() throws Exception {
+        startServer(200, completionWithMessage("{\"tool_calls\":["
+                        + "{\"id\":\"call-1\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}},"
+                        + "{\"id\":\"call-2\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"b.txt\\\"}\"}}]}"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"));
+
+        Decision decision = provider.decide(AgentContext.create(new Task("task-multi-tool", "read both")),
+                DecisionPhase.ACTION, Collections.singletonList(new ToolDefinition("read_file", "read file",
+                        Collections.<String, Object>singletonMap("type", "object"))), SYSTEM_PROMPT).decision();
+
+        assertThat(decision).isInstanceOf(ToolDecision.class);
+        ToolDecision toolDecision = (ToolDecision) decision;
+        assertThat(toolDecision.getCalls()).hasSize(2);
+        assertThat(toolDecision.getCalls().get(0).toolName()).isEqualTo("read_file");
+        assertThat(toolDecision.getCalls().get(0).arguments()).containsEntry("path", "a.txt");
+        assertThat(toolDecision.getCalls().get(1).arguments()).containsEntry("path", "b.txt");
+    }
+
+    @Test
     void actionPhaseSendsApprovedPlanWithoutRawDraftThought() throws Exception {
         AtomicReference<JsonNode> requestBody = new AtomicReference<JsonNode>();
         startServer(200, completionWithMessage("{\"content\":\"done\"}"),
@@ -386,6 +409,30 @@ class SiliconFlowModelProviderTest {
                 .doesNotContain("\"tools\"")
                 .doesNotContain("\"parameters\"")
                 .doesNotContain("hello");
+    }
+
+    @Test
+    void debugOutputSummarizesMultiCallToolDecision() throws Exception {
+        startServer(200, completionWithMessage("{\"tool_calls\":["
+                        + "{\"id\":\"call-1\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\"}\"}},"
+                        + "{\"id\":\"call-2\",\"type\":\"function\","
+                        + "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"b.txt\\\"}\"}}]}"),
+                new AtomicReference<String>(), new AtomicReference<JsonNode>());
+        StringBuilder debugOutput = new StringBuilder();
+        SiliconFlowModelProvider provider = new SiliconFlowModelProvider(
+                new SiliconFlowConfig("test-key", baseUrl(), "Qwen/Qwen3-8B"),
+                line -> debugOutput.append(line).append('\n'));
+
+        provider.decide(AgentContext.create(new Task("task-debug-multi-tools", "use tools")),
+                DecisionPhase.ACTION, java.util.List.of(new ToolDefinition("read_file", "read file",
+                        Collections.<String, Object>singletonMap("type", "object"))), SYSTEM_PROMPT);
+
+        assertThat(debugOutput.toString())
+                .contains("toolCallNames=[read_file, read_file]")
+                .contains("ToolDecision callCount=2 toolNames=[read_file, read_file]")
+                .doesNotContain("a.txt")
+                .doesNotContain("b.txt");
     }
 
     @Test

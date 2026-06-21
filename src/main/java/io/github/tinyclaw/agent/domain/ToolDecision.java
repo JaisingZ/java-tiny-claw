@@ -1,34 +1,65 @@
 package io.github.tinyclaw.agent.domain;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 /**
  * main loop 的工具决策。
- * 表示本轮应执行单个工具调用。
+ * 表示本轮应执行一组工具调用。
  */
 public final class ToolDecision implements Decision {
 
-    private final ToolCall call;
+    private final List<ToolCall> calls;
+
+    /**
+     * 创建单工具决策。
+     */
+    public ToolDecision(ToolCall call) {
+        this.calls = Collections.singletonList(call);
+    }
 
     /**
      * 创建工具决策。
+     * null 输入会转为空列表，返回的列表始终为不可变。
      */
-    public ToolDecision(ToolCall call) {
-        this.call = call;
+    public ToolDecision(List<ToolCall> calls) {
+        if (calls == null) {
+            this.calls = Collections.emptyList();
+        } else {
+            this.calls = Collections.unmodifiableList(calls);
+        }
     }
 
     /**
-     * 获取待执行的工具调用。
+     * 获取唯一的待执行工具调用。
      */
     public ToolCall call() {
-        return call;
+        if (calls.size() != 1) {
+            throw new IllegalStateException("ToolDecision.call() requires exactly one tool call");
+        }
+        return calls.get(0);
     }
 
     /**
-     * 获取待执行的工具调用（兼容 get 风格调用）。
+     * 获取唯一的待执行工具调用（兼容 get 风格调用）。
      */
     public ToolCall getCall() {
-        return call;
+        return call();
+    }
+
+    /**
+     * 获取待执行的工具调用列表。
+     */
+    public List<ToolCall> calls() {
+        return calls;
+    }
+
+    /**
+     * 获取待执行的工具调用列表（兼容 get 风格调用）。
+     */
+    public List<ToolCall> getCalls() {
+        return calls();
     }
 
     /**
@@ -43,7 +74,7 @@ public final class ToolDecision implements Decision {
             return false;
         }
         ToolDecision that = (ToolDecision) other;
-        return Objects.equals(call, that.call);
+        return Objects.equals(calls, that.calls);
     }
 
     /**
@@ -51,7 +82,7 @@ public final class ToolDecision implements Decision {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(call);
+        return Objects.hash(calls);
     }
 
     /**
@@ -60,7 +91,7 @@ public final class ToolDecision implements Decision {
     @Override
     public String toString() {
         return "ToolDecision{"
-                + "call=" + call
+                + "calls=" + calls
                 + '}';
     }
 }

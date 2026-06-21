@@ -105,7 +105,12 @@ public final class Slf4jRunLogger implements RunLogger {
 
     @Override
     public void toolDecision(ToolDecision decision) {
-        logEvent("[Engine] 模型请求调用工具: " + decision.call().toolName());
+        if (decision.calls().size() == 1) {
+            logEvent("[Engine] 模型请求调用工具: " + decision.call().toolName());
+            return;
+        }
+        logEvent("[Engine] 模型请求调用工具组: count=" + decision.calls().size()
+                + ", tools=" + toolCallNames(decision.calls()));
     }
 
     @Override
@@ -151,6 +156,10 @@ public final class Slf4jRunLogger implements RunLogger {
 
     private List<String> toolNames(List<ToolDefinition> tools) {
         return tools.stream().map(ToolDefinition::name).toList();
+    }
+
+    private List<String> toolCallNames(List<ToolCall> calls) {
+        return calls.stream().map(ToolCall::toolName).toList();
     }
 
     private int utf8Length(String value) {

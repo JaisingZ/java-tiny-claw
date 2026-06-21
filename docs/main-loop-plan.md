@@ -57,16 +57,6 @@ while true:
     return success(answer)
 
   if ToolDecision:
-    execute one tool through ToolRegistry
-    if success:
-      ctx = ctx.advance().observe(output)
-    else:
-      ctx = ctx.advance().observe(recovery_observation)
-    if reminder is triggered:
-      append [SYSTEM REMINDER] at the end of the current observation
-    continue
-
-  if ParallelToolDecision:
     execute read-only tools concurrently
     execute side-effect tools serially in model order
     convert each failed result to a recovery observation
@@ -116,7 +106,7 @@ while true:
 ## 验收标准
 
 - 能从 `Task` 跑到 `SUCCESS` 或 `FAILED`。
-- 覆盖 `FinishDecision`、`ToolDecision`、`ParallelToolDecision` 和可选 `ThinkingDecision`。
+- 覆盖 `FinishDecision`、`ToolDecision` 和可选 `ThinkingDecision`。
 - 每轮关键步骤都有 `RunLogger` 可读日志。
 - 每次 CLI/Telegram 运行都能生成 Root/Turn/LLM/Tool 层级的本地 JSON trace。
 - 无硬性步数阈值；主循环以 `FinishDecision`、`unsupported_*` 等失败分支结束。

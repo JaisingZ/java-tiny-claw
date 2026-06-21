@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.MissingNode;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.FinishDecision;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
 import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.ThinkingDecision;
 import io.github.tinyclaw.agent.domain.ToolCall;
@@ -56,12 +55,12 @@ final class ProviderDebugSummary {
             return "FinishDecision answerLength=" + textLength(((FinishDecision) decision).answer());
         }
         if (decision instanceof ToolDecision) {
-            ToolCall call = ((ToolDecision) decision).call();
-            return "ToolDecision tool=" + call.toolName() + " argumentKeys=" + argumentKeys(call);
-        }
-        if (decision instanceof ParallelToolDecision) {
-            List<ToolCall> calls = ((ParallelToolDecision) decision).getCalls();
-            return "ParallelToolDecision callCount=" + calls.size() + " toolNames=" + callToolNames(calls);
+            List<ToolCall> calls = ((ToolDecision) decision).calls();
+            if (calls.size() == 1) {
+                ToolCall call = calls.get(0);
+                return "ToolDecision tool=" + call.toolName() + " argumentKeys=" + argumentKeys(call);
+            }
+            return "ToolDecision callCount=" + calls.size() + " toolNames=" + callToolNames(calls);
         }
         return decision.getClass().getSimpleName();
     }

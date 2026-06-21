@@ -43,8 +43,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 - `ThinkingDecision`：慢思考阶段的文本结果。
 - `ReviewDecision`：自评审阶段结果，包含 `APPROVED`、`REVISE`、`BLOCKED` 三态。
-- `ToolDecision`：请求执行一个工具。
-- `ParallelToolDecision`：请求执行多个工具。
+- `ToolDecision`：请求执行一个或多个工具调用。
 - `FinishDecision`：任务完成并给出最终回答。
 
 `Runtime` 不根据模型厂商写分支，也不直接依赖任何厂商 SDK 类型。
@@ -61,7 +60,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 - 使用 Java 21 `HttpClient` 调用 `<baseUrl>/chat/completions`。
 - 请求固定为非流式 `stream=false`。
 - `ACTION` 阶段挂载工具定义，允许模型输出工具调用或最终回答。
-- 多个工具调用会映射为 `ParallelToolDecision`。
+- 一个或多个工具调用都会映射为 `ToolDecision`。
 - Provider debug 输出只保留摘要和截断后的 JSON，避免把完整工具 schema 大段刷屏。
 - 第一条 system message 使用调用方传入的 `systemPrompt`，Provider 不自行拼接项目规范。
 - Provider 会读取响应中的 `usage`，并把 Token 信息交给 Runtime 指标层；缺失时按 unavailable 记录。
@@ -72,7 +71,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 - 模型普通文本响应收敛为 `FinishDecision` 或 `ThinkingDecision`。
 - `REVIEW` 阶段文本响应收敛为 `ReviewDecision`（`APPROVED` / `REVISE` / `BLOCKED`）。
-- 模型工具调用响应收敛为 `ToolDecision` 或 `ParallelToolDecision`。
+- 模型工具调用响应收敛为 `ToolDecision`，其中 `calls` 可包含一个或多个 `ToolCall`。
 - 工具名、参数和调用 ID 收敛为内部 `ToolCall`。
 - 厂商错误统一转换为 Provider 异常，由 `Runtime` 按 `provider_error` 失败规则处理。
 

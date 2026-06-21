@@ -78,7 +78,7 @@ Runtime 负责主循环与控制流。
 - 接收 `Task`
 - 创建并推进 `AgentContext`
 - 调用 `ModelProvider`
-- 处理 `ThinkingDecision`、`ReviewDecision`、`FinishDecision`、`ToolDecision`、`ParallelToolDecision`
+- 处理 `ThinkingDecision`、`ReviewDecision`、`FinishDecision`、`ToolDecision`
 - 执行工具调用并记录观测
 - 决定继续、成功或失败
 

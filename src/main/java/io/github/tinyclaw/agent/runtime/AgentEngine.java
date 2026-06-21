@@ -6,7 +6,6 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.domain.DecisionPhase;
 import io.github.tinyclaw.agent.domain.FinishDecision;
-import io.github.tinyclaw.agent.domain.ParallelToolDecision;
 import io.github.tinyclaw.agent.domain.ReviewDecision;
 import io.github.tinyclaw.agent.domain.SessionMessage;
 import io.github.tinyclaw.agent.domain.Task;
@@ -350,33 +349,17 @@ public final class AgentEngine {
         }
 
         if (decision instanceof ToolDecision) {
-            return handleToolDecision(context, ((ToolDecision) decision).call(), systemReminderInjector,
-                    tokenEfficiencyAdvisor, metrics, turnSpan);
-        }
-
-        if (decision instanceof ParallelToolDecision) {
-            return handleParallelToolDecision(context, (ParallelToolDecision) decision, systemReminderInjector,
+            return handleToolDecision(context, (ToolDecision) decision, systemReminderInjector,
                     tokenEfficiencyAdvisor, metrics, turnSpan);
         }
 
         return TurnResult.done(fail(context, "unsupported_decision", metrics));
     }
 
-    private TurnResult handleToolDecision(AgentContext context, ToolCall call,
+    private TurnResult handleToolDecision(AgentContext context, ToolDecision decision,
             SystemReminderInjector systemReminderInjector, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
             RunMetricsCollector metrics, TraceSpan turnSpan) {
-        ToolResult toolResult = toolCallRunner.execute(context, call, metrics, turnSpan);
-        List<String> outputs = new ArrayList<String>();
-        outputs.add(observationFor(call, toolResult));
-        appendReminder(outputs, systemReminderInjector.afterToolCall(call, toolResult));
-        appendReminder(outputs, tokenEfficiencyAdvisor.afterToolCall(context, call, toolResult));
-        return TurnResult.next(advanceAndObserve(context, outputs));
-    }
-
-    private TurnResult handleParallelToolDecision(AgentContext context, ParallelToolDecision decision,
-            SystemReminderInjector systemReminderInjector, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
-            RunMetricsCollector metrics, TraceSpan turnSpan) {
-        List<ToolCall> calls = decision.getCalls();
+        List<ToolCall> calls = decision.calls();
         if (calls.isEmpty()) {
             return TurnResult.next(context.advance());
         }
