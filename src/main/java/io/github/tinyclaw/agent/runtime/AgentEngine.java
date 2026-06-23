@@ -257,7 +257,7 @@ public final class AgentEngine {
 
             Decision decision;
             try {
-                decision = requestActionDecision(context, metrics, turnSpan);
+                decision = requestActionDecision(context, tokenEfficiencyAdvisor, metrics, turnSpan);
             } catch (ProviderCallException ex) {
                 return TurnResult.done(fail(context, ex.reason(), metrics));
             }
@@ -318,8 +318,9 @@ public final class AgentEngine {
         return review;
     }
 
-    private Decision requestActionDecision(AgentContext context, RunMetricsCollector metrics, TraceSpan turnSpan) {
-        List<ToolDefinition> toolDefinitions = actionToolsFor(context);
+    private Decision requestActionDecision(AgentContext context, TokenEfficiencyAdvisor tokenEfficiencyAdvisor,
+            RunMetricsCollector metrics, TraceSpan turnSpan) {
+        List<ToolDefinition> toolDefinitions = actionToolsFor(tokenEfficiencyAdvisor);
         runLogger.actionStarted(toolDefinitions);
         ProviderCallResult response = providerCallRunner.invoke(context, DecisionPhase.ACTION,
                 toolDefinitions, metrics, turnSpan);
@@ -330,9 +331,8 @@ public final class AgentEngine {
         return response.decision();
     }
 
-    private List<ToolDefinition> actionToolsFor(AgentContext context) {
-        if (TokenEfficiencyAdvisor.requiresValidation(context)
-                && TokenEfficiencyAdvisor.validationPassed(context)) {
+    private List<ToolDefinition> actionToolsFor(TokenEfficiencyAdvisor tokenEfficiencyAdvisor) {
+        if (tokenEfficiencyAdvisor.validationPassed()) {
             return Collections.emptyList();
         }
         return toolRegistry.definitions();

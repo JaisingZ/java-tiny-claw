@@ -4,7 +4,6 @@ import io.github.tinyclaw.agent.domain.AgentContext;
 import io.github.tinyclaw.agent.domain.ToolCall;
 import io.github.tinyclaw.agent.tool.ToolResult;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -16,6 +15,7 @@ final class TokenEfficiencyAdvisor {
     private static final int REPEATED_READ_THRESHOLD = 2;
 
     private final Map<String, Integer> successfulReadCounts = new HashMap<String, Integer>();
+    private boolean validationPassed;
 
     String afterToolCall(AgentContext context, ToolCall call, ToolResult result) {
         if (!result.success()) {
@@ -24,7 +24,11 @@ final class TokenEfficiencyAdvisor {
         if (isReadFile(call)) {
             return afterSuccessfulRead(call);
         }
-        if (requiresValidation(context) && validationFailed(result.output())) {
+        if (requiresValidation(context) && isBashTool(call) && validationSucceeded(result.output())) {
+            validationPassed = true;
+            return null;
+        }
+        if (requiresValidation(context) && isBashTool(call) && validationFailed(result.output())) {
             return "[SYSTEM REMINDER] The validation failed. Fix the failing code or run a targeted check next; "
                     + "avoid long analysis and do not finish until validation passes.";
         }
@@ -34,6 +38,10 @@ final class TokenEfficiencyAdvisor {
                     + "do not repeat-read unchanged files first.";
         }
         return null;
+    }
+
+    boolean validationPassed() {
+        return validationPassed;
     }
 
     private String afterSuccessfulRead(ToolCall call) {
@@ -56,6 +64,10 @@ final class TokenEfficiencyAdvisor {
 
     private static boolean isWriteTool(ToolCall call) {
         return "write_file".equals(call.toolName()) || "edit_file".equals(call.toolName());
+    }
+
+    private static boolean isBashTool(ToolCall call) {
+        return "bash".equals(call.toolName());
     }
 
     static String normalizedPath(ToolCall call) {
@@ -87,12 +99,11 @@ final class TokenEfficiencyAdvisor {
                 || lower.contains("test");
     }
 
-    static boolean validationPassed(AgentContext context) {
-        String latest = latestObservation(context);
-        if (latest == null) {
+    private static boolean validationSucceeded(String output) {
+        if (output == null || output.isBlank()) {
             return false;
         }
-        String lower = latest.toLowerCase(Locale.ROOT);
+        String lower = output.toLowerCase(Locale.ROOT);
         return lower.contains("result=ok")
                 || lower.contains("build success")
                 || lower.contains("failures: 0")
@@ -116,14 +127,6 @@ final class TokenEfficiencyAdvisor {
         }
         int valueStart = exitCodeIndex + "exitcode=".length();
         return valueStart < lower.length() && lower.charAt(valueStart) != '0';
-    }
-
-    private static String latestObservation(AgentContext context) {
-        List<String> observations = context.observations();
-        if (observations.isEmpty()) {
-            return null;
-        }
-        return observations.get(observations.size() - 1);
     }
 
     private static void append(StringBuilder builder, String value) {

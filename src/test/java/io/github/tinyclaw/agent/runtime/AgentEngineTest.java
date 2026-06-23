@@ -697,6 +697,46 @@ class AgentEngineTest {
     }
 
     @Test
+    void keepsToolsVisibleAfterReadingValidationScriptContainingSuccessMarker() {
+        EngineFixture fixture = fixture()
+                .withTools(new FixedOutputTool("read_file",
+                        "if ($outputText -notmatch \"result=ok\") { throw \"validation failed\" }\n"));
+        ToolCountScriptedProvider provider = new ToolCountScriptedProvider(
+                tool("read_file", "path", "target/concurrency-counter-workspace/validation.ps1"),
+                finish("needs execution"));
+
+        RunResult result = fixture.run(provider, "task-read-validation-script",
+                "修复后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.toolCounts()).containsExactly(1, 1);
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0))
+                .startsWith("[read_file path=target/concurrency-counter-workspace/validation.ps1]")
+                .contains("result=ok");
+    }
+
+    @Test
+    void keepsToolsVisibleAfterParallelReadsContainValidationSuccessMarker() {
+        EngineFixture fixture = fixture()
+                .withTools(new FixedOutputTool("read_file",
+                        "expected=100000\nactual=100000\nresult=ok\n"));
+        ToolCountScriptedProvider provider = new ToolCountScriptedProvider(
+                multiCall(
+                        call("read_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"),
+                        call("read_file", "path", "target/concurrency-counter-workspace/validation.ps1")),
+                finish("needs execution"));
+
+        RunResult result = fixture.run(provider, "task-parallel-read-validation-script",
+                "修复后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.toolCounts()).containsExactly(1, 1);
+        assertThat(result.observations()).hasSize(1);
+        assertThat(result.observations().get(0)).contains("result=ok");
+    }
+
+    @Test
     void keepsToolsVisibleAndAddsReminderAfterValidationFails() {
         EngineFixture fixture = fixture()
                 .withTools(new FixedOutputTool("bash", "expected=100000\nactual=17312\nresult=failed\n"));
@@ -1425,6 +1465,31 @@ class AgentEngineTest {
 
         private List<AgentContext> contexts() {
             return contexts;
+        }
+    }
+
+    private static final class ToolCountScriptedProvider implements ModelProvider {
+        private final Decision[] decisions;
+        private final List<Integer> toolCounts = new ArrayList<Integer>();
+        private int index;
+
+        private ToolCountScriptedProvider(Decision... decisions) {
+            this.decisions = decisions;
+        }
+
+        @Override
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            toolCounts.add(Integer.valueOf(availableTools.size()));
+            int current = index;
+            if (current < decisions.length - 1) {
+                index++;
+            }
+            return response(decisions[current]);
+        }
+
+        private List<Integer> toolCounts() {
+            return toolCounts;
         }
     }
 
