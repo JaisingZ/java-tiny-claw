@@ -167,6 +167,7 @@ class EditFileToolTest {
         ToolDefinition definition = tool.definition();
 
         assertThat(definition.name()).isEqualTo("edit_file");
+        assertThat(definition.description()).contains("small unique block").contains("write_file");
         assertThat(definition.parameters().toString()).contains("path", "old_text", "new_text", "required");
     }
 

@@ -51,6 +51,13 @@ while true:
     if ctx.approvedPlan is empty:
       return failed("plan_review_failed")
 
+  if validation is pending and known validation.ps1 path exists in context:
+    execute bash validation command
+    ctx = ctx.advance().observe(validation_output)
+    if validation passed:
+      return success(runtime validation summary)
+    continue
+
   request ACTION decision with tool definitions
 
   if FinishDecision:
@@ -62,6 +69,8 @@ while true:
     convert each failed result to a recovery observation
     append at most one [SYSTEM REMINDER] for this turn
     ctx = ctx.advance().observe(joined_outputs)
+    if validation task and joined_outputs proves validation passed:
+      return success(runtime validation summary)
     continue
 
   return failed("unsupported_decision")
@@ -113,3 +122,5 @@ while true:
 - REVIEW 仅做决策审阅，最多 2 次 `reviewFeedback`；不计入工具执行 `max step` 或步长上限。
 - `SystemReminder` 负责在行为偏离时给模型单轮提示，不触发硬性停机。
 - 工具失败不会穿透成主循环崩溃。
+- 对明确要求验证的任务，工具输出出现 `result=ok`、`BUILD SUCCESS`、`failures=0` 等成功信号后，Runtime 直接返回成功摘要，不再请求一次仅用于总结的 ACTION。
+- 对明确要求验证且上下文中已有 `validation.ps1` 路径的任务，写操作后 Runtime 可以直接执行该验证脚本；失败输出保持压缩并回写 Observation，下一轮恢复完整工具集供模型修复。

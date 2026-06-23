@@ -62,7 +62,8 @@ public final class EditFileTool implements Tool {
         parameters.put("properties", properties);
         parameters.put("required", Arrays.asList("path", "old_text", "new_text"));
 
-        return new ToolDefinition(name(), "Edit an existing file by replacing one unique text block", parameters);
+        return new ToolDefinition(name(), "Edit an existing file by replacing one small unique block; "
+                + "use write_file instead for large or full-file replacement", parameters);
     }
 
     /**

@@ -681,19 +681,85 @@ class AgentEngineTest {
     }
 
     @Test
-    void entersFinalOnlyActionAfterValidationPasses() {
+    void finishesAfterValidationPassesWithoutFinalModelCall() {
         EngineFixture fixture = fixture()
                 .withTools(new FixedOutputTool("bash", "expected=100000\nactual=100000\nresult=ok\n"));
         ValidationAwareProvider provider = new ValidationAwareProvider();
 
-        RunResult result = fixture.run(provider, "task-final-only",
+        RunResult result = fixture.run(provider, "task-validation-auto-finish",
                 "修复后执行 validation.ps1 验证");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
-        assertThat(result.finalAnswer()).isEqualTo("validated");
-        assertThat(provider.toolCounts()).containsExactly(1, 0);
-        assertThat(provider.contexts()).hasSize(2);
-        assertThat(provider.contexts().get(1).observations().get(0)).contains("result=ok");
+        assertThat(result.finalAnswer()).contains("验证通过");
+        assertThat(provider.toolCounts()).containsExactly(1);
+        assertThat(provider.contexts()).hasSize(1);
+        assertThat(result.observations().get(0)).contains("result=ok");
+    }
+
+    @Test
+    void exposesOnlyBashWhileValidationIsPendingAfterWrite() {
+        EngineFixture fixture = fixture()
+                .withTools(new WriteLikeTool("edit_file"), new FixedOutputTool("bash", "exitCode=1"));
+        ToolNamesScriptedProvider provider = new ToolNamesScriptedProvider(
+                tool("edit_file", "path", "src/App.java"),
+                tool("bash", "command", "powershell -File validation.ps1"),
+                finish("needs fix"));
+
+        RunResult result = fixture.run(provider, "task-validation-pending-tools",
+                "修复后执行正确性验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(provider.toolNames()).containsExactly(
+                Arrays.asList("edit_file", "bash"),
+                Collections.singletonList("bash"),
+                Arrays.asList("edit_file", "bash"));
+        assertThat(result.observations()).hasSize(2);
+        assertThat(result.observations().get(0)).contains("validation");
+        assertThat(result.observations().get(1)).contains("Validation failed");
+    }
+
+    @Test
+    void autoRunsDiscoveredValidationScriptAfterWrite() {
+        EngineFixture fixture = fixture()
+                .withTools(new FixedOutputTool("read_file", "validation script"),
+                        new WriteLikeTool("edit_file"),
+                        new FixedOutputTool("bash", "expected=100000\nactual=100000\nresult=ok\n"));
+        FailsAfterScriptProvider provider = new FailsAfterScriptProvider(
+                tool("read_file", "path", "target/concurrency-counter-workspace/validation.ps1"),
+                tool("edit_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"));
+
+        RunResult result = fixture.run(provider, "task-auto-validation",
+                "修复后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).contains("验证通过");
+        assertThat(provider.callCount()).isEqualTo(2);
+        assertThat(result.observations()).hasSize(3);
+        assertThat(result.observations().get(2)).contains("result=ok");
+        assertThat(result.metrics().toolCallCount()).isEqualTo(3);
+    }
+
+    @Test
+    void autoValidationSkipsBareScriptMentionBeforeDiscoveredPath() {
+        EngineFixture fixture = fixture()
+                .withTools(new FixedOutputTool("read_file", "Run validation.ps1"),
+                        new WriteLikeTool("edit_file"),
+                        new FixedOutputTool("bash", "expected=100000\nactual=100000\nresult=ok\n"));
+        FailsAfterScriptProvider provider = new FailsAfterScriptProvider(
+                multiCall(
+                        call("read_file", "path", "target/concurrency-counter-workspace/README.txt"),
+                        call("read_file", "path", "target/concurrency-counter-workspace/validation.ps1")),
+                tool("edit_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"));
+
+        RunResult result = fixture.run(provider, "task-auto-validation-after-bare-mention",
+                "修复后执行 validation.ps1 验证");
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(result.finalAnswer()).contains("验证通过");
+        assertThat(provider.callCount()).isEqualTo(2);
+        assertThat(result.observations()).hasSize(3);
+        assertThat(result.observations().get(0)).contains("README.txt").contains("validation.ps1");
+        assertThat(result.observations().get(2)).contains("result=ok");
     }
 
     @Test
@@ -1490,6 +1556,61 @@ class AgentEngineTest {
 
         private List<Integer> toolCounts() {
             return toolCounts;
+        }
+    }
+
+    private static final class ToolNamesScriptedProvider implements ModelProvider {
+        private final Decision[] decisions;
+        private final List<List<String>> toolNames = new ArrayList<List<String>>();
+        private int index;
+
+        private ToolNamesScriptedProvider(Decision... decisions) {
+            this.decisions = decisions;
+        }
+
+        @Override
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            List<String> names = new ArrayList<String>();
+            for (ToolDefinition tool : availableTools) {
+                names.add(tool.name());
+            }
+            toolNames.add(names);
+            int current = index;
+            if (current < decisions.length - 1) {
+                index++;
+            }
+            return response(decisions[current]);
+        }
+
+        private List<List<String>> toolNames() {
+            return toolNames;
+        }
+    }
+
+    private static final class FailsAfterScriptProvider implements ModelProvider {
+        private final Decision[] decisions;
+        private int index;
+        private int callCount;
+
+        private FailsAfterScriptProvider(Decision... decisions) {
+            this.decisions = decisions;
+        }
+
+        @Override
+        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
+                String systemPrompt) {
+            callCount++;
+            if (index >= decisions.length) {
+                throw new AssertionError("provider should not be called after validation is pending");
+            }
+            Decision decision = decisions[index];
+            index++;
+            return response(decision);
+        }
+
+        private int callCount() {
+            return callCount;
         }
     }
 

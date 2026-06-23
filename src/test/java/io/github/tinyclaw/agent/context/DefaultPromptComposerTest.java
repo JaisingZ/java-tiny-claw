@@ -62,7 +62,10 @@ class DefaultPromptComposerTest {
                 .contains("直接总结")
                 .contains("刚修改文件")
                 .contains("优先执行验证")
-                .contains("不要重复读取刚读过且未变化的文件");
+                .contains("不要重复读取刚读过且未变化的文件")
+                .contains("整文件")
+                .contains("write_file")
+                .contains("不要用 edit_file 携带整文件 old_text");
     }
 
     @Test

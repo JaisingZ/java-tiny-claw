@@ -3,10 +3,18 @@ package io.github.tinyclaw.agent.app;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.tinyclaw.agent.domain.Decision;
 import io.github.tinyclaw.agent.provider.ModelProvider;
 import io.github.tinyclaw.agent.runtime.AgentToolRegistries;
+import io.github.tinyclaw.agent.runtime.AgentEngine;
+import io.github.tinyclaw.agent.runtime.RunResult;
+import io.github.tinyclaw.agent.runtime.RunStatus;
+import io.github.tinyclaw.agent.domain.FinishDecision;
+import io.github.tinyclaw.agent.domain.Task;
 import io.github.tinyclaw.agent.tool.ToolRegistry;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
 import org.junit.jupiter.api.Test;
 
 class AgentApplicationTest {
@@ -125,10 +133,42 @@ class AgentApplicationTest {
                 .hasMessage("Unknown run option: --max-steps");
     }
 
+    @Test
+    void runPromptEngineShutsDownAgentEngine() throws Exception {
+        AgentEngine engine = new AgentEngine((context, phase, tools, systemPrompt) ->
+                io.github.tinyclaw.agent.provider.ModelResponse.of(new FinishDecision("done")),
+                new ToolRegistry());
+
+        RunResult result = AgentApplication.runPromptEngine(engine, new Task("task-cli", "finish"));
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
+        assertThat(toolExecutor(engine).isShutdown()).isTrue();
+    }
+
+    @Test
+    void runPromptEngineShutsDownAgentEngineOnFailure() throws Exception {
+        AgentEngine engine = new AgentEngine((context, phase, tools, systemPrompt) ->
+                io.github.tinyclaw.agent.provider.ModelResponse.of(new Decision() {
+                }),
+                new ToolRegistry());
+
+        RunResult result = AgentApplication.runPromptEngine(engine, new Task("task-cli-fail", "finish"));
+
+        assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(result.failureReason()).isEqualTo("unsupported_decision");
+        assertThat(toolExecutor(engine).isShutdown()).isTrue();
+    }
+
     private ModelProvider noopProvider() {
         return (context, phase, tools, systemPrompt) -> {
             throw new AssertionError("provider should not be called");
         };
+    }
+
+    private ExecutorService toolExecutor(AgentEngine engine) throws Exception {
+        Field field = AgentEngine.class.getDeclaredField("toolExecutor");
+        field.setAccessible(true);
+        return (ExecutorService) field.get(engine);
     }
 
 }

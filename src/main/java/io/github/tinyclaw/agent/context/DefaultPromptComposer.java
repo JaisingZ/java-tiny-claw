@@ -105,6 +105,7 @@ public final class DefaultPromptComposer implements PromptComposer {
                 + "如果 Observation 已经满足用户目标且没有失败信息，直接输出最终回答，不要重复调用相同工具。\n"
                 + "如果验证通过，直接总结结果并结束；如果验证失败，优先修改或重新验证，不要长篇分析。\n"
                 + "如果最近刚修改文件且任务要求验证，下一步优先执行验证命令，不要重复读取刚读过且未变化的文件。\n"
+                + "如果需要替换大段内容或整文件，优先调用 write_file 写完整新文件；不要用 edit_file 携带整文件 old_text。\n"
                 + "调用工具时 function.arguments 必须是完整闭合的严格 JSON object，不能使用 markdown、注释、自然语言包裹或尾随说明。\n"
                 + "write_file 会自动创建父目录，创建文件前不要额外调用 mkdir。\n\n";
     }

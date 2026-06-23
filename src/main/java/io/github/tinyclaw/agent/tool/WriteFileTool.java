@@ -44,7 +44,7 @@ public final class WriteFileTool implements Tool {
 
         Map<String, Object> contentProperty = new LinkedHashMap<String, Object>();
         contentProperty.put("type", "string");
-        contentProperty.put("description", "Full UTF-8 file content to write");
+        contentProperty.put("description", "Full UTF-8 file content to write; use for full file replacement");
 
         Map<String, Object> properties = new LinkedHashMap<String, Object>();
         properties.put("path", pathProperty);
@@ -56,7 +56,8 @@ public final class WriteFileTool implements Tool {
         parameters.put("required", Arrays.asList("path", "content"));
 
         return new ToolDefinition(name(), "Create or overwrite a UTF-8 text file inside the workspace; "
-                + "missing parent directories are created automatically", parameters);
+                + "use this for full-file replacement; missing parent directories are created automatically",
+                parameters);
     }
 
     /**

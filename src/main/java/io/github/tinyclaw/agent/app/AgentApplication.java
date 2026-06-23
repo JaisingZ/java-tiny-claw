@@ -122,9 +122,17 @@ public final class AgentApplication {
         AgentEngine engine = new AgentEngine(provider, registry, options.thinking(), runLogger,
                 promptComposer, workDir, TraceRecorder.forSink(new FileTraceSink(workDir)));
 
-        RunResult result = engine.run(new Task("cli-" + UUID.randomUUID(), options.prompt()));
+        RunResult result = runPromptEngine(engine, new Task("cli-" + UUID.randomUUID(), options.prompt()));
 
         writeRunOutput(runLogger, result, options.debug());
+    }
+
+    static RunResult runPromptEngine(AgentEngine engine, Task task) {
+        try {
+            return engine.run(task);
+        } finally {
+            engine.shutdown();
+        }
     }
 
     private static void logMountedTools(ToolRegistry registry, RunLogger runLogger) {

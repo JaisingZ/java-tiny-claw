@@ -118,8 +118,9 @@ class WriteFileToolTest {
         ToolDefinition definition = tool.definition();
 
         assertThat(definition.name()).isEqualTo("write_file");
-        assertThat(definition.description()).contains("parent directories", "UTF-8");
-        assertThat(definition.parameters().toString()).contains("path", "content", "required", "UTF-8");
+        assertThat(definition.description()).contains("parent directories", "UTF-8", "full-file replacement");
+        assertThat(definition.parameters().toString())
+                .contains("path", "content", "required", "UTF-8", "full file");
     }
 
     private ToolCall call(String path, String content) {
