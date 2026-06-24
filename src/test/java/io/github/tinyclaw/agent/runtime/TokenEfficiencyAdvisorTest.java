@@ -74,6 +74,24 @@ class TokenEfficiencyAdvisorTest {
     }
 
     @Test
+    void doesNotTreatPs1CommandAsValidationCommandWithoutSuccessMarker() {
+        TokenEfficiencyAdvisor advisor = new TokenEfficiencyAdvisor();
+        AgentContext context = AgentContext.create(new Task("task-ps1", "修复代码后执行 validation.ps1 验证"));
+        ToolCall writeFile = new ToolCall("write_file", Map.of("path", "src/App.java"));
+        ToolCall ps1 = new ToolCall("bash", Map.of("command", "powershell -File validation.ps1"));
+
+        assertThat(advisor.afterToolCall(context, writeFile, ToolResult.success("edited")))
+                .contains("validation");
+
+        String reminder = advisor.afterToolCall(context, ps1,
+                ToolResult.success("Command executed successfully with no output"));
+
+        assertThat(reminder).isNull();
+        assertThat(advisor.validationPending()).isFalse();
+        assertThat(advisor.validationPassed()).isFalse();
+    }
+
+    @Test
     void doesNotMarkPassedForValidationCommandWithAmbiguousOutput() {
         TokenEfficiencyAdvisor advisor = new TokenEfficiencyAdvisor();
         AgentContext context = AgentContext.create(new Task("task-ambiguous", "修复代码后执行 validation.ps1 验证"));

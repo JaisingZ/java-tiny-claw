@@ -255,12 +255,6 @@ public final class AgentEngine {
                 }
             }
 
-            TurnResult autoValidation = runDiscoveredValidationIfPending(context, tokenEfficiencyAdvisor,
-                    metrics, turnSpan);
-            if (autoValidation != null) {
-                return autoValidation;
-            }
-
             Decision decision;
             try {
                 decision = requestActionDecision(context, tokenEfficiencyAdvisor, metrics, turnSpan);
@@ -337,38 +331,6 @@ public final class AgentEngine {
         return response.decision();
     }
 
-    private TurnResult runDiscoveredValidationIfPending(AgentContext context,
-            TokenEfficiencyAdvisor tokenEfficiencyAdvisor, RunMetricsCollector metrics, TraceSpan turnSpan) {
-        if (!tokenEfficiencyAdvisor.validationPending()) {
-            return null;
-        }
-        if (!toolRegistry.snapshot().containsKey("bash")) {
-            return null;
-        }
-        String validationPath = discoveredValidationScriptPath(context);
-        if (!hasText(validationPath)) {
-            return null;
-        }
-
-        ToolCall call = new ToolCall("bash", Collections.<String, Object>singletonMap("command",
-                validationCommand(validationPath)));
-        ToolResult result = toolCallRunner.execute(context, call, metrics, turnSpan);
-        List<String> outputs = new ArrayList<String>();
-        String observation = observationFor(context, call, result, tokenEfficiencyAdvisor);
-        outputs.add(observation);
-        String tokenReminder = tokenEfficiencyAdvisor.afterToolCall(context, call, result);
-        if (tokenReminder != null && !observation.contains(tokenReminder)) {
-            outputs.add(tokenReminder);
-        }
-
-        AgentContext nextContext = advanceAndObserve(context, outputs);
-        if (tokenEfficiencyAdvisor.validationPassed()) {
-            return TurnResult.done(RunResult.success(nextContext.stepCount(), nextContext.observations(),
-                    "验证通过，已完成修复。", metrics.snapshot()));
-        }
-        return TurnResult.next(nextContext);
-    }
-
     private List<ToolDefinition> actionToolsFor(TokenEfficiencyAdvisor tokenEfficiencyAdvisor) {
         if (tokenEfficiencyAdvisor.validationPassed()) {
             return Collections.emptyList();
@@ -388,65 +350,6 @@ public final class AgentEngine {
             }
         }
         return filtered.isEmpty() ? definitions : filtered;
-    }
-
-    private String discoveredValidationScriptPath(AgentContext context) {
-        String path = validationScriptPathIn(context.goal());
-        if (hasText(path)) {
-            return path;
-        }
-        for (String observation : context.observations()) {
-            path = validationScriptPathIn(observation);
-            if (hasText(path)) {
-                return path;
-            }
-        }
-        return null;
-    }
-
-    private String validationScriptPathIn(String value) {
-        if (!hasText(value)) {
-            return null;
-        }
-        String normalized = value.replace('\\', '/');
-        String target = "validation.ps1";
-        String lower = normalized.toLowerCase(java.util.Locale.ROOT);
-        int searchFrom = 0;
-        while (searchFrom < normalized.length()) {
-            int index = lower.indexOf(target, searchFrom);
-            if (index < 0) {
-                return null;
-            }
-            int start = index;
-            while (start > 0 && isPathChar(normalized.charAt(start - 1))) {
-                start--;
-            }
-            int end = index + target.length();
-            while (end < normalized.length() && isPathChar(normalized.charAt(end))) {
-                end++;
-            }
-            String candidate = normalized.substring(start, end);
-            while (candidate.startsWith("./")) {
-                candidate = candidate.substring(2);
-            }
-            if (candidate.contains("/")) {
-                return candidate;
-            }
-            searchFrom = end;
-        }
-        return null;
-    }
-
-    private boolean isPathChar(char value) {
-        return Character.isLetterOrDigit(value)
-                || value == '.'
-                || value == '_'
-                || value == '-'
-                || value == '/';
-    }
-
-    private String validationCommand(String validationPath) {
-        return "powershell -NoProfile -ExecutionPolicy Bypass -File '" + validationPath.replace("'", "''") + "'";
     }
 
     private TurnResult applyDecision(AgentContext context, Decision decision,

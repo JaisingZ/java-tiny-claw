@@ -719,47 +719,58 @@ class AgentEngineTest {
     }
 
     @Test
-    void autoRunsDiscoveredValidationScriptAfterWrite() {
+    void doesNotAutoRunDiscoveredValidationScriptAfterWrite() {
         EngineFixture fixture = fixture()
                 .withTools(new FixedOutputTool("read_file", "validation script"),
                         new WriteLikeTool("edit_file"),
-                        new FixedOutputTool("bash", "expected=100000\nactual=100000\nresult=ok\n"));
-        FailsAfterScriptProvider provider = new FailsAfterScriptProvider(
+                        new FixedOutputTool("bash", "unexpected validation run"));
+        ToolNamesScriptedProvider provider = new ToolNamesScriptedProvider(
                 tool("read_file", "path", "target/concurrency-counter-workspace/validation.ps1"),
-                tool("edit_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"));
+                tool("edit_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"),
+                finish("model decides next step"));
 
         RunResult result = fixture.run(provider, "task-auto-validation",
                 "修复后执行 validation.ps1 验证");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
-        assertThat(result.finalAnswer()).contains("验证通过");
-        assertThat(provider.callCount()).isEqualTo(2);
-        assertThat(result.observations()).hasSize(3);
-        assertThat(result.observations().get(2)).contains("result=ok");
-        assertThat(result.metrics().toolCallCount()).isEqualTo(3);
+        assertThat(result.finalAnswer()).isEqualTo("model decides next step");
+        assertThat(provider.toolNames()).containsExactly(
+                Arrays.asList("read_file", "edit_file", "bash"),
+                Arrays.asList("read_file", "edit_file", "bash"),
+                Collections.singletonList("bash"));
+        assertThat(result.observations()).hasSize(2);
+        assertThat(result.observations().get(1)).contains("edited").contains("[SYSTEM REMINDER]");
+        assertThat(result.observations()).noneMatch(observation -> observation.contains("unexpected validation run"));
+        assertThat(result.metrics().toolCallCount()).isEqualTo(2);
     }
 
     @Test
-    void autoValidationSkipsBareScriptMentionBeforeDiscoveredPath() {
+    void doesNotAutoRunAfterParallelReadsMentionBareScriptAndPath() {
         EngineFixture fixture = fixture()
                 .withTools(new FixedOutputTool("read_file", "Run validation.ps1"),
                         new WriteLikeTool("edit_file"),
-                        new FixedOutputTool("bash", "expected=100000\nactual=100000\nresult=ok\n"));
-        FailsAfterScriptProvider provider = new FailsAfterScriptProvider(
+                        new FixedOutputTool("bash", "unexpected validation run"));
+        ToolNamesScriptedProvider provider = new ToolNamesScriptedProvider(
                 multiCall(
                         call("read_file", "path", "target/concurrency-counter-workspace/README.txt"),
                         call("read_file", "path", "target/concurrency-counter-workspace/validation.ps1")),
-                tool("edit_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"));
+                tool("edit_file", "path", "target/concurrency-counter-workspace/CounterRaceCheck.java"),
+                finish("model decides next step"));
 
         RunResult result = fixture.run(provider, "task-auto-validation-after-bare-mention",
                 "修复后执行 validation.ps1 验证");
 
         assertThat(result.status()).isEqualTo(RunStatus.SUCCESS);
-        assertThat(result.finalAnswer()).contains("验证通过");
-        assertThat(provider.callCount()).isEqualTo(2);
-        assertThat(result.observations()).hasSize(3);
+        assertThat(result.finalAnswer()).isEqualTo("model decides next step");
+        assertThat(provider.toolNames()).containsExactly(
+                Arrays.asList("read_file", "edit_file", "bash"),
+                Arrays.asList("read_file", "edit_file", "bash"),
+                Collections.singletonList("bash"));
+        assertThat(result.observations()).hasSize(2);
         assertThat(result.observations().get(0)).contains("README.txt").contains("validation.ps1");
-        assertThat(result.observations().get(2)).contains("result=ok");
+        assertThat(result.observations().get(1)).contains("edited").contains("[SYSTEM REMINDER]");
+        assertThat(result.observations()).noneMatch(observation -> observation.contains("unexpected validation run"));
+        assertThat(result.metrics().toolCallCount()).isEqualTo(3);
     }
 
     @Test
@@ -1585,32 +1596,6 @@ class AgentEngineTest {
 
         private List<List<String>> toolNames() {
             return toolNames;
-        }
-    }
-
-    private static final class FailsAfterScriptProvider implements ModelProvider {
-        private final Decision[] decisions;
-        private int index;
-        private int callCount;
-
-        private FailsAfterScriptProvider(Decision... decisions) {
-            this.decisions = decisions;
-        }
-
-        @Override
-        public ModelResponse decide(AgentContext state, DecisionPhase phase, List<ToolDefinition> availableTools,
-                String systemPrompt) {
-            callCount++;
-            if (index >= decisions.length) {
-                throw new AssertionError("provider should not be called after validation is pending");
-            }
-            Decision decision = decisions[index];
-            index++;
-            return response(decision);
-        }
-
-        private int callCount() {
-            return callCount;
         }
     }
 

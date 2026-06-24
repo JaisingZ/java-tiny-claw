@@ -151,7 +151,7 @@ optional thinking -> optional review loop -> action decision -> tool/finish -> o
 - `observe`：Runtime 记录工具结果并更新 `AgentContext`。
 - `decide`：Runtime 判断继续、失败或结束。
 - 对明确要求验证的任务，Runtime 在观察到验证通过后可以直接返回成功摘要，避免为纯总结再次调用模型。
-- 对明确要求验证且已经发现 `validation.ps1` 的任务，若文件刚被修改，Runtime 可以直接执行该验证脚本，避免再让模型生成已知验证命令。
+- Runtime 不自动发现或执行具体验证脚本路径；具体脚本由模型显式选择工具调用，或由 Benchmark / 外部验收 harness 执行。
 
 ### 4.2-a Self Review 微循环边界
 
@@ -177,7 +177,7 @@ optional thinking -> optional review loop -> action decision -> tool/finish -> o
 - Review 连续要求修改且 2 次 attempt 后仍未批准时返回 `plan_review_failed`。
 - 主循环不再设置硬性步数上限；未支持决策会直接失败返回。
 - 验证任务在工具输出中出现明确成功信号后，Runtime 可直接成功结束；这属于运行时收口，不属于 Provider 决策。
-- 验证任务在写操作后若已有明确验证脚本路径，Runtime 可自动发起一次验证工具调用；验证失败仍作为 Observation 回写，让模型继续修复。
+- Runtime 不根据上下文中的脚本路径合成验证工具调用；验证失败只有在模型显式执行验证命令后才会作为 Observation 回写，让模型继续修复。
 
 ## 5. 开发约束
 

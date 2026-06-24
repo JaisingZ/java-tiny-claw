@@ -34,7 +34,7 @@ final class TokenEfficiencyAdvisor {
             validationPending = true;
             validationPassed = false;
             return "[SYSTEM REMINDER] A file was just modified and this task asks for validation. "
-                    + "Next, prioritize running the validation/test command such as validation.ps1; "
+                    + "Next, prioritize running the relevant validation/test command; "
                     + "do not repeat-read unchanged files first.";
         }
         return null;
@@ -156,8 +156,7 @@ final class TokenEfficiencyAdvisor {
             return false;
         }
         String lower = ((String) rawCommand).toLowerCase(Locale.ROOT);
-        return lower.contains("validation.ps1")
-                || lower.contains("mvn")
+        return lower.contains("mvn")
                 || lower.contains("test")
                 || lower.contains("javac")
                 || lower.contains("java ");
@@ -188,7 +187,6 @@ final class TokenEfficiencyAdvisor {
         String lower = value.toLowerCase(Locale.ROOT);
         return value.contains("验证")
                 || lower.contains("validate")
-                || lower.contains("validation.ps1")
                 || lower.contains("test");
     }
 
