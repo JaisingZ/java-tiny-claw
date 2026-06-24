@@ -61,7 +61,7 @@ Provider 只能返回项目内部的 `Decision` 类型：
 - 请求固定为非流式 `stream=false`。
 - `ACTION` 阶段挂载工具定义，允许模型输出工具调用或最终回答。
 - 一个或多个工具调用都会映射为 `ToolDecision`。
-- Provider debug 输出只保留摘要和截断后的 JSON，避免把完整工具 schema 大段刷屏。
+- ProviderDebugSummary 只保留摘要信息（决策类型、阶段、长度、耗时、工具名列表），不保留原始决策文本/参数大段内容；必要时再截断 JSON。
 - 第一条 system message 使用调用方传入的 `systemPrompt`，Provider 不自行拼接项目规范。
 - Provider 会读取响应中的 `usage`，并把 Token 信息交给 Runtime 指标层；缺失时按 unavailable 记录。
 
@@ -92,8 +92,8 @@ Provider 只能返回项目内部的 `Decision` 类型：
 
 ## Debug 与观测输出约定
 
-- `Provider` 日志/trace 输出默认记录决策类型、长度、阶段与耗时，不记录 `ThinkingDecision`、`ReviewDecision` 的原始文本。
-- 如有特殊调试需求，需通过会话级开关显式开启原文输出，且保持最小权限范围。
+- `Provider` 日志/trace 输出默认记录决策类型、长度、阶段与耗时，不记录 `ThinkingDecision`、`ReviewDecision` 的原始文本。`ProviderDebugSummary` 的内容应是摘要，不应替代 `RunLogger` 的运行时间线。
+- 如有特殊调试需求，需通过会话级开关显式开启更详细输出，且保持最小权限范围；深度排障以 trace 的结构化字段为主，不在 `RunLogger` 中刷全量 observations。
 
 ## 验收标准
 

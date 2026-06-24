@@ -189,13 +189,22 @@ Run a single prompt:
 mvn exec:java -Dexec.args="run --prompt <prompt>"
 ```
 
-Run with provider debug summaries:
+Run with provider debug summaries (output stays concise):
 
-开启 Provider debug 摘要：
+开启 Provider debug 摘要（输出仍保持可读，不刷海量原文）：
 
 ```sh
 mvn exec:java -Dexec.args="run --debug --prompt <prompt>"
 ```
+
+CLI run output format:
+
+`run` 命令结束时输出：
+
+- `RESULT`: 最终状态与结论（含失败原因）。
+- `METRICS`: 模型调用、Token、模型耗时、工具调用、工具耗时。
+- `TRACE_DIR`: 本次 trace 文件目录，复盘结构化决策链路时优先查该目录下的 JSON trace。
+- `OBSERVATIONS`: 运行观察摘要，仅非 debug 模式输出；debug 模式不刷完整 observations 明细，便于阅读。
 
 Run with two-phase thinking:
 
@@ -213,9 +222,9 @@ Run with Plan Mode:
 mvn exec:java -Dexec.args="run --plan --prompt <prompt>"
 ```
 
-CLI `run` prints `METRICS` at the end, including model calls, token usage, model time, tool calls, and tool time. CLI Plan Mode stores state under `.tinyclaw/state/cli/default/`.
+CLI `run` prints `RESULT` / `METRICS` / `TRACE_DIR`, and prints `OBSERVATIONS` only when debug is disabled. CLI Plan Mode stores state under `.tinyclaw/state/cli/default/`.
 
-CLI `run` 结束时输出 `METRICS`，包含模型调用、Token、模型耗时、工具调用和工具耗时。CLI Plan Mode 状态目录为 `.tinyclaw/state/cli/default/`。
+CLI `run` 结束时输出 `RESULT`、`METRICS`、`TRACE_DIR`，并仅在非 debug 模式输出 `OBSERVATIONS`。CLI Plan Mode 状态目录为 `.tinyclaw/state/cli/default/`。
 
 Example: prepare a small Java concurrency counter workspace, then let the Agent explore, fix, and validate it:
 
@@ -230,9 +239,9 @@ powershell -File .\validation.ps1
 
 > 主循环按 `FinishDecision` 结束；`ToolDecision` 继续执行一个或多个工具调用，Harness 仅保留系统提醒，不做硬性停机阈值。
 
-Do not rely only on the final answer. Check `RESULT`, `OBSERVATIONS`, `METRICS`, `.tinyclaw/traces/trace-*.json`, the validation output, and the actual files in the workspace.
+Do not rely only on the final answer. Check `RESULT`, `OBSERVATIONS`, `METRICS`, `TRACE_DIR`, `.tinyclaw/traces/trace-*.json`, the validation output, and the actual files in the workspace.
 
-不要只看最终回答；同时检查 `RESULT`、`OBSERVATIONS`、`METRICS`、`.tinyclaw/traces/trace-*.json`、验证命令输出和工作区真实文件改动。
+不要只看最终回答；同时检查 `RESULT`、`OBSERVATIONS`、`METRICS`、`TRACE_DIR`、`.tinyclaw/traces/trace-*.json`、验证命令输出和工作区真实文件改动。
 
 ## Benchmark / 基准验证
 

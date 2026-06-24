@@ -52,15 +52,15 @@
 - `communication.approval` 在 Telegram 模式下等待人工 `/approve <id>` 或 `/reject <id>`，并处理超时和同会话约束。
 - `AgentEngine` 按 `Tool.isSideEffect()` 处理只读并发和涉写串行。
 - `spawn_subagent` 标记为只读工具；子 Agent v1 只挂载 `read_file` 和 `bash`，不提供写工具或递归委派能力。
-- `RunLogger` 和 `RunResult` 保留人类可读的运行观测，`RunMetrics` 保留汇总指标，`TraceRecorder` 保留结构化回放。
+- `RunLogger` 负责按时间顺序输出可读日志时间线（用户层）、`RunResult` 负责最终结果摘要，`RunMetrics` 保留汇总指标，`TraceRecorder` 保留结构化复盘回放。
 
 CLI `run` 默认不挂载 Telegram 审批 Middleware，保持命令行运行语义。
 
 ### 2.5 观测优先
 
-- 以可读日志为主，使用 `RunLogger` 输出关键步骤；需要复盘决策路径时使用 `.tinyclaw/traces` 下的 JSON trace。
+- 以可读日志为主，使用 `RunLogger` 输出可读时间线（时间顺序关键步骤）；决策路径复盘和机器可检索证据统一从 `.tinyclaw/traces` 下的 JSON trace 获取。
 - 默认日志与 trace 不记录 `ThinkingDecision`、`ReviewDecision` 的原始文本，只记录长度、阶段与决策类型；便于安全与隐私可观测。
-- CLI 非 debug 场景输出 `OBSERVATIONS`，用于闭环判断。
+- CLI 非 debug 场景输出 `RESULT / METRICS / TRACE_DIR / OBSERVATIONS`；`--debug` 输出 `RESULT / METRICS / TRACE_DIR`，不刷完整 `OBSERVATIONS` 明细，结构化明细在 trace 里查阅。
 - 最终输出以 `RunResult` 为准，覆盖成功/失败、步数、观察信息和运行指标。
 
 ### 2.6 接口分层

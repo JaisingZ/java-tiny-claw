@@ -4,7 +4,7 @@
 
 当前 Main Loop 已收敛为 `AgentEngine`：它使用短期 `AgentContext` 推进任务，返回 `RunResult`，并通过 `RunLogger` 暴露面向人的运行过程。通信服务只负责把外部消息转成 `Task`，不把 Telegram 逻辑塞进 Runtime。
 
-运行过程输出统一通过 `RunLogger` 暴露：CLI 默认使用 `Slf4jRunLogger`，聊天平台使用平台专用 `RunLogger`。
+运行过程输出统一通过 `RunLogger` 暴露：CLI 默认使用 `Slf4jRunLogger`，聊天平台使用平台专用 `RunLogger`。`RunLogger` 是可读时间线唯一负责方，负责按步骤顺序将关键事件落到可读日志中。
 
 ## 架构边界
 
@@ -17,7 +17,7 @@
 ## CLI 启动行为
 
 - 无参数启动：缺少正式命令，提示使用 `run` 或 `telegram`。
-- `telegram` 子命令：直接启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务；`telegram --debug` 为本次进程开启 Provider debug 摘要。
+- `telegram` 子命令：直接启动 `TelegramAgentWebhookService`，启动后阻塞等待关闭，退出时停掉服务；`telegram --debug` 为本次进程开启 Provider debug 摘要（仅摘要，不替代 trace 明细）。
 - `run`：只走命令行运行，不启动 Telegram Webhook。
 
 ## 核心抽象
@@ -71,7 +71,7 @@
 - `agent.workdir`：`TelegramAgentWebhookService` 的工作目录，默认 `.`。
 - `agent.enableThinking`：Webhook 模式是否开启 Thinking，默认 `false`。
 - `agent.planMode`：Webhook 模式是否开启任务级状态外部化，默认 `false`。
-- `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。
+- `agent.debug`：Webhook 模式是否把 Provider request / response / decision 摘要写入服务端 SLF4J 日志，默认 `false`；不发送到 Telegram 聊天窗口。对应 `ProviderDebugSummary` 仅保留摘要，不会刷原始 `observations`。
 - `agent.intentFilter.enabled`：是否启用聊天入口意图过滤，默认 `false`；启用时必须配置至少一个 `agent.intentFilter.marker.N`。
 - `agent.intentFilter.marker.N`：意图触发词，按数字后缀升序读取，例如 `/agent`、`@机器人`、`nginx`。
 - `agent.permissions.enabled`：是否在 Telegram 模式启用工具审批 Middleware，默认 `false`。
@@ -137,7 +137,7 @@ Telegram POST /telegram/webhook
 - `/usage` 在 `WorkspaceSerialExecutor.submit` 前处理，用于查看当前会话累计用量。
 - `agent.intentFilter.enabled=true` 时，普通闲聊不会提交到 `WorkspaceSerialExecutor`，只有命中配置触发词的消息才唤醒 Main Loop。
 - 同工作区通过 `WorkspaceSerialExecutor` 串行执行；`AgentEngine` 内部只读工具并发策略保持不变。
-- `agent.debug=true` 或启动参数 `telegram --debug` 仅影响服务端 Provider 调试摘要；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态，工具状态只包含参数 key。
+- `agent.debug=true` 或启动参数 `telegram --debug` 仅影响服务端 Provider 调试摘要；`TelegramRunLogger` 仍只发送 thinking、tool、final、error 等用户可读状态，工具状态只包含参数 key，trace 与 `TRACE_DIR` 保留完整可复盘链路。
 - 启用权限审批后，`allow` 直接执行，`deny` 返回工具失败，`ask` 向同一 Telegram 会话发送审批 ID 并等待人工处理。
 - 审批超时自动拒绝并清理内存 pending 状态。
 - 权限 YAML 热更新失败时保留上一份有效快照；审批中的 pending request 不受 reload 影响。
